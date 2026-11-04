@@ -87,4 +87,6 @@ Keep it to a few sentences per decision.
 
 ## Commands
 
-Add the build, test and run commands here as each phase creates them.
+- Build: `dotnet build NewStore.slnx`
+- Test everything: `dotnet test --solution NewStore.slnx` (needs Docker running, for Testcontainers)
+- One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`

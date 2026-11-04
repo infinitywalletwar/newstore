@@ -219,7 +219,7 @@ Expected: 20 story issues.
 5. Set the five task issues to Ready and the story issues to Backlog.
 6. Link the project to the repository with `gh project link`.
 
-- [ ] **Step 5 (owner, in the browser): Finish the board**
+- [x] **Step 5 (owner, in the browser): Finish the board**
 
 The API can't do these, so the owner does them in the browser:
 
@@ -313,7 +313,7 @@ On branch `phase-0/board`, commit the sprint note with the message `docs: sprint
   - `Degraded` → 200
   - `Unhealthy` → 503
 
-- [ ] **Step 1: Create the projects**
+- [x] **Step 1: Create the projects**
 
 1. Create the projects with `dotnet new web` and `dotnet new classlib`. Write the test `.csproj` by hand.
 2. Remove `TargetFramework`, `Nullable` and `ImplicitUsings` from each `.csproj`, because `Directory.Build.props` sets them.
@@ -322,7 +322,7 @@ On branch `phase-0/board`, commit the sprint note with the message `docs: sprint
 5. In `appsettings.Development.json`, set `ConnectionStrings:Catalog` to `Host=localhost;Port=5432;Database=catalog;Username=catalog;Password=catalog`. This lets the service run from the IDE against the Compose database once Task 6 adds it.
 6. Add the projects to the solution with `dotnet sln NewStore.slnx add …`.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `HealthEndpointTests(PostgresCatalogAppFactory factory) : IClassFixture<PostgresCatalogAppFactory>`
 
@@ -356,13 +356,13 @@ const string HangingDatabase = "Host=10.255.255.1;Port=5432;Database=catalog;Use
     // Assert.Contains("ConnectionStrings:Catalog", ex.Message);
 ```
 
-- [ ] **Step 3: Run the tests and watch them fail**
+- [x] **Step 3: Run the tests and watch them fail**
 
 Run: `dotnet test --solution NewStore.slnx`
 
 Expected: FAIL. The health endpoints return 404, and startup doesn't throw.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 - Implement `ServiceDefaultsExtensions`, `HealthCheckExtensions` and `PostgresHealthCheck` as declared in Interfaces.
 - In `Program.cs`:
@@ -371,7 +371,7 @@ Expected: FAIL. The health endpoints return 404, and startup doesn't throw.
   3. Call `builder.Services.AddNpgsqlDataSource(connectionString)`, then `builder.Services.AddHealthChecks().AddPostgres()`.
   4. After `Build()`, call `app.MapDefaultEndpoints()`.
 
-- [ ] **Step 5: Run the tests and watch them pass**
+- [x] **Step 5: Run the tests and watch them pass**
 
 Run: `dotnet test --solution NewStore.slnx`
 
@@ -379,7 +379,7 @@ Expected: 6 tests pass. The hanging-database test takes about 3 seconds, because
 
 To run one test, use for example `dotnet test --project tests/Catalog.Tests --filter-method "*Live_returns_healthy"`.
 
-- [ ] **Step 6: Record the commands**
+- [x] **Step 6: Record the commands**
 
 Replace the placeholder line in the "Commands" section of `AGENTS.md` with:
 
@@ -389,7 +389,7 @@ Replace the placeholder line in the "Commands" section of `AGENTS.md` with:
 - One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`
 ```
 
-- [ ] **Step 7: Commit, push and open a PR**
+- [x] **Step 7: Commit, push and open a PR**
 
 Commit with the message `feat(catalog): service with liveness and readiness checks`.
 

@@ -1,2 +1,15 @@
 <Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Catalog/">
+    <Project Path="src/Services/Catalog/NewStore.Catalog.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/" />
+  <Folder Name="/src/Shared/ServiceDefaults/">
+    <Project Path="src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Catalog.Tests/">
+    <Project Path="tests/Catalog.Tests/NewStore.Catalog.Tests.csproj" />
+  </Folder>
 </Solution>
