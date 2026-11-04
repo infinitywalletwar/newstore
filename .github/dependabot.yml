@@ -12,3 +12,7 @@ updates:
       nuget-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+  - package-ecosystem: "docker"
+    directory: "/src/Services/Catalog"
+    schedule:
+      interval: "weekly"

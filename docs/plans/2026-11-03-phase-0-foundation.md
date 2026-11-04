@@ -879,7 +879,7 @@ Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keyclo
   - Catalog at `http://localhost:8101`.
   - A second CI check, `compose-smoke`.
 
-- [ ] **Step 1: Write the Dockerfile**
+- [x] **Step 1: Write the Dockerfile**
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
@@ -902,7 +902,7 @@ The `.csproj` files are copied before the source so the restore layer is cached 
 
 `.dockerignore` lists `**/bin/`, `**/obj/`, `.git/`, `.github/`, `docs/`, `tests/`, `web/` and `deploy/`.
 
-- [ ] **Step 2: Add the `catalog` service to `compose.yaml`**
+- [x] **Step 2: Add the `catalog` service to `compose.yaml`**
 
 ```yaml
   catalog:
@@ -930,7 +930,7 @@ The `.csproj` files are copied before the source so the restore layer is cached 
 
 Without a health check, `docker compose up --wait` would return as soon as the container runs, before Kestrel listens, and the first `curl` would get no answer. With it, `--wait` returns only once `/health/ready` is 200. Kubernetes replaces the probe with an HTTP probe in Phase 5.
 
-- [ ] **Step 3: Check it on the Mac**
+- [x] **Step 3: Check it on the Mac**
 
 | Command | Expected |
 |---|---|
@@ -941,7 +941,7 @@ Without a health check, `docker compose up --wait` would return as soon as the c
 | `curl -s -o /dev/null http://localhost:8101/no-such-page`, wait 5 s, then `docker compose logs otel-collector \| grep -c "service.name: Str(catalog)"` | at least `1` |
 | `docker compose stop postgres`, then `curl -s -w ' %{http_code}\n' http://localhost:8101/health/ready`, then `docker compose start postgres` | `Unhealthy 503`, then `Healthy 200` after the restart |
 
-- [ ] **Step 4: Add the smoke-test job to `ci.yml`**
+- [x] **Step 4: Add the smoke-test job to `ci.yml`**
 
 ```yaml
   compose-smoke:
@@ -962,7 +962,7 @@ Without a health check, `docker compose up --wait` would return as soon as the c
         run: docker compose down --volumes
 ```
 
-- [ ] **Step 5: Write ADR 0004 and update the status**
+- [x] **Step 5: Write ADR 0004 and update the status**
 
 - **ADR 0004** compares a Dockerfile with `dotnet publish /t:PublishContainer`:
   - SDK container publishing needs no Dockerfile and makes small, non-root images.
@@ -971,13 +971,13 @@ Without a health check, `docker compose up --wait` would return as soon as the c
 - Set the `README.md` Status line to: Phase 0 done, Phase 1 next.
 - Add `- Build the Catalog image: docker compose build catalog` to the "Commands" section of `AGENTS.md`.
 
-- [ ] **Step 6: Commit, push, open a PR and watch it**
+- [x] **Step 6: Commit, push, open a PR and watch it**
 
 1. Commit with the message `feat(catalog): container image and Compose smoke test in CI`.
 2. Push and open the PR.
 3. Run `gh pr checks --watch`. Expected: `build-test` and `compose-smoke` both pass.
 
-- [ ] **Step 7: Require the new check**
+- [x] **Step 7: Require the new check**
 
 GitHub lists only check names it has seen, so this runs after the first green `compose-smoke` run. Until then the smoke test is advisory, and a red run wouldn't block a merge.
 
