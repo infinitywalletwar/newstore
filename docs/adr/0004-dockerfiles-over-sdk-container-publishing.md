@@ -23,7 +23,7 @@ Each service has a multi-stage Dockerfile next to its project, and Compose build
 
 ## Consequences
 
-- We control and can explain every layer: the restore layer is cached until a `.csproj` changes, and the runtime image holds only the published output.
+- We control and can explain every layer: the restore layer is cached until a file copied before `dotnet restore` changes, and the runtime image holds only the published output. Those files are the two `.csproj` files and the four root files `global.json`, `Directory.Build.props`, `Directory.Packages.props` and `.editorconfig`. `Directory.Packages.props` changes most often, because every package version lives there. A new project reference needs its own `COPY ... .csproj` line before `dotnet restore`, or the restore fails.
 - Each new service copies a Dockerfile, so a fix such as a base-image change is repeated per service. Dependabot's `docker` entry watches each Dockerfile's directory.
 - The `aspnet` tag must move with the SDK tag and the package versions, or tests and containers run different runtimes. AGENTS.md says to upgrade them together.
 - Dependabot's `docker` entry proposes `sdk` and `aspnet` bumps as their own pull requests, independent of `global.json`. Merge such a pull request only together with the matching `global.json` SDK and the NuGet package versions.
