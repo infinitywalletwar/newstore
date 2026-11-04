@@ -10,7 +10,7 @@ newstore is the owner's practice project for senior ASP.NET Core backend skills.
 
 The agent writes the code and presents it to the owner in small pieces:
 
-- Deliver each piece as a pull request that covers one user story or one part of a phase. Until the GitHub repository exists, present the change in chat.
+- Deliver each piece as a pull request that covers one user story or one part of a phase.
 - The pull request description is the walkthrough: what the code does, how to run it, and the reasoning described in "Teach while building".
 - The owner reviews and merges every pull request.
 
@@ -39,7 +39,7 @@ Keep it to a few sentences per decision.
 - Each task gets its own branch, `phase-<n>/<slug>`, for example `phase-0/catalog-health`, and becomes one pull request.
 - Start each branch from the latest `main`, after the owner has merged the previous pull request.
 - Commit messages follow Conventional Commits: `feat(catalog): …`, `ci: …`, `docs: …`.
-- The pull request body ends with `Closes #<issue>`.
+- The pull request body contains `Closes #<issue>`, so merging closes the issue.
 - Keep the task's card current on the GitHub Projects board: set it to In progress when work starts and to Review when the pull request opens. Merging closes the issue, and the board's workflow moves the card to Done.
 - Each task's pull request also ticks that task's checkboxes in its plan, so the plan shows how far the phase has got. `docs/getting-started.md` explains how a fresh session finds where work stopped.
 - A pull request merges only after CI passes, so `main` stays green.
@@ -54,14 +54,14 @@ Keep it to a few sentences per decision.
 
 ## Code
 
-- Target .NET 10. A .NET 11 preview SDK is also installed and `dotnet` uses it by default, so `global.json` pins SDK 10.0.401. It also selects the Microsoft.Testing.Platform test runner, which xUnit 4 needs on the .NET 10 SDK.
+- Target .NET 10. A .NET 11 preview SDK is also installed and `dotnet` uses it by default, so `global.json` pins SDK 10.0.403. It also selects the Microsoft.Testing.Platform test runner, which xUnit 4 needs on the .NET 10 SDK. Upgrade the SDK, the `aspnet` image tag and the Microsoft.AspNetCore.* package versions together, so tests, containers and CI run the same runtime: SDK 10.0.403 ships runtime 10.0.14.
 - `Directory.Build.props` sets the target framework, nullable reference types, implicit usings and warnings as errors for every project, so project files leave these out.
 - Package versions live only in `Directory.Packages.props`. A project's `PackageReference` has no `Version`.
 - Each service is one project with feature folders. Split it into layers only when a real need appears, and record why.
 
 ## Tests
 
-- Run integration tests against real PostgreSQL and Kafka through Testcontainers. Pass the image tag to the builder, as in `new PostgreSqlBuilder("postgres:18.6")`. The parameterless constructor is obsolete, which fails the build.
+- Run integration tests against the real PostgreSQL and Kafka a service uses, through Testcontainers. Pass the image tag to the builder, as in `new PostgreSqlBuilder("postgres:18.6")`. The parameterless constructor is obsolete, which fails the build.
 - Test projects set `<OutputType>Exe</OutputType>` and `<Using Include="Xunit" />`.
 - Pass `TestContext.Current.CancellationToken` to every call that accepts a token. Otherwise analyzer xUnit1051 fails the build.
 - `WebApplicationFactory<Program>` uses the `Program` class that .NET 10 generates. Keep it generated: a hand-written `public partial class Program` trips an analyzer.

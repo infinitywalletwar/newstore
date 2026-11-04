@@ -6,7 +6,7 @@
 
 **Architecture:** One shared library, `NewStore.ServiceDefaults`, gives every service the same health endpoints and OpenTelemetry setup. Catalog is the first service to use it, with a readiness check on its own PostgreSQL database. The whole local stack runs from one `compose.yaml` at the repository root. All telemetry goes to an OpenTelemetry Collector, which for now only prints it. Phase 4 points the collector at Grafana's backends without touching any service.
 
-**Tech Stack:** .NET 10 (SDK 10.0.401), ASP.NET Core minimal hosting, Npgsql 10, OpenTelemetry .NET 1.20, xUnit 4 on Microsoft Testing Platform, Testcontainers 4.16, Docker Compose, GitHub Actions.
+**Tech Stack:** .NET 10 (SDK 10.0.403), ASP.NET Core minimal hosting, Npgsql 10, OpenTelemetry .NET 1.20, xUnit 4 on Microsoft Testing Platform, Testcontainers 4.16, Docker Compose, GitHub Actions.
 
 **Spec:** [`README.md`](../../README.md): the Phases table (row 0), Constraints, How we work and Decision records. Also [`AGENTS.md`](../../AGENTS.md).
 
@@ -28,13 +28,13 @@ Every task follows `AGENTS.md`: its sections on git and the board, code, tests a
   - `redis:8.10.3`
   - `quay.io/keycloak/keycloak:26.8.1`
   - `otel/opentelemetry-collector-contrib:0.164.0`
-  - `mcr.microsoft.com/dotnet/sdk:10.0.401` and `mcr.microsoft.com/dotnet/aspnet:10.0.14`
+  - `mcr.microsoft.com/dotnet/sdk:10.0.403` and `mcr.microsoft.com/dotnet/aspnet:10.0.14`
 - The Phase 0 host ports were all free on the owner's Mac on 2026-11-03.
 
 ## Review Focus
 
 1. **Missing or empty connection string:** Catalog refuses to start, with a message naming `ConnectionStrings:Catalog`. Test: `Startup_fails_when_connection_string_is_missing` (Task 3).
-2. **Hanging database:** the server accepts no connection and never answers. `/health/ready` answers 503 within 5 seconds instead of hanging the probe. Test: `Ready_answers_within_five_seconds_when_database_hangs` (Task 3).
+2. **Hanging database:** the server accepts the TCP connection and never answers. `/health/ready` answers 503 within 5 seconds instead of hanging the probe. Test: `Ready_answers_within_five_seconds_when_database_hangs` (Task 3; Task 5 makes it independent of the network).
 3. **Database down:**
    - `/health/live` stays 200, so an orchestrator doesn't restart a process that is fine.
    - `/health/ready` returns exactly `Unhealthy`, with no exception text that would leak internals.
@@ -75,6 +75,7 @@ newstore/
 │   ├── HealthEndpointTests.cs
 │   ├── HealthWithoutDatabaseTests.cs
 │   ├── StartupTests.cs
+│   ├── SpanSink.cs                       thread-safe list for the in-memory exporter
 │   └── TracingTests.cs
 └── docs/
     ├── adr/template.md  0001-…  0002-…  0003-…
@@ -424,7 +425,7 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build-test:
     runs-on: ubuntu-24.04
@@ -460,12 +461,12 @@ gh api -X PUT repos/{owner}/newstore/branches/main/protection --input - <<'EOF'
 EOF
 ```
 
-Required reviews stay off. The owner's account opens these PRs, and GitHub doesn't let anyone approve their own PR.
+Required reviews stay off. The owner's account opens these PRs, and GitHub doesn't let anyone approve their own PR. Task 7 adds `compose-smoke` to the required checks once GitHub has seen that check name.
 
 **Walkthrough points:**
 - A main branch that is always green.
 - Least-privilege `GITHUB_TOKEN` permissions.
-- Cancelling outdated runs.
+- Cancelling outdated runs on pull requests, but never on `main`, so every merge commit keeps its own result.
 - Why the format check runs before the build.
 - Pinning actions by tag here versus by commit SHA. SHA pinning is safer against supply-chain attacks, so it's a Phase 7 hardening item.
 - Interview question: "How do you keep the main branch releasable?"
@@ -476,10 +477,12 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
 
 **Files:**
 - Create: `src/Shared/ServiceDefaults/Telemetry/TelemetryExtensions.cs`
-- Create: `tests/Catalog.Tests/TracingTests.cs`
+- Create: `tests/Catalog.Tests/TracingTests.cs`, `tests/Catalog.Tests/SpanSink.cs`
 - Modify: `ServiceDefaultsExtensions.cs`, which now calls `AddDefaultTelemetry`
-- Modify: `CatalogAppFactory.cs`, which gains `ExportedSpans`
-- Modify: `tests/Catalog.Tests/HealthWithoutDatabaseTests.cs`, which gains one test
+- Modify: `CatalogAppFactory.cs`, which gains `ExportedSpans` and runs the app in the `Testing` environment
+- Modify: `PostgresCatalogAppFactory.cs`, which becomes an assembly fixture, and `HealthEndpointTests.cs`, which takes it through its constructor
+- Modify: `tests/Catalog.Tests/HealthWithoutDatabaseTests.cs`, which gains one test and a hanging database that doesn't depend on the network
+- Modify: `tests/Catalog.Tests/StartupTests.cs`, which tests a missing key as well as an empty one
 - Modify: `Directory.Packages.props` and both `.csproj` files:
   - ServiceDefaults gets the OpenTelemetry packages:
     - `OpenTelemetry.Extensions.Hosting`
@@ -501,10 +504,21 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
       public static IHostApplicationBuilder AddDefaultTelemetry(this IHostApplicationBuilder builder);
   }
 
+  // tests/Catalog.Tests/SpanSink.cs: an ICollection<Activity> that guards a List<Activity> with a
+  // System.Threading.Lock and adds Activity[] Snapshot(). The exporter adds spans on request threads
+  // while tests read, and List<T> is not safe for that: Add raises the count before it writes the item.
+  public sealed class SpanSink : ICollection<Activity>
+  {
+      public Activity[] Snapshot();
+  }
+
   // CatalogAppFactory, added in ConfigureWebHost through ConfigureTestServices:
   // services.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(ExportedSpans))
-  public List<Activity> ExportedSpans { get; }
+  public SpanSink ExportedSpans { get; }
   ```
+
+- `CatalogAppFactory.ConfigureWebHost` also calls `builder.UseEnvironment("Testing")`. Tests then don't read `appsettings.Development.json`, which is meant for `dotnet run`: a connection string or an `OTEL_EXPORTER_OTLP_ENDPOINT` added there can't leak into a test. Outside Development, the host stops validating scopes and the service graph on build, so the factory turns both back on (`ValidateScopes` and `ValidateOnBuild`). Check against Microsoft Learn which hook applies them under `WebApplicationFactory` with minimal hosting.
+- `PostgresCatalogAppFactory` becomes an xUnit v3 assembly fixture: `[assembly: AssemblyFixture(typeof(PostgresCatalogAppFactory))]` in its file. `HealthEndpointTests` and `TracingTests` take it as a constructor argument and drop `IClassFixture`, so one container and one app serve the whole run. Tests that share it must not assume the span list starts empty.
 
 - `AddDefaultTelemetry` does the following:
   - **Service name:** the `OTEL_SERVICE_NAME` setting if present, otherwise `builder.Environment.ApplicationName`.
@@ -515,11 +529,11 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
 
 - [ ] **Step 1: Write the failing tests**
 
-`TracingTests(PostgresCatalogAppFactory factory) : IClassFixture<PostgresCatalogAppFactory>`
+`TracingTests(PostgresCatalogAppFactory factory)`, with no `IClassFixture`: the factory is the assembly fixture.
 
-The private helper `Task<Activity> WaitForSpanAsync(string path, CancellationToken ct)` polls `factory.ExportedSpans.ToArray()` every 50 ms, for up to 5 seconds, for a span whose `url.path` tag equals `path`. If none appears, it fails the test.
+The private helper `Task<Activity> WaitForSpanAsync(string path, CancellationToken ct)` polls `factory.ExportedSpans.Snapshot()` every 50 ms, for up to 5 seconds, for a span whose `url.path` tag equals `path`. If none appears, it fails the test.
 
-Server spans end just after the response reaches the client, so tests wait for a span instead of reading the list at once. `ToArray()` is safe to call while the exporter appends, but enumerating the list directly isn't.
+Server spans end just after the response reaches the client, so tests wait for a span instead of reading the list at once. The exporter adds spans on the request thread while the test reads, so `SpanSink` guards its list with a lock and tests read a `Snapshot()`.
 
 ```csharp
 [Fact] Request_to_unknown_path_is_traced
@@ -542,11 +556,35 @@ In `HealthWithoutDatabaseTests`:
     // GET /health/live → 200 "Healthy"; GET /no-such-page → 404
 ```
 
+Also in `HealthWithoutDatabaseTests`, make the hanging database local. `10.255.255.1` hangs only on a network that silently drops the connection attempt. Offline, or where a router answers "unreachable", the connect fails at once and the test passes without reaching the timeout. Replace it inside `Ready_answers_within_five_seconds_when_database_hangs`:
+
+```csharp
+// A listener that is started but never accepts: the kernel completes the TCP handshake, then nothing
+// answers, so Npgsql waits for the server's first message until the health check's 3-second timeout
+// cancels it. Timeout=30 stays, so only the health check's timeout can end the wait in time.
+using var silentServer = new TcpListener(IPAddress.Loopback, 0);
+silentServer.Start();
+var port = ((IPEndPoint)silentServer.LocalEndpoint).Port;
+await using var factory = FactoryFor(
+    $"Host=127.0.0.1;Port={port};Database=catalog;Username=catalog;Password=catalog;Timeout=30");
+```
+
+In `StartupTests`, the `Testing` environment leaves the key absent, so test both shapes:
+
+```csharp
+[Theory] [InlineData(null)] [InlineData("")]
+Startup_fails_when_connection_string_is_missing_or_empty(string? value)
+    // null: no Settings entry, so the key is absent; "": the key is set and empty
+    // Assert.Throws<InvalidOperationException>(() => factory.CreateClient()); message contains "ConnectionStrings:Catalog"
+```
+
 - [ ] **Step 2: Run the tests and watch them fail**
 
 Run: `dotnet test --solution NewStore.slnx`
 
 Expected: the two tracing tests fail, because no spans are exported. If `ExportedSpans` is missing, compilation fails instead.
+
+The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove `timeout:` from `AddPostgres` and watch it fail at about 30 seconds, then put the timeout back.
 
 - [ ] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
 
@@ -554,7 +592,7 @@ Expected: the two tracing tests fail, because no spans are exported. If `Exporte
 
 Run: `dotnet test --solution NewStore.slnx`
 
-Expected: 9 tests pass.
+Expected: 10 tests pass. The startup theory counts as two.
 
 - [ ] **Step 5: Commit, push and open a PR**
 
@@ -564,6 +602,10 @@ Commit with the message `feat(observability): OpenTelemetry traces, metrics and 
 - The three signals: traces, metrics and logs.
 - OTLP, and why services talk only to a collector.
 - Why health checks are filtered out, and how the filter also drops the child spans, because of parent-based sampling.
+- Why `List<T>` needs a lock when the exporter writes and the test reads.
+- Fixture scope (class, collection, assembly) as the knob that keeps integration suites fast, and what sharing one app costs.
+- A test environment of its own, and the DI validation it would silently turn off.
+- A test that can pass without testing anything: how to prove it fails when the code it guards is removed.
 - `service.name`.
 - W3C `traceparent` propagation, which Phase 1 relies on across services.
 - Interview question: "How would you follow one request across five services?"
@@ -631,7 +673,8 @@ services:
       - postgres-data:/var/lib/postgresql   # PostgreSQL 18 moved its volume here from /var/lib/postgresql/data
       - ./deploy/compose/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      # Over TCP: while init.sql runs, the entrypoint's temporary server listens only on the Unix socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -743,7 +786,7 @@ Add these lines to the "Commands" section of `AGENTS.md`:
 Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keycloak, Redis and the collector`.
 
 **Walkthrough points:**
-- Health checks plus `depends_on` conditions.
+- Health checks plus `depends_on` conditions, and why `pg_isready` needs `-h 127.0.0.1`: without it, Compose can call PostgreSQL healthy while `init.sql` is still running.
 - KRaft versus ZooKeeper. Kafka 4 removed ZooKeeper entirely.
 - Advertised listeners, the classic "works inside the container, fails from my laptop" bug.
 - Why topics aren't created automatically.
@@ -775,7 +818,7 @@ Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keyclo
 - [ ] **Step 1: Write the Dockerfile**
 
 ```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj src/Shared/ServiceDefaults/
@@ -811,17 +854,25 @@ The `.csproj` files are copied before the source so the restore layer is cached 
     depends_on:
       postgres: { condition: service_healthy }
       otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 ```
 
-The image has no curl, so Compose gets no health check for Catalog. Readiness is probed from outside, as the CI job below does and as Kubernetes probes do in Phase 5.
+Without a health check, `docker compose up --wait` would return as soon as the container runs, before Kestrel listens, and the first `curl` would get no answer. With it, `--wait` returns only once `/health/ready` is 200. Kubernetes replaces the probe with an HTTP probe in Phase 5.
 
 - [ ] **Step 3: Check it on the Mac**
 
 | Command | Expected |
 |---|---|
 | `docker compose up -d --build --wait` | exit code 0 |
-| `curl -s -w ' %{http_code}\n' http://localhost:8101/health/ready` | `Healthy 200` (retry for a few seconds right after start) |
+| `curl -s -w ' %{http_code}\n' http://localhost:8101/health/ready` | `Healthy 200` |
+| `docker compose ps catalog --format '{{.Health}}'` | `healthy` |
 | `docker compose exec catalog id -u` | `1654` |
 | `curl -s -o /dev/null http://localhost:8101/no-such-page`, wait 5 s, then `docker compose logs otel-collector \| grep -c "service.name: Str(catalog)"` | at least `1` |
 | `docker compose stop postgres`, then `curl -s -w ' %{http_code}\n' http://localhost:8101/health/ready`, then `docker compose start postgres` | `Unhealthy 503`, then `Healthy 200` after the restart |
@@ -837,6 +888,7 @@ The image has no curl, so Compose gets no health check for Catalog. Readiness is
       - name: Start the stack
         run: docker compose up --build --detach --wait --wait-timeout 240
       - name: Catalog is ready
+        # --wait already waited for Catalog's health check; the retry is a second line of defence.
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
       - name: Show logs
         if: failure()
@@ -861,10 +913,22 @@ The image has no curl, so Compose gets no health check for Catalog. Readiness is
 2. Push and open the PR.
 3. Run `gh pr checks --watch`. Expected: `build-test` and `compose-smoke` both pass.
 
+- [ ] **Step 7: Require the new check**
+
+GitHub lists only check names it has seen, so this runs after the first green `compose-smoke` run. Until then the smoke test is advisory, and a red run wouldn't block a merge.
+
+```bash
+gh api -X PATCH repos/{owner}/newstore/branches/main/protection/required_status_checks --input - <<'EOF'
+{"strict":true,"contexts":["build-test","compose-smoke"]}
+EOF
+```
+
+Run `gh api repos/{owner}/newstore/branches/main/protection/required_status_checks --jq .contexts`. Expected: both names.
+
 **Walkthrough points:**
 - Multi-stage builds and layer caching.
 - Non-root containers.
-- Why the image has no curl.
+- Why the image has no curl, and how the health check works without it.
 - How `ConnectionStrings__Catalog` becomes `GetConnectionString("Catalog")`.
 - `depends_on` with health conditions.
 - Interview question: "Why does the order of `COPY` lines in a Dockerfile matter?"
