@@ -155,7 +155,7 @@ git add -A
 git commit -m "chore: repository skeleton"
 ```
 
-- [ ] **Step 8 (owner's go-ahead required): Create the GitHub repository**
+- [x] **Step 8 (owner's go-ahead required): Create the GitHub repository**
 
 On 2026-11-04 the owner chose a public repository under the `infinitywalletwar` account. Confirm with the owner just before running:
 
@@ -185,11 +185,11 @@ There's no pull request yet, so give this task's walkthrough in chat.
   - Issues for Tasks 3 to 7. Later PRs close them with `Closes #<n>`.
   - The project board.
 
-- [ ] **Step 1: Create labels**
+- [x] **Step 1: Create labels**
 
 Create these labels: `story`, `task`, and `phase-0` through `phase-7`.
 
-- [ ] **Step 2: Create one issue per user story**
+- [x] **Step 2: Create one issue per user story**
 
 - Title: the ID and short name from this table, for example `C-1 Reserve a copy`.
 - Body: the story and its acceptance criteria, copied word for word from `README.md`.
@@ -204,13 +204,13 @@ Create these labels: `story`, `task`, and `phase-0` through `phase-7`.
 
 Expected: 20 story issues.
 
-- [ ] **Step 3: Create one issue per remaining Phase 0 task**
+- [x] **Step 3: Create one issue per remaining Phase 0 task**
 
 - Create issues for Tasks 3 to 7 of this plan.
 - Title: the task name. Body: a link to the task in this plan, plus its verification.
 - Labels: `task` and `phase-0`.
 
-- [ ] **Step 4: Create the project and its Status options**
+- [x] **Step 4: Create the project and its Status options**
 
 1. Run `gh project create --owner @me --title newstore`.
 2. Get the ID of the Status field with `gh project field-list <number> --owner @me --format json`.
@@ -227,7 +227,7 @@ The API can't do these, so the owner does them in the browser:
 - Set a limit of 2 on the In progress column.
 - Turn on the built-in workflows "Item closed → Done" and "Pull request merged → Done".
 
-- [ ] **Step 6: Write the sprint note**
+- [x] **Step 6: Write the sprint note**
 
 Write `docs/sprints/sprint-01.md` with these parts:
 
@@ -236,7 +236,7 @@ Write `docs/sprints/sprint-01.md` with these parts:
 - The issue numbers from Step 3.
 - Empty **Review** and **Retro** headings for the owner to fill in at the end of the sprint. The Retro heading has three prompts: What I learned, What was hard, Open questions.
 
-- [ ] **Step 7: Open the first pull request**
+- [x] **Step 7: Open the first pull request**
 
 On branch `phase-0/board`, commit the sprint note with the message `docs: sprint 1 plan`, push it and open a PR.
 
