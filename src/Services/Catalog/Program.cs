@@ -13,7 +13,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddNpgsqlDataSource(connectionString);
-builder.Services.AddHealthChecks().AddPostgres();
+builder.Services.AddHealthChecks().AddPostgres(connectionString);
 
 var app = builder.Build();
 

@@ -32,8 +32,10 @@ public class TracingTests(PostgresCatalogAppFactory factory)
 
         var spans = factory.ExportedSpans.Snapshot();
         Assert.DoesNotContain(spans, s => (s.GetTagItem("url.path") as string)?.StartsWith("/health") == true);
-        // The readiness query is a child of the dropped request, so it is dropped as well.
-        Assert.DoesNotContain(spans, s => s.Source.Name == "Npgsql");
+        // The readiness query is a child of the dropped request, so it is dropped as well. Match the query,
+        // not every Npgsql span: ActivitySource is process-wide, so a span from another test's app
+        // (for example a CONNECT in the exhausted-pool test) reaches this app's exporter too.
+        Assert.DoesNotContain(spans, s => s.Source.Name == "Npgsql" && s.GetTagItem("db.query.text") as string == "SELECT 1");
     }
 
     /// <summary>Server spans end just after the response reaches the client, so poll for the span.</summary>
