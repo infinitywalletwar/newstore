@@ -21,3 +21,20 @@ jobs:
       - run: dotnet format NewStore.slnx --verify-no-changes --no-restore
       - run: dotnet build NewStore.slnx -c Release --no-restore
       - run: dotnet test --solution NewStore.slnx -c Release --no-build
+
+  compose-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Start the stack
+        run: docker compose up --build --detach --wait --wait-timeout 240
+      - name: Catalog is ready
+        # --wait already waited for Catalog's health check; the retry is a second line of defence.
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
+      - name: Show logs
+        if: failure()
+        run: docker compose logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

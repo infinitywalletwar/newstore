@@ -77,5 +77,27 @@ services:
     ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
     deploy: { resources: { limits: { memory: 256m } } }
 
+  catalog:
+    build:
+      context: .
+      dockerfile: src/Services/Catalog/Dockerfile
+    image: newstore/catalog:local
+    environment:
+      ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: catalog
+    ports: ["127.0.0.1:8101:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
 volumes:
   postgres-data:
