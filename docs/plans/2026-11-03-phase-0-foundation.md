@@ -417,7 +417,7 @@ Commit with the message `feat(catalog): service with liveness and readiness chec
   - A check named `build-test` on every pull request and every push to `main`. Task 7 adds a second job to this workflow.
   - The commit SHAs `actions/checkout` and `actions/setup-dotnet` are pinned to. Task 7's job reuses the `actions/checkout` pin.
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
 
 ```yaml
 name: ci
@@ -447,7 +447,7 @@ jobs:
 
 Pin each action to the full 40-character commit SHA of its latest release in that major version, with the exact tag in the trailing comment. Find the latest tag with `gh release view --repo actions/checkout --json tagName`, then the SHA with `gh api repos/actions/checkout/git/ref/tags/<tag> --jq '.object'`. If `.object.type` is `tag` (an annotated tag), dereference it: `gh api repos/actions/checkout/git/tags/<that sha> --jq .object.sha`. Do the same for `actions/setup-dotnet`.
 
-- [ ] **Step 2: Add Dependabot, the audit policy and the ignore rules**
+- [x] **Step 2: Add Dependabot, the audit policy and the ignore rules**
 
 1. `.github/dependabot.yml`, version 2, with two entries, both `directory: "/"` and a weekly schedule:
    - `github-actions`, so the SHA pins get update PRs that keep the tag comment current
@@ -464,11 +464,11 @@ Pin each action to the full 40-character commit SHA of its latest release in tha
 
 Run `dotnet build NewStore.slnx`. Expected: 0 warnings, 0 errors.
 
-- [ ] **Step 3: Run the same steps locally**
+- [x] **Step 3: Run the same steps locally**
 
 Run `dotnet format NewStore.slnx --verify-no-changes`. Expected: exit code 0. If it reports changes, run `dotnet format NewStore.slnx` and commit the result.
 
-- [ ] **Step 4: Commit, push, open a PR and watch it**
+- [x] **Step 4: Commit, push, open a PR and watch it**
 
 1. Commit with the message `ci: build, format check and tests`. Dependabot, the audit policy and the ignore rules go in a second commit, `build: Dependabot, NuGet audit policy and infrastructure ignores`.
 2. Push and open the PR.
