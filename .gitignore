@@ -480,3 +480,13 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Infrastructure state and credentials (Phase 6 adds Terraform and EKS)
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+.terraform/
+kubeconfig*
+*.pem
+*.key
