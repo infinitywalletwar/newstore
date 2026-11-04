@@ -78,7 +78,7 @@ newstore/
 │   ├── SpanSink.cs                       thread-safe list for the in-memory exporter
 │   └── TracingTests.cs
 └── docs/
-    ├── adr/template.md  0001-…  0002-…  0003-…
+    ├── adr/template.md  0001-…  0002-…  0003-…  0004-…
     ├── plans/                     this plan
     └── sprints/sprint-01.md
 ```
@@ -474,7 +474,7 @@ Run `dotnet format NewStore.slnx --verify-no-changes`. Expected: exit code 0. If
 2. Push and open the PR.
 3. Run `gh pr checks --watch`. Expected: `build-test` passes. The Testcontainers tests use the runner's Docker.
 
-- [ ] **Step 5: Require the check**
+- [x] **Step 5: Require the check**
 
 The repository is public, so GitHub's Free plan allows branch protection.
 
@@ -516,6 +516,11 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
     - `OpenTelemetry.Instrumentation.Runtime`
     - `Npgsql.OpenTelemetry`
   - The tests get `OpenTelemetry.Exporter.InMemory`.
+  - ServiceDefaults also gets `Npgsql.DependencyInjection`, for the readiness check's own data source (Step 6).
+- Modify: `src/Shared/ServiceDefaults/HealthChecks/HealthCheckExtensions.cs` and `PostgresHealthCheck.cs`, so the readiness check gets a connection pool of its own (Step 6)
+- Modify: `src/Services/Catalog/Program.cs`, which passes the connection string to `AddPostgres`
+- Modify: `tests/Catalog.Tests/HealthEndpointTests.cs`, which gains one test for a busy request pool
+- Create: `docs/adr/0001-readiness-check-has-its-own-connection-pool.md`
 
 **Interfaces:**
 - Consumes: `AddServiceDefaults`, `CatalogAppFactory` and `PostgresCatalogAppFactory` from Task 3.
@@ -539,6 +544,10 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
   // CatalogAppFactory, added in ConfigureWebHost through ConfigureTestServices:
   // services.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(ExportedSpans))
   public SpanSink ExportedSpans { get; }
+
+  // NewStore.ServiceDefaults.HealthChecks.HealthCheckExtensions, changed in Step 6:
+  public const string HealthDataSourceKey = "health";
+  public static IHealthChecksBuilder AddPostgres(this IHealthChecksBuilder builder, string connectionString);
   ```
 
 - `CatalogAppFactory.ConfigureWebHost` also calls `builder.UseEnvironment("Testing")`. Tests then don't read `appsettings.Development.json`, which is meant for `dotnet run`: a connection string or an `OTEL_EXPORTER_OTLP_ENDPOINT` added there can't leak into a test. Outside Development, the host stops validating scopes and the service graph on build, so the factory turns both back on (`ValidateScopes` and `ValidateOnBuild`). Check against Microsoft Learn which hook applies them under `WebApplicationFactory` with minimal hosting.
@@ -547,11 +556,11 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
 - `AddDefaultTelemetry` does the following:
   - **Service name:** the `OTEL_SERVICE_NAME` setting if present, otherwise `builder.Environment.ApplicationName`.
   - **Traces:** ASP.NET Core instrumentation, with a `Filter` that drops requests whose path starts with the segment `/health`, plus HttpClient and `AddNpgsql()`.
-  - **Metrics:** ASP.NET Core, HttpClient and Runtime.
+  - **Metrics:** ASP.NET Core, HttpClient, Runtime and Npgsql, so connection-pool exhaustion shows on a dashboard once readiness no longer reports it (Step 6). Take the meter extension's name from `Npgsql.OpenTelemetry`'s documentation.
   - **Logs:** `builder.Logging.AddOpenTelemetry` with `IncludeFormattedMessage` and `IncludeScopes`.
   - **Export:** `UseOtlpExporter()`, but only when the `OTEL_EXPORTER_OTLP_ENDPOINT` setting isn't empty. Tracing is always registered, so tests can attach the in-memory exporter.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `TracingTests(PostgresCatalogAppFactory factory)`, with no `IClassFixture`: the factory is the assembly fixture.
 
@@ -584,13 +593,14 @@ Also in `HealthWithoutDatabaseTests`, make the hanging database local. `10.255.2
 
 ```csharp
 // A listener that is started but never accepts: the kernel completes the TCP handshake, then nothing
-// answers, so Npgsql waits for the server's first message until the health check's 3-second timeout
-// cancels it. Timeout=30 stays, so only the health check's timeout can end the wait in time.
+// answers, so Npgsql waits for the server's first message until the health pool's own connect Timeout
+// (3 seconds, set in AddPostgres) ends it. Timeout=30 stays in this connection string, so only that
+// override can end the wait in time.
 using var silentServer = new TcpListener(IPAddress.Loopback, 0);
 silentServer.Start();
 var port = ((IPEndPoint)silentServer.LocalEndpoint).Port;
 await using var factory = FactoryFor(
-    $"Host=127.0.0.1;Port={port};Database=catalog;Username=catalog;Password=catalog;Timeout=30");
+    $"Host=127.0.0.1;Port={port};Database=catalog;Username=catalog;Password=catalog;Timeout=30;SSL Mode=Disable");
 ```
 
 In `StartupTests`, the `Testing` environment leaves the key absent, so test both shapes:
@@ -602,25 +612,52 @@ Startup_fails_when_connection_string_is_missing_or_empty(string? value)
     // Assert.Throws<InvalidOperationException>(() => factory.CreateClient()); message contains "ConnectionStrings:Catalog"
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `dotnet test --solution NewStore.slnx`
 
 Expected: the two tracing tests fail, because no spans are exported. If `ExportedSpans` is missing, compilation fails instead.
 
-The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove `timeout:` from `AddPostgres` and watch it fail at about 30 seconds, then put the timeout back.
+The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove the `Timeout` override from the health pool's connection string in `AddPostgres` and watch it fail at about 30 seconds, then put the override back. (Added in a fix round: the cancellation token does not reach Npgsql's startup handshake, so `timeout:` alone does not end this wait.)
 
-- [ ] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
+- [x] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `dotnet test --solution NewStore.slnx`
 
 Expected: 10 tests pass. The startup theory counts as two.
 
-- [ ] **Step 5: Commit, push and open a PR**
+- [x] **Step 5: Commit**
 
-Commit with the message `feat(observability): OpenTelemetry traces, metrics and logs`. Expected: CI is green.
+Commit with the message `feat(observability): OpenTelemetry traces, metrics and logs`.
+
+- [x] **Step 6: Give the readiness check its own connection pool**
+
+The check now borrows a connection from the pool that serves requests. When traffic fills that pool, the check waits for a free connection, its 3-second timeout fires, and readiness reports Unhealthy. Kubernetes then takes a pod that is only busy out of rotation, and its load moves to pods that are just as busy. A readiness probe should fail only when the pod can't do its job at all.
+
+1. Write the failing test in `HealthEndpointTests`. It builds its own app on the fixture's container with a request pool of one connection, and holds that connection:
+
+   ```csharp
+   [Fact] Ready_stays_healthy_when_request_pool_is_exhausted
+       // csb = new NpgsqlConnectionStringBuilder(factory.Settings["ConnectionStrings:Catalog"]) { MaxPoolSize = 1, Timeout = 30 }
+       // await using var busyApp = new CatalogAppFactory { Settings = { ["ConnectionStrings:Catalog"] = csb.ConnectionString } }
+       // using var client = busyApp.CreateClient()
+       // await using var held = await busyApp.Services.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(ct)
+       // GET /health/ready → 200 "Healthy", in under 5 seconds (Stopwatch)
+   ```
+
+2. Run it alone. Expected: FAIL with 503 after about 3 seconds, because the check waits for the held connection.
+3. Implement. `AddPostgres(connectionString)` registers a keyed `NpgsqlDataSource` under `HealthDataSourceKey` with `services.AddNpgsqlDataSource(..., serviceKey: HealthDataSourceKey)`. It is built from the same connection string with `MaxPoolSize = 2`, through `NpgsqlConnectionStringBuilder`. The check is registered through a `HealthCheckRegistration` whose factory passes `GetRequiredKeyedService<NpgsqlDataSource>(HealthDataSourceKey)` to `PostgresHealthCheck`, with the same name, failure status and 3-second timeout as before. `Program.cs` calls `AddPostgres(connectionString)`. `Degraded` isn't needed: the request pool's state no longer reaches the check.
+4. Run `dotnet test --solution NewStore.slnx`. Expected: 11 tests pass.
+5. Write `docs/adr/0001-readiness-check-has-its-own-connection-pool.md` from `docs/adr/template.md`, status Accepted. It compares sharing the request pool with a pool of its own:
+   - **A shared pool:** readiness also reports a full pool, and under load that turns into a readiness cascade.
+   - **A pool of its own:** readiness answers "is PostgreSQL reachable?". It stays green while requests queue for a connection, so pool exhaustion has to show in the Npgsql metrics and alerts instead.
+6. Commit with the message `fix(health): readiness check gets its own connection pool`.
+
+- [x] **Step 7: Push and open a PR**
+
+Expected: CI is green.
 
 **Walkthrough points:**
 - The three signals: traces, metrics and logs.
@@ -630,6 +667,8 @@ Commit with the message `feat(observability): OpenTelemetry traces, metrics and 
 - Fixture scope (class, collection, assembly) as the knob that keeps integration suites fast, and what sharing one app costs.
 - A test environment of its own, and the DI validation it would silently turn off.
 - A test that can pass without testing anything: how to prove it fails when the code it guards is removed.
+- A readiness probe fails only when the pod can't do its job, never because it is busy. What a pool of its own costs: a full request pool now shows only in metrics.
+- Interview question: "Your readiness probe checks the database. What happens to the fleet during a traffic spike?"
 - `service.name`.
 - W3C `traceparent` propagation, which Phase 1 relies on across services.
 - Interview question: "How would you follow one request across five services?"
@@ -640,8 +679,8 @@ Commit with the message `feat(observability): OpenTelemetry traces, metrics and 
 
 **Files:**
 - Create: `compose.yaml`, `deploy/compose/postgres/init.sql`, `deploy/compose/otel-collector/config.yaml`
-- Create: `docs/adr/0001-one-postgres-server-with-a-database-and-role-per-service.md`
-- Create: `docs/adr/0002-all-telemetry-goes-through-the-collector.md`
+- Create: `docs/adr/0002-one-postgres-server-with-a-database-and-role-per-service.md`
+- Create: `docs/adr/0003-all-telemetry-goes-through-the-collector.md`
 - Modify: `AGENTS.md`, "Commands" section
 
 **Interfaces:**
@@ -793,10 +832,10 @@ Then run `dotnet run --project src/Services/Catalog`, and in a second terminal r
 
 - [ ] **Step 5: Write the decision records and the commands**
 
-Write `0001` and `0002` from `docs/adr/template.md`:
+Write `0002` and `0003` from `docs/adr/template.md`:
 
-- **0001** compares one PostgreSQL container per service with one server. On one server, the role per service plus `REVOKE … FROM PUBLIC` keeps the rule "each service reads only its own database" enforced by the database itself. In AWS, RDS can do the same, or split later.
-- **0002** compares services exporting straight to the backends, or to the Aspire dashboard, with exporting through the collector. Through the collector, services never change when the backends do (Phase 4).
+- **0002** compares one PostgreSQL container per service with one server. On one server, the role per service plus `REVOKE … FROM PUBLIC` keeps the rule "each service reads only its own database" enforced by the database itself. In AWS, RDS can do the same, or split later.
+- **0003** compares services exporting straight to the backends, or to the Aspire dashboard, with exporting through the collector. Through the collector, services never change when the backends do (Phase 4).
 
 Add these lines to the "Commands" section of `AGENTS.md`:
 
@@ -825,7 +864,7 @@ Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keyclo
 
 **Files:**
 - Create: `src/Services/Catalog/Dockerfile`, `.dockerignore`
-- Create: `docs/adr/0003-dockerfiles-over-sdk-container-publishing.md`
+- Create: `docs/adr/0004-dockerfiles-over-sdk-container-publishing.md`
 - Modify: `compose.yaml`, which gets the `catalog` service
 - Modify: `.github/workflows/ci.yml`, which gets the `compose-smoke` job
 - Modify: `.github/dependabot.yml`, which gets a weekly `docker` entry for `src/Services/Catalog`, the Dockerfile's directory
@@ -923,9 +962,9 @@ Without a health check, `docker compose up --wait` would return as soon as the c
         run: docker compose down --volumes
 ```
 
-- [ ] **Step 5: Write ADR 0003 and update the status**
+- [ ] **Step 5: Write ADR 0004 and update the status**
 
-- **ADR 0003** compares a Dockerfile with `dotnet publish /t:PublishContainer`:
+- **ADR 0004** compares a Dockerfile with `dotnet publish /t:PublishContainer`:
   - SDK container publishing needs no Dockerfile and makes small, non-root images.
   - A Dockerfile is the skill that carries over to every other stack, and it shows every layer.
   - The decision is to use a Dockerfile now and try SDK publishing in Phase 6.
