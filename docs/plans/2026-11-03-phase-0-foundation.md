@@ -560,7 +560,7 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
   - **Logs:** `builder.Logging.AddOpenTelemetry` with `IncludeFormattedMessage` and `IncludeScopes`.
   - **Export:** `UseOtlpExporter()`, but only when the `OTEL_EXPORTER_OTLP_ENDPOINT` setting isn't empty. Tracing is always registered, so tests can attach the in-memory exporter.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `TracingTests(PostgresCatalogAppFactory factory)`, with no `IClassFixture`: the factory is the assembly fixture.
 
@@ -611,7 +611,7 @@ Startup_fails_when_connection_string_is_missing_or_empty(string? value)
     // Assert.Throws<InvalidOperationException>(() => factory.CreateClient()); message contains "ConnectionStrings:Catalog"
 ```
 
-- [ ] **Step 2: Run the tests and watch them fail**
+- [x] **Step 2: Run the tests and watch them fail**
 
 Run: `dotnet test --solution NewStore.slnx`
 
@@ -619,19 +619,19 @@ Expected: the two tracing tests fail, because no spans are exported. If `Exporte
 
 The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove `timeout:` from `AddPostgres` and watch it fail at about 30 seconds, then put the timeout back.
 
-- [ ] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
+- [x] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [x] **Step 4: Run the tests and watch them pass**
 
 Run: `dotnet test --solution NewStore.slnx`
 
 Expected: 10 tests pass. The startup theory counts as two.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit with the message `feat(observability): OpenTelemetry traces, metrics and logs`.
 
-- [ ] **Step 6: Give the readiness check its own connection pool**
+- [x] **Step 6: Give the readiness check its own connection pool**
 
 The check now borrows a connection from the pool that serves requests. When traffic fills that pool, the check waits for a free connection, its 3-second timeout fires, and readiness reports Unhealthy. Kubernetes then takes a pod that is only busy out of rotation, and its load moves to pods that are just as busy. A readiness probe should fail only when the pod can't do its job at all.
 
@@ -654,7 +654,7 @@ The check now borrows a connection from the pool that serves requests. When traf
    - **A pool of its own:** readiness answers "is PostgreSQL reachable?". It stays green while requests queue for a connection, so pool exhaustion has to show in the Npgsql metrics and alerts instead.
 6. Commit with the message `fix(health): readiness check gets its own connection pool`.
 
-- [ ] **Step 7: Push and open a PR**
+- [x] **Step 7: Push and open a PR**
 
 Expected: CI is green.
 
