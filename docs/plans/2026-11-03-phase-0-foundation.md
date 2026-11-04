@@ -593,13 +593,14 @@ Also in `HealthWithoutDatabaseTests`, make the hanging database local. `10.255.2
 
 ```csharp
 // A listener that is started but never accepts: the kernel completes the TCP handshake, then nothing
-// answers, so Npgsql waits for the server's first message until the health check's 3-second timeout
-// cancels it. Timeout=30 stays, so only the health check's timeout can end the wait in time.
+// answers, so Npgsql waits for the server's first message until the health pool's own connect Timeout
+// (3 seconds, set in AddPostgres) ends it. Timeout=30 stays in this connection string, so only that
+// override can end the wait in time.
 using var silentServer = new TcpListener(IPAddress.Loopback, 0);
 silentServer.Start();
 var port = ((IPEndPoint)silentServer.LocalEndpoint).Port;
 await using var factory = FactoryFor(
-    $"Host=127.0.0.1;Port={port};Database=catalog;Username=catalog;Password=catalog;Timeout=30");
+    $"Host=127.0.0.1;Port={port};Database=catalog;Username=catalog;Password=catalog;Timeout=30;SSL Mode=Disable");
 ```
 
 In `StartupTests`, the `Testing` environment leaves the key absent, so test both shapes:
@@ -617,7 +618,7 @@ Run: `dotnet test --solution NewStore.slnx`
 
 Expected: the two tracing tests fail, because no spans are exported. If `ExportedSpans` is missing, compilation fails instead.
 
-The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove `timeout:` from `AddPostgres` and watch it fail at about 30 seconds, then put the timeout back.
+The changed hanging-database test passes before and after, because it tests code from Task 3. Prove it still tests something: run it alone and check that it takes about 3 seconds. Then remove the `Timeout` override from the health pool's connection string in `AddPostgres` and watch it fail at about 30 seconds, then put the override back. (Added in a fix round: the cancellation token does not reach Npgsql's startup handshake, so `timeout:` alone does not end this wait.)
 
 - [x] **Step 3: Implement `AddDefaultTelemetry` and call it from `AddServiceDefaults`**
 
