@@ -408,10 +408,14 @@ Commit with the message `feat(catalog): service with liveness and readiness chec
 ### Task 4: CI: build, format check and tests
 
 **Files:**
-- Create: `.github/workflows/ci.yml`
+- Create: `.github/workflows/ci.yml`, `.github/dependabot.yml`
+- Modify: `Directory.Build.props`, which gets the NuGet audit policy
+- Modify: `.gitignore`, which gets the infrastructure-secret patterns
 
 **Interfaces:**
-- Produces: a check named `build-test` on every pull request and every push to `main`. Task 7 adds a second job to this workflow.
+- Produces:
+  - A check named `build-test` on every pull request and every push to `main`. Task 7 adds a second job to this workflow.
+  - The commit SHAs `actions/checkout` and `actions/setup-dotnet` are pinned to. Task 7's job reuses the `actions/checkout` pin.
 
 - [ ] **Step 1: Write the workflow**
 
@@ -431,8 +435,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@<commit SHA> # v7.x.y
+      - uses: actions/setup-dotnet@<commit SHA> # v6.x.y
         with:
           global-json-file: global.json
       - run: dotnet restore NewStore.slnx
@@ -441,17 +445,36 @@ jobs:
       - run: dotnet test --solution NewStore.slnx -c Release --no-build
 ```
 
-- [ ] **Step 2: Run the same steps locally**
+Pin each action to the full 40-character commit SHA of its latest release in that major version, with the exact tag in the trailing comment. Find the latest tag with `gh release view --repo actions/checkout --json tagName`, then the SHA with `gh api repos/actions/checkout/git/ref/tags/<tag> --jq '.object'`. If `.object.type` is `tag` (an annotated tag), dereference it: `gh api repos/actions/checkout/git/tags/<that sha> --jq .object.sha`. Do the same for `actions/setup-dotnet`.
+
+- [ ] **Step 2: Add Dependabot, the audit policy and the ignore rules**
+
+1. `.github/dependabot.yml`, version 2, with two entries, both `directory: "/"` and a weekly schedule:
+   - `github-actions`, so the SHA pins get update PRs that keep the tag comment current
+   - `nuget`, with one group covering minor and patch updates (`patterns: ["*"]`, `update-types: [minor, patch]`), so a one-person project gets one PR a week rather than one per package
+
+   Task 7 adds a `docker` entry once a Dockerfile exists.
+2. `Directory.Build.props`, in the existing `PropertyGroup`:
+
+   ```xml
+   <!-- Low and moderate advisories, and an unreachable vulnerability source, warn; high and critical still fail. -->
+   <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900;NU1901;NU1902</WarningsNotAsErrors>
+   ```
+3. `.gitignore`: append a block headed `# Infrastructure state and credentials (Phase 6 adds Terraform and EKS)` with `*.tfstate`, `*.tfstate.*`, `*.tfvars`, `!example.tfvars`, `.terraform/`, `kubeconfig*`, `*.pem` and `*.key`. `.terraform.lock.hcl` stays committed, so don't list it.
+
+Run `dotnet build NewStore.slnx`. Expected: 0 warnings, 0 errors.
+
+- [ ] **Step 3: Run the same steps locally**
 
 Run `dotnet format NewStore.slnx --verify-no-changes`. Expected: exit code 0. If it reports changes, run `dotnet format NewStore.slnx` and commit the result.
 
-- [ ] **Step 3: Commit, push, open a PR and watch it**
+- [ ] **Step 4: Commit, push, open a PR and watch it**
 
-1. Commit with the message `ci: build, format check and tests`.
+1. Commit with the message `ci: build, format check and tests`. Dependabot, the audit policy and the ignore rules go in a second commit, `build: Dependabot, NuGet audit policy and infrastructure ignores`.
 2. Push and open the PR.
 3. Run `gh pr checks --watch`. Expected: `build-test` passes. The Testcontainers tests use the runner's Docker.
 
-- [ ] **Step 4: Require the check**
+- [ ] **Step 5: Require the check**
 
 The repository is public, so GitHub's Free plan allows branch protection.
 
@@ -468,7 +491,8 @@ Required reviews stay off. The owner's account opens these PRs, and GitHub doesn
 - Least-privilege `GITHUB_TOKEN` permissions.
 - Cancelling outdated runs on pull requests, but never on `main`, so every merge commit keeps its own result.
 - Why the format check runs before the build.
-- Pinning actions by tag here versus by commit SHA. SHA pinning is safer against supply-chain attacks, so it's a Phase 7 hardening item.
+- Actions pinned by commit SHA rather than by tag. A tag can be moved to other code, as happened to `tj-actions/changed-files` in March 2025 (CVE-2025-30066), when its moved tags leaked CI secrets. A SHA can't move, and Dependabot keeps the pins current.
+- Why low and moderate NuGet advisories only warn. With warnings as errors, a newly published advisory would turn `main` red with no commit and block an urgent fix. Dependabot turns it into a pull request instead, and high and critical advisories still fail the build.
 - Interview question: "How do you keep the main branch releasable?"
 
 ---
@@ -804,6 +828,7 @@ Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keyclo
 - Create: `docs/adr/0003-dockerfiles-over-sdk-container-publishing.md`
 - Modify: `compose.yaml`, which gets the `catalog` service
 - Modify: `.github/workflows/ci.yml`, which gets the `compose-smoke` job
+- Modify: `.github/dependabot.yml`, which gets a weekly `docker` entry for `src/Services/Catalog`, the Dockerfile's directory
 - Modify: `README.md`, Status line: Phase 0 done once this PR merges
 
 **Interfaces:**
@@ -884,7 +909,7 @@ Without a health check, `docker compose up --wait` would return as soon as the c
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@<the SHA from Task 4> # the same tag comment
       - name: Start the stack
         run: docker compose up --build --detach --wait --wait-timeout 240
       - name: Catalog is ready
