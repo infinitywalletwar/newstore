@@ -971,13 +971,13 @@ Without a health check, `docker compose up --wait` would return as soon as the c
 - Set the `README.md` Status line to: Phase 0 done, Phase 1 next.
 - Add `- Build the Catalog image: docker compose build catalog` to the "Commands" section of `AGENTS.md`.
 
-- [ ] **Step 6: Commit, push, open a PR and watch it**
+- [x] **Step 6: Commit, push, open a PR and watch it**
 
 1. Commit with the message `feat(catalog): container image and Compose smoke test in CI`.
 2. Push and open the PR.
 3. Run `gh pr checks --watch`. Expected: `build-test` and `compose-smoke` both pass.
 
-- [ ] **Step 7: Require the new check**
+- [x] **Step 7: Require the new check**
 
 GitHub lists only check names it has seen, so this runs after the first green `compose-smoke` run. Until then the smoke test is advisory, and a red run wouldn't block a merge.
 
