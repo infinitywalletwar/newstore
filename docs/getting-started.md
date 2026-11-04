@@ -15,7 +15,7 @@ On 2026-11-04 the owner:
 
 | Check | Command | Expected |
 |---|---|---|
-| .NET 10 SDK | `dotnet --list-sdks` | a line starting with `10.0.401` |
+| .NET 10 SDK | `dotnet --list-sdks` | a line starting with `10.0.403` |
 | Docker is running, on arm64 | `docker version --format '{{.Server.Arch}}'` | `arm64` (Docker runs on OrbStack) |
 | gh account and scopes | `gh auth status` | account `infinitywalletwar`, with `project`, `repo` and `workflow` among the scopes |
 | Tools | `command -v jq curl nc` | three paths |

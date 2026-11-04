@@ -6,7 +6,7 @@
 
 **Architecture:** One shared library, `NewStore.ServiceDefaults`, gives every service the same health endpoints and OpenTelemetry setup. Catalog is the first service to use it, with a readiness check on its own PostgreSQL database. The whole local stack runs from one `compose.yaml` at the repository root. All telemetry goes to an OpenTelemetry Collector, which for now only prints it. Phase 4 points the collector at Grafana's backends without touching any service.
 
-**Tech Stack:** .NET 10 (SDK 10.0.401), ASP.NET Core minimal hosting, Npgsql 10, OpenTelemetry .NET 1.20, xUnit 4 on Microsoft Testing Platform, Testcontainers 4.16, Docker Compose, GitHub Actions.
+**Tech Stack:** .NET 10 (SDK 10.0.403), ASP.NET Core minimal hosting, Npgsql 10, OpenTelemetry .NET 1.20, xUnit 4 on Microsoft Testing Platform, Testcontainers 4.16, Docker Compose, GitHub Actions.
 
 **Spec:** [`README.md`](../../README.md): the Phases table (row 0), Constraints, How we work and Decision records. Also [`AGENTS.md`](../../AGENTS.md).
 
@@ -28,7 +28,7 @@ Every task follows `AGENTS.md`: its sections on git and the board, code, tests a
   - `redis:8.10.3`
   - `quay.io/keycloak/keycloak:26.8.1`
   - `otel/opentelemetry-collector-contrib:0.164.0`
-  - `mcr.microsoft.com/dotnet/sdk:10.0.401` and `mcr.microsoft.com/dotnet/aspnet:10.0.14`
+  - `mcr.microsoft.com/dotnet/sdk:10.0.403` and `mcr.microsoft.com/dotnet/aspnet:10.0.14`
 - The Phase 0 host ports were all free on the owner's Mac on 2026-11-03.
 
 ## Review Focus
@@ -818,7 +818,7 @@ Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keyclo
 - [ ] **Step 1: Write the Dockerfile**
 
 ```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj src/Shared/ServiceDefaults/
