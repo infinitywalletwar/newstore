@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
     <ProjectReference Include="..\..\src\Services\Catalog\NewStore.Catalog.csproj" />
   </ItemGroup>
 </Project>

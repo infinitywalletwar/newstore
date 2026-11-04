@@ -1,6 +1,6 @@
 namespace NewStore.Catalog.Tests;
 
-public class HealthEndpointTests(PostgresCatalogAppFactory factory) : IClassFixture<PostgresCatalogAppFactory>
+public class HealthEndpointTests(PostgresCatalogAppFactory factory)
 {
     [Fact]
     public async Task Live_returns_healthy()
