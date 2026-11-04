@@ -90,3 +90,5 @@ Keep it to a few sentences per decision.
 - Build: `dotnet build NewStore.slnx`
 - Test everything: `dotnet test --solution NewStore.slnx` (needs Docker running, for Testcontainers)
 - One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`
+- Start the local stack: `docker compose up -d --wait`. Stop it: `docker compose down`. Wipe its data: `docker compose down -v`.
+- Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)

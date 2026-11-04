@@ -1,0 +1,17 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317   # the default is localhost, which other containers can't reach
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  debug/traces:
+    verbosity: detailed
+  debug:
+    verbosity: basic
+service:
+  pipelines:
+    traces:  { receivers: [otlp], exporters: [debug/traces] }
+    metrics: { receivers: [otlp], exporters: [debug] }
+    logs:    { receivers: [otlp], exporters: [debug] }
