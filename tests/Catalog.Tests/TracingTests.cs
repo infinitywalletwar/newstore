@@ -9,9 +9,12 @@ public class TracingTests(PostgresCatalogAppFactory factory)
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = factory.CreateClient();
+        // A path no other test requests: ActivitySource listeners are process-wide, so another app's
+        // span for a shared path could satisfy the wait without this app exporting anything.
+        var path = $"/no-such-page-{Guid.NewGuid():N}";
 
-        var response = await client.GetAsync("/no-such-page", ct);
-        var span = await WaitForSpanAsync("/no-such-page", ct);
+        var response = await client.GetAsync(path, ct);
+        var span = await WaitForSpanAsync(path, ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(ActivityKind.Server, span.Kind);

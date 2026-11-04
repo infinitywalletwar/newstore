@@ -43,8 +43,9 @@ public class HealthWithoutDatabaseTests
     {
         var ct = TestContext.Current.CancellationToken;
         // A listener that is started but never accepts: the kernel completes the TCP handshake, then nothing
-        // answers, so Npgsql waits for the server's first message until the health check's 3-second timeout
-        // cancels it. Timeout=30 stays, so only the health check's timeout can end the wait in time.
+        // answers, so Npgsql waits for the server's first message until the health pool's own connect Timeout
+        // (3 seconds, set in AddPostgres) ends it. Timeout=30 stays in this connection string, so only that
+        // override can end the wait in time.
         using var silentServer = new TcpListener(IPAddress.Loopback, 0);
         silentServer.Start();
         var port = ((IPEndPoint)silentServer.LocalEndpoint).Port;
