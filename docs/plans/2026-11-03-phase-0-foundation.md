@@ -689,7 +689,7 @@ Expected: CI is green.
   - For containers, Kafka listens on `kafka:9092`. For the Mac, it listens on `localhost:9094`.
   - The `catalog` database, owned by the role `catalog` with the password `catalog`.
 
-- [ ] **Step 1: Write `deploy/compose/postgres/init.sql`**
+- [x] **Step 1: Write `deploy/compose/postgres/init.sql`**
 
 ```sql
 CREATE ROLE catalog LOGIN PASSWORD 'catalog';
@@ -699,7 +699,7 @@ REVOKE ALL ON DATABASE catalog FROM PUBLIC;
 
 Each later service adds the same three lines for itself. PostgreSQL runs init scripts only when the data volume is empty, so after editing this file run `docker compose down -v`.
 
-- [ ] **Step 2: Write `deploy/compose/otel-collector/config.yaml`**
+- [x] **Step 2: Write `deploy/compose/otel-collector/config.yaml`**
 
 ```yaml
 receivers:
@@ -721,7 +721,7 @@ service:
     logs:    { receivers: [otlp], exporters: [debug] }
 ```
 
-- [ ] **Step 3: Write `compose.yaml`**
+- [x] **Step 3: Write `compose.yaml`**
 
 ```yaml
 name: newstore
@@ -731,7 +731,7 @@ services:
     image: postgres:18.6
     environment:
       POSTGRES_PASSWORD: postgres
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes:
       - postgres-data:/var/lib/postgresql   # PostgreSQL 18 moved its volume here from /var/lib/postgresql/data
       - ./deploy/compose/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -745,7 +745,7 @@ services:
 
   kafka:
     image: apache/kafka:4.4.0
-    ports: ["9094:9094"]
+    ports: ["127.0.0.1:9094:9094"]
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -771,7 +771,7 @@ services:
 
   redis:
     image: redis:8.10.3
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -786,7 +786,7 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
-    ports: ["8180:8080"]
+    ports: ["127.0.0.1:8180:8080"]
     healthcheck:
       # The image has no curl, so the check speaks HTTP to the management port through bash.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
@@ -800,7 +800,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.164.0
     volumes:
       - ./deploy/compose/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
-    ports: ["4317:4317", "4318:4318"]
+    ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
     deploy: { resources: { limits: { memory: 256m } } }
 
 volumes:
@@ -813,7 +813,7 @@ Some of these choices need a word of explanation:
 - **The collector image has no shell,** so it has no health check. Compose treats it as ready once it's running.
 - **Keycloak keeps its data inside the container** in dev mode. Phase 1 imports the realm from a file, so it's reproducible.
 
-- [ ] **Step 4: Start the stack and check each part**
+- [x] **Step 4: Start the stack and check each part**
 
 Run `docker compose up -d --wait`. Expected: exit code 0, with every container that has a health check marked healthy. Then:
 
@@ -830,7 +830,7 @@ Run `docker compose up -d --wait`. Expected: exit code 0, with every container t
 
 Then run `dotnet run --project src/Services/Catalog`, and in a second terminal run `curl -s http://localhost:5101/health/ready`. Expected: `Healthy`. This checks the IDE workflow against the Compose database.
 
-- [ ] **Step 5: Write the decision records and the commands**
+- [x] **Step 5: Write the decision records and the commands**
 
 Write `0002` and `0003` from `docs/adr/template.md`:
 
@@ -844,7 +844,7 @@ Add these lines to the "Commands" section of `AGENTS.md`:
 - Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
 ```
 
-- [ ] **Step 6: Commit, push and open a PR**
+- [x] **Step 6: Commit, push and open a PR**
 
 Commit with the message `feat(infra): local stack with PostgreSQL, Kafka, Keycloak, Redis and the collector`.
 
@@ -914,7 +914,7 @@ The `.csproj` files are copied before the source so the restore layer is cached 
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: catalog
-    ports: ["8101:8080"]
+    ports: ["127.0.0.1:8101:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       otel-collector: { condition: service_started }

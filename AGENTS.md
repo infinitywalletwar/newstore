@@ -70,7 +70,7 @@ Keep it to a few sentences per decision.
 
 - Every container image runs on arm64, because the owner's Mac is Apple Silicon. Pin exact image tags in `compose.yaml`.
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
-- Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, and `admin/admin` for Keycloak.
+- Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, and `admin/admin` for Keycloak. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - Host ports:
 
   | Port | What |
@@ -90,3 +90,5 @@ Keep it to a few sentences per decision.
 - Build: `dotnet build NewStore.slnx`
 - Test everything: `dotnet test --solution NewStore.slnx` (needs Docker running, for Testcontainers)
 - One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`
+- Start the local stack: `docker compose up -d --wait`. Stop it: `docker compose down`. Wipe its data: `docker compose down -v`.
+- Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
