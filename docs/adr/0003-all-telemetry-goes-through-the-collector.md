@@ -25,6 +25,6 @@ Services send OTLP only to one OpenTelemetry Collector, at `otel-collector:4317`
 
 - Changing, adding or dropping a backend is an edit to `deploy/compose/otel-collector/config.yaml`. No service changes.
 - The collector can later sample, filter or add attributes in one place.
-- It is one more process that must be up. If it is down, OTLP exporters drop data after their retries, while the services keep working.
+- It is one more process that must be up. If it is down, the exporter drops each failed batch (retry is off unless `OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY=in_memory` is set), the batch processor drops spans once its queue is full, and the services keep working.
 - The collector image has no shell, so Compose can't health-check it. It counts as ready once it is running, and `Everything is ready` in its log is the check.
 - The `contrib` image is larger than the core one. We use it because it ships the widest set of exporters, which keeps Phase 4's choices open. Tempo and Loki take OTLP through the core `otlphttp` exporter, so we may be able to move to the smaller image then.

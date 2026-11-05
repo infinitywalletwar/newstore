@@ -82,6 +82,7 @@ services:
       context: .
       dockerfile: src/Services/Catalog/Dockerfile
     image: newstore/catalog:local
+    pull_policy: build
     environment:
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
