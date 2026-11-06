@@ -6,7 +6,7 @@ using Npgsql;
 
 namespace NewStore.Catalog.Tests;
 
-public class HealthEndpointTests(PostgresCatalogAppFactory factory)
+public class HealthEndpointTests(PostgresCatalogAppFactory factory) : IClassFixture<PostgresCatalogAppFactory>
 {
     [Fact]
     public async Task Live_returns_healthy()
@@ -42,7 +42,7 @@ public class HealthEndpointTests(PostgresCatalogAppFactory factory)
             MaxPoolSize = 1,
             Timeout = 30,
         };
-        await using var busyApp = new CatalogAppFactory { Settings = { ["ConnectionStrings:Catalog"] = csb.ConnectionString } };
+        await using var busyApp = new NewStoreAppFactory<Program> { Settings = { ["ConnectionStrings:Catalog"] = csb.ConnectionString } };
         using var client = busyApp.CreateClient();
         // Hold the only request connection, as a busy service would.
         await using var held = await busyApp.Services.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(ct);

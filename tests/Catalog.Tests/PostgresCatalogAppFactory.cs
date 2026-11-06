@@ -1,26 +1,13 @@
-using Testcontainers.PostgreSql;
-
-[assembly: AssemblyFixture(typeof(NewStore.Catalog.Tests.PostgresCatalogAppFactory))]
-
 namespace NewStore.Catalog.Tests;
 
 /// <summary>
-/// Catalog wired to a real PostgreSQL container. An assembly fixture: one container and one app
-/// serve every test class that asks for it.
+/// Catalog wired to its own database on the assembly's PostgreSQL container. A class fixture: each test
+/// class that asks for it gets one app and one database.
 /// </summary>
-public sealed class PostgresCatalogAppFactory : CatalogAppFactory, IAsyncLifetime
+public sealed class PostgresCatalogAppFactory(PostgresServer postgres)
+    : NewStoreAppFactory<Program>, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18.6").Build();
-
-    public async ValueTask InitializeAsync()
-    {
-        await _postgres.StartAsync(TestContext.Current.CancellationToken);
-        Settings["ConnectionStrings:Catalog"] = _postgres.GetConnectionString();
-    }
-
-    public override async ValueTask DisposeAsync()
-    {
-        await base.DisposeAsync();
-        await _postgres.DisposeAsync();
-    }
+    public async ValueTask InitializeAsync() =>
+        Settings["ConnectionStrings:Catalog"] =
+            await postgres.CreateDatabaseAsync("catalog", TestContext.Current.CancellationToken);
 }

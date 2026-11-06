@@ -8,7 +8,7 @@ public class StartupTests
     [InlineData("")]
     public void Startup_fails_when_connection_string_is_missing_or_empty(string? value)
     {
-        using var factory = new CatalogAppFactory();
+        using var factory = new NewStoreAppFactory<Program>();
         if (value is not null)
         {
             factory.Settings["ConnectionStrings:Catalog"] = value;

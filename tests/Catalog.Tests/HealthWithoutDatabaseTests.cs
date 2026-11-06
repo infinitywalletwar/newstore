@@ -1,6 +1,10 @@
 using System.Diagnostics;
 using System.Net.Sockets;
 
+using Microsoft.Extensions.DependencyInjection;
+
+using OpenTelemetry.Trace;
+
 namespace NewStore.Catalog.Tests;
 
 public class HealthWithoutDatabaseTests
@@ -9,7 +13,7 @@ public class HealthWithoutDatabaseTests
     private const string RefusedDatabase =
         "Host=127.0.0.1;Port=1;Database=catalog;Username=catalog;Password=catalog;Timeout=2";
 
-    private static CatalogAppFactory FactoryFor(string connectionString) =>
+    private static NewStoreAppFactory<Program> FactoryFor(string connectionString) =>
         new() { Settings = { ["ConnectionStrings:Catalog"] = connectionString } };
 
     [Fact]
@@ -65,6 +69,7 @@ public class HealthWithoutDatabaseTests
     public async Task Service_keeps_serving_when_collector_is_unreachable()
     {
         var ct = TestContext.Current.CancellationToken;
+        using var exportListener = new OtlpExportListener();
         await using var factory = FactoryFor(RefusedDatabase);
         factory.Settings["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://127.0.0.1:1";
         using var client = factory.CreateClient();
@@ -75,5 +80,17 @@ public class HealthWithoutDatabaseTests
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
         Assert.Equal("Healthy", await live.Content.ReadAsStringAsync(ct));
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        // ForceFlush returns true even though the collector refuses the connection: it reports that the
+        // processors handed their batch to the exporter, not that the collector received it. The exporter
+        // reports a failed attempt on its EventSource, after its retry delay, so poll for it.
+        Assert.True(factory.Services.GetRequiredService<TracerProvider>().ForceFlush(5000));
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (exportListener.Failures == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+        }
+
+        Assert.True(exportListener.Failures > 0, "The exporter never reported a failed export.");
     }
 }
