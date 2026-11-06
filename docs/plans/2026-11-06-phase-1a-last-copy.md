@@ -158,7 +158,7 @@ Add ecosystems `dotnet-sdk` and `docker-compose`, both with `directory: "/"` and
 3. `docker compose up -d --wait` builds and starts; `curl http://localhost:8101/health/ready` prints `Healthy`; `docker compose down`.
 4. Commit: `build(docker): copy only the shared and the service sources`.
 
-- [ ] **Step 6: Pull request**
+- [x] **Step 6: Pull request**
 
 Walkthrough: one paragraph per commit. Interview angle: "Why pin transitive packages?" (a transitive bump can change behaviour without any direct reference changing; pinning makes every version an explicit, reviewed line). `Closes #34`.
 
