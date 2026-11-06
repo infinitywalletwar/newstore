@@ -136,11 +136,11 @@ One pull request, five commits, each reviewable alone. Branch `phase-1/hygiene`.
 
 Under `[*]` add `charset = utf-8`, `end_of_line = lf`, `trim_trailing_whitespace = true` and `insert_final_newline = true`. Delete `insert_final_newline = false` under `[*.cs]`. Change `dotnet_naming_symbols.type_parameters.applicable_kinds = namespace` to `type_parameter`. Commit: `style: tighten .editorconfig`.
 
-- [ ] **Step 2: The format commit**
+- [x] **Step 2: The format commit**
 
 Run `dotnet format NewStore.slnx`. Commit the result with no hand edits in it: `style: apply dotnet format`. Then `dotnet format NewStore.slnx --verify-no-changes` exits 0.
 
-- [ ] **Step 3: Build settings**
+- [x] **Step 3: Build settings**
 
 1. `Directory.Build.props`: add `<AnalysisLevel>latest-recommended</AnalysisLevel>` and `<ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>`.
 2. `Directory.Packages.props`: add `<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>` to its property group.
