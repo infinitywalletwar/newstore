@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using NewStore.Catalog;
+using NewStore.Catalog.Channels;
 using NewStore.Catalog.Seed;
+using NewStore.Catalog.Videos;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
 
@@ -21,6 +23,8 @@ if (await app.RunDatabaseCommandsAsync<CatalogDbContext>(args) is { } exitCode)
 }
 
 app.MapDefaultEndpoints();
+app.MapVideoEndpoints();
+app.MapChannelEndpoints();
 
 app.Run();
 return 0;
