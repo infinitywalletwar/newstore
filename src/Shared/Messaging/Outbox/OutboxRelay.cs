@@ -73,8 +73,9 @@ internal sealed class OutboxRelay<TContext>(
         var context = scope.ServiceProvider.GetRequiredService<TContext>();
         await using var transaction = await context.Database.BeginTransactionAsync(stoppingToken);
 
-        // FOR UPDATE locks the rows we read; SKIP LOCKED makes a second relay skip them instead of waiting,
-        // so two relays share the table and never send the same row. {size} becomes a query parameter.
+        // FOR UPDATE locks the rows we read. SKIP LOCKED leaves out rows another transaction has locked instead of
+        // waiting for it (PostgreSQL docs, SELECT, "The Locking Clause"), so two relays work on different rows
+        // at once. {size} becomes a query parameter.
         var size = settings.RelayBatchSize;
         var batch = await context.Set<OutboxMessage>()
             .FromSql($"""

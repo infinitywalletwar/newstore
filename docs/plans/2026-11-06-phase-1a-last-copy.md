@@ -596,7 +596,7 @@ Commit: `feat(messaging): idempotent consumer with a dead-letter topic`.
 
 Commit: `feat(messaging): trace events across the outbox and the consumer`.
 
-- [ ] **Step 4: ADR 0008, docs and the pull request**
+- [x] **Step 4: ADR 0008, docs and the pull request**
 
 1. ADR 0008: the partition key is the aggregate's id (one edition's events stay in order); JSON with `System.Text.Json`, the type in a header, additive changes only, and a schema registry when a second language or a breaking change appears; a dead-letter topic per topic; draining on shutdown; and why at-least-once plus an idempotent consumer, not Kafka transactions.
 2. `AGENTS.md`, Architecture rules: how a service publishes (`IOutbox.Enqueue` then `SaveChangesAsync`) and consumes (`AddHandler`), and that Kafka is never in a readiness check. README layout.
