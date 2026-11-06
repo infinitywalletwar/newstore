@@ -249,7 +249,9 @@ newstore/
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
 │       └── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
 ├── web/              the Angular app
+├── compose.load.yaml overlay for the k6 load test: a short reservation TTL and the k6 service
 ├── tests/            unit, integration, contract and load tests
+│   ├── load/         k6 scripts and how to run them
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
 │   └── Shared/       NewStore.TestSupport: the app factory, span sink and PostgreSQL server every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool

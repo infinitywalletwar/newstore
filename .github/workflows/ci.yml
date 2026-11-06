@@ -28,15 +28,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Start the stack
-        run: docker compose up --build --detach --wait --wait-timeout 240
+        run: docker compose -f compose.yaml -f compose.load.yaml up --build --detach --wait --wait-timeout 240
       - name: Catalog is ready
         # --wait already waited for Catalog's health check; the retry is a second line of defence.
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
+      - name: Inventory is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8102/health/ready
+      - name: Run the last-copy load test
+        # The runner is slower than the Mac, so the latency threshold is looser (tests/load/README.md).
+        run: docker compose -f compose.yaml -f compose.load.yaml run --rm k6
+        env:
+          P99_MS: "2000"
       - name: Catalog finds the seeded video
         run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Show logs
         if: failure()
-        run: docker compose logs
+        run: docker compose -f compose.yaml -f compose.load.yaml logs
       - name: Stop the stack
         if: always()
-        run: docker compose down --volumes
+        run: docker compose -f compose.yaml -f compose.load.yaml down --volumes

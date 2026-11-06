@@ -123,5 +123,47 @@ services:
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 
+  # One-shot job: applies Inventory's migrations and exits (ADR 0005). The image's entrypoint is
+  # `dotnet NewStore.Inventory.dll`, so `command` supplies the argument.
+  inventory-migrate:
+    build:
+      context: .
+      dockerfile: src/Services/Inventory/Dockerfile
+    image: newstore/inventory:local
+    pull_policy: build
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=inventory;Password=inventory
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: inventory
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  inventory:
+    build:
+      context: .
+      dockerfile: src/Services/Inventory/Dockerfile
+    image: newstore/inventory:local
+    pull_policy: build
+    environment:
+      ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=inventory;Password=inventory
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: inventory
+    ports: ["127.0.0.1:8102:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      inventory-migrate: { condition: service_completed_successfully }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
 volumes:
   postgres-data:

@@ -4,6 +4,9 @@
   <Folder Name="/src/Services/Catalog/">
     <Project Path="src/Services/Catalog/NewStore.Catalog.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Inventory/">
+    <Project Path="src/Services/Inventory/NewStore.Inventory.csproj" />
+  </Folder>
   <Folder Name="/src/Shared/" />
   <Folder Name="/src/Shared/ServiceDefaults/">
     <Project Path="src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj" />
@@ -18,6 +21,9 @@
   </Folder>
   <Folder Name="/tests/Catalog.Tests/">
     <Project Path="tests/Catalog.Tests/NewStore.Catalog.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Inventory.Tests/">
+    <Project Path="tests/Inventory.Tests/NewStore.Inventory.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Messaging.Tests/">
     <Project Path="tests/Messaging.Tests/NewStore.Messaging.Tests.csproj" />

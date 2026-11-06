@@ -429,14 +429,14 @@ The hard part `AGENTS.md` calls "reservations and copy numbers". Branch `phase-1
 
 - Tests run against **both** strategies: an abstract `ReservationTests` with the test methods, and `ReservationTests_ConditionalUpdate` and `ReservationTests_ConcurrencyToken`, each with a class fixture that sets `Inventory:ReserveStrategy`, creates its own database from `PostgresServer`, migrates, and replaces `TimeProvider` with a `FakeTimeProvider` (`ConfigureTestServices`). `Inventory:ExpirySweepInterval` is `00:00:01` in tests, and the sweeper's `PeriodicTimer` runs on the fake clock, so `Advance` triggers it.
 
-- [ ] **Step 1: Project, model and migration**
+- [x] **Step 1: Project, model and migration**
 
 1. Create the project, the test project, the entities, `InventoryDbContext` (snake_case through `AddPostgresDatabase`), the indexes and the check constraint. `ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add Initial --project src/Services/Inventory`. Read the generated migration: the partial index must carry its `WHERE` clause, and `editions` must not have a `version` column (xmin is a system column).
 2. `init.sql`: the three lines for `inventory`. `compose.yaml`: `inventory` (port `127.0.0.1:8102:8080`, the same shape as `catalog`) and `inventory-migrate`.
 3. `Program.cs` as in Task 2, plus options binding, the strategies, the sweeper and the endpoints' `Map` calls.
 4. Test `Startup_fails_when_connection_string_is_missing` (the Catalog pattern) and `Ready_is_healthy_with_the_database`. Commit: `feat(inventory): project, model and first migration`.
 
-- [ ] **Step 2: Editions (failing tests, then code)**
+- [x] **Step 2: Editions (failing tests, then code)**
 
 `EditionTests(InventoryFixture fixture)`:
 - `Create_edition_returns_201_with_all_copies_left`: `copies` 10 → 201, `copiesLeft` 10, `copiesSold` 0, `Location` resolves to the same edition.
@@ -446,7 +446,7 @@ The hard part `AGENTS.md` calls "reservations and copy numbers". Branch `phase-1
 
 Commit: `feat(inventory): create and read editions`.
 
-- [ ] **Step 3: Reserve (failing tests, then both strategies)**
+- [x] **Step 3: Reserve (failing tests, then both strategies)**
 
 In `ReservationTests`:
 - `Reserve_takes_one_copy`: 201, `copiesLeft` 9, `status` Pending, `expiresAt - reservedAt` is 10 minutes.
@@ -457,7 +457,7 @@ In `ReservationTests`:
 
 Commit: `feat(inventory): reserve a copy with two interchangeable strategies`.
 
-- [ ] **Step 4: Confirm, release and expiry (failing tests, then code)**
+- [x] **Step 4: Confirm, release and expiry (failing tests, then code)**
 
 - `Confirm_assigns_numbers_in_confirm_order_without_gaps`: reserve three, confirm the third, the first, the second → numbers 1, 2, 3 in that order; `GET /editions/{id}/copies` lists 1, 2, 3 with the right owners; `copiesSold` 3.
 - `Confirm_twice_returns_the_same_copy_number`: and one row in copies.
@@ -469,7 +469,7 @@ Commit: `feat(inventory): reserve a copy with two interchangeable strategies`.
 
 Commit: `feat(inventory): confirm, release and expire reservations`.
 
-- [ ] **Step 5: The k6 test**
+- [x] **Step 5: The k6 test**
 
 1. `compose.load.yaml`, an overlay used with `-f compose.yaml -f compose.load.yaml`: `inventory` gets `Inventory__ReservationTtl: "00:00:03"`, `Inventory__ExpirySweepInterval: "00:00:01"` and `Inventory__ReserveStrategy: ${RESERVE_STRATEGY:-ConditionalUpdate}`; a `k6` service: `image: grafana/k6:1.8.2`, `profiles: [load]`, `volumes: ["./tests/load:/scripts:ro"]`, `command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://inventory:8080", "-e", "P99_MS=${P99_MS:-1000}"]`, `depends_on: inventory: service_healthy`, memory limit 512m.
 2. `tests/load/last-copy.js`:
@@ -483,13 +483,13 @@ Commit: `feat(inventory): confirm, release and expire reservations`.
 4. `tests/load/README.md`: how to run it, what the thresholds mean, and that the overlay shortens the TTL only for the test.
 5. Commit: `test(load): k6 proves the last copy is sold once`.
 
-- [ ] **Step 6: Measure both strategies, write ADR 0007**
+- [x] **Step 6: Measure both strategies, write ADR 0007**
 
 1. Temporarily set the collector's metrics `debug` exporter to `verbosity: detailed` (don't commit it). For each strategy (`RESERVE_STRATEGY=ConditionalUpdate`, then `ConcurrencyToken`): `docker compose … down -v`, `up -d --wait`, run k6, then from `docker compose logs otel-collector` record the max of `db.client.connection.pending_requests`, the total of `db.client.connection.timeouts` (must be 0), and the `inventory.reserve.attempts` histogram (sum, count, max). From k6: `copies_confirmed`, `sold_out`, reserve p50 and p99, confirm p99.
 2. ADR 0007: context (C-4), the decision (`ConditionalUpdate` is the default; `ConcurrencyToken` stays as the comparison and the switch), the table from step 1, alternatives (pessimistic `SELECT … FOR UPDATE` on the edition row, `SERIALIZABLE` isolation with retries, an advisory lock, a counter in Redis) and what each costs, consequences (one `UPDATE` per reserve, no retries, no gaps; the token approach's retries grow with contention).
 3. Restore the collector config. Commit: `docs(adr): the last copy, measured`.
 
-- [ ] **Step 7: CI, docs and the pull request**
+- [x] **Step 7: CI, docs and the pull request**
 
 1. `compose-smoke`: after the Catalog curl, `curl … http://localhost:8102/health/ready`; then "Run the last-copy load test": `docker compose -f compose.yaml -f compose.load.yaml run --rm k6` with `P99_MS=2000` in the step's `env` (the runner is slower than the Mac). Both compose commands in the job use both files.
 2. `AGENTS.md`: the port rows (8102, 5102) and the k6 command. README layout.
