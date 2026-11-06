@@ -249,6 +249,8 @@ newstore/
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
 ├── web/              the Angular app
 ├── tests/            unit, integration, contract and load tests
+│   └── Shared/       NewStore.TestSupport: the app factory, span sink and PostgreSQL server every test project uses
+├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool
 ├── deploy/           files Compose mounts, Helm charts and Terraform
 └── docs/
     ├── getting-started.md   how to start or resume a phase in a fresh session

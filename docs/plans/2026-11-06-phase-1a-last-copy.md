@@ -263,14 +263,14 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 
   Class fixtures receive the assembly fixture through their constructor: xUnit v3 injects assembly fixtures into class fixtures. Check this against the xUnit v3 docs before relying on it; if it isn't supported, make `PostgresServer` a collection fixture for the whole assembly instead and say so in the report.
 
-- [ ] **Step 1: Test support project**
+- [x] **Step 1: Test support project**
 
 1. Create the project and move `SpanCollection` into it with the prefix filter. Write `NewStoreAppFactory<TProgram>`, `PostgresServer` and `OtlpExportListener`.
 2. Convert `tests/Catalog.Tests`: `PostgresCatalogAppFactory` becomes a class fixture that takes `PostgresServer`, creates its database and sets `ConnectionStrings:Catalog`; `CatalogAppFactory` goes away in favour of `NewStoreAppFactory<Program>`. `TracingTests` drop their unique-path workaround, since spans are isolated now; they use `WaitForSpanAsync`.
 3. First find out what `TracerProvider.ForceFlush` returns when the OTLP endpoint refuses connections: write a throwaway test, run it, and record the result in the report. Then `Service_keeps_serving_when_collector_is_unreachable` gains: force a flush, then assert `OtlpExportListener.Failures > 0`. If `ForceFlush` already returns `false` on a failed export, assert that too.
 4. `dotnet test --project tests/Catalog.Tests`: all pass, with the span-isolation change visible in the diff. Commit: `test: share the app factory, span sink and database server`.
 
-- [ ] **Step 2: Database registration and commands**
+- [x] **Step 2: Database registration and commands**
 
 1. Add the packages to `Directory.Packages.props` and the tool manifest (`dotnet new tool-manifest`, `dotnet tool install dotnet-ef --version 10.0.14`).
 2. Write `PostgresExtensions`. `AddPostgresDatabase<TContext>` keeps Phase 0's fail-fast and health behaviour, so the existing Catalog tests keep passing unchanged.
@@ -282,7 +282,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
    - `No_arguments_returns_null`.
 5. Commit: `feat(service-defaults): register databases with a pool budget and run migrations as a command`.
 
-- [ ] **Step 3: ProblemDetails and OpenAPI**
+- [x] **Step 3: ProblemDetails and OpenAPI**
 
 1. Tests in `tests/Catalog.Tests/ProblemDetailsTests.cs`:
    - `Unknown_path_returns_a_404_problem`: `GET /no-such-page` is 404 with `Content-Type: application/problem+json` and a body whose `status` is 404.
@@ -291,7 +291,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 3. Write ADR 0006: ProblemDetails for every error response, OpenAPI mapped in every environment (the gateway won't expose it), the main alternative (hand-written error envelopes) and its cost.
 4. Commit: `feat(service-defaults): problem details and OpenAPI for every service`.
 
-- [ ] **Step 4: Compose and the connection budget**
+- [x] **Step 4: Compose and the connection budget**
 
 1. `compose.yaml`: `postgres` gets `command: ["postgres", "-c", "max_connections=200"]`. Add `catalog-migrate`: same `build`, `image` and `pull_policy` as `catalog`, `command: ["migrate"]`, `restart: "no"`, the same environment, `depends_on: postgres: service_healthy`. `catalog` gets `depends_on: catalog-migrate: { condition: service_completed_successfully }`.
 2. `docker compose up -d --wait`. If `--wait` fails because `catalog-migrate` exited, record the exact message and instead run `docker compose run --rm catalog-migrate` followed by `docker compose up -d --wait`; put whichever works into `AGENTS.md` Commands and into CI's `compose-smoke`. `curl http://localhost:8101/health/ready` prints `Healthy`. `docker compose exec postgres psql -U catalog -d catalog -c '\dt'` shows `__EFMigrationsHistory`. `docker compose down -v` (the volume, because `init.sql` is unchanged but the budget must be checked on a fresh server: `SHOW max_connections` prints 200).
@@ -299,7 +299,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 4. Write ADR 0005: migrations run as a one-shot job (`migrate`) before the service starts, never inside the service's startup; alternatives: migrate at startup (every replica races, and a failed migration takes the service down with it), a separate migrations project (another project to keep in sync).
 5. Commit: `feat(compose): migration job for Catalog and a connection budget`.
 
-- [ ] **Step 5: Docs and the pull request**
+- [x] **Step 5: Docs and the pull request**
 
 1. `AGENTS.md`: in Code, the `Program.cs` shape and the `migrate`/`seed` contract; in Tests, "use `NewStore.TestSupport`; never copy a factory"; in Commands, `dotnet ef` with the environment variable, `docker compose run --rm catalog-migrate` if Step 4 needed it. README layout gets `tests/Shared/` and `.config/`.
 2. CI: `dotnet build` already builds TestSupport through the solution. `compose-smoke` unchanged unless Step 4 says otherwise.
