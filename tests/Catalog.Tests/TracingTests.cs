@@ -34,7 +34,7 @@ public class TracingTests(PostgresCatalogAppFactory factory)
         await WaitForSpanAsync("/after-health", ct);
 
         var spans = factory.ExportedSpans.Snapshot();
-        Assert.DoesNotContain(spans, s => (s.GetTagItem("url.path") as string)?.StartsWith("/health") == true);
+        Assert.DoesNotContain(spans, s => (s.GetTagItem("url.path") as string)?.StartsWith("/health", StringComparison.Ordinal) == true);
         // The readiness query is a child of the dropped request, so it is dropped as well. Match the query,
         // not every Npgsql span: ActivitySource is process-wide, so a span from another test's app
         // (for example a CONNECT in the exhausted-pool test) reaches this app's exporter too.

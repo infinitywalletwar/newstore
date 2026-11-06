@@ -3,6 +3,10 @@ root = true
 # All files
 [*]
 indent_style = space
+charset = utf-8
+end_of_line = lf
+trim_trailing_whitespace = true
+insert_final_newline = true
 
 # Xml files
 [*.xml]
@@ -27,9 +31,6 @@ indent_size = 2
 # Indentation and spacing
 indent_size = 4
 tab_width = 4
-
-# New line preferences
-insert_final_newline = false
 
 #### .NET Coding Conventions ####
 [*.{cs,vb}]
@@ -319,7 +320,7 @@ dotnet_naming_symbols.non_field_members.applicable_kinds = property, event, meth
 dotnet_naming_symbols.non_field_members.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
 dotnet_naming_symbols.non_field_members.required_modifiers = 
 
-dotnet_naming_symbols.type_parameters.applicable_kinds = namespace
+dotnet_naming_symbols.type_parameters.applicable_kinds = type_parameter
 dotnet_naming_symbols.type_parameters.applicable_accessibilities = *
 dotnet_naming_symbols.type_parameters.required_modifiers = 
 
@@ -387,3 +388,6 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+# Tests name methods as sentences with underscores (Live_returns_healthy), so CA1707 does not apply.
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none

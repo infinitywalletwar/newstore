@@ -14,7 +14,7 @@ public class CatalogAppFactory : WebApplicationFactory<Program>
     public Dictionary<string, string?> Settings { get; } = [];
 
     /// <summary>Every span the app exports. Other tests share the app, so don't assume it starts empty.</summary>
-    public SpanSink ExportedSpans { get; } = new();
+    public SpanCollection ExportedSpans { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

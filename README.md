@@ -75,6 +75,10 @@ Requirements are written as user stories with acceptance criteria. They are the 
   - Processing runs in the background and survives a service restart.
 - **V-3** As a viewer, I can watch any published video for free without signing in.
 - **V-4** As a viewer, I can browse videos, search by title or creator, and open a creator's channel page.
+  - The list shows published videos, newest first, 20 per page.
+  - Search matches words in the title or description, and the creator's channel name.
+  - A channel page shows the channel and its videos, newest first.
+  - Reads keep working when the cache is down.
 - **V-5** As an admin, I can remove a video.
   - A removed video is hidden, and sales of its editions stop.
 
@@ -197,7 +201,8 @@ Each phase ends with a working system and has a clear test for when it's done.
 | # | Phase | Done when | Practises |
 |---|-------|-----------|-----------|
 | 0 | **Foundation:** the solution, Docker Compose with PostgreSQL, Kafka, Keycloak and Redis, one service with health checks and OpenTelemetry, and a CI pipeline that builds and tests | `docker compose up` starts everything and CI is green. | Project structure, Docker, GitHub Actions |
-| 1 | **Buy the last copy:** Catalog with sample videos, Inventory, Orders, Payments with the fake provider, the gateway, sign-in, the outbox and Kafka, plus Angular pages for browsing, a video, buying and "my copies" | The k6 test with 1,000 buyers and 10 copies sells exactly 10, numbers 1 to 10 are each used once, and expired reservations go back on sale. | Concurrency, EF Core, transactions, Kafka, outbox, saga, idempotency, JWT, authorization policies |
+| 1a | **Buy the last copy:** Inventory with editions, reservations and copy numbers, the outbox and Kafka library, and Catalog with sample videos, browsing and search. No sign-in and no pages yet. | The k6 test with 1,000 buyers and 10 copies sells exactly 10, numbers 1 to 10 are each used once, expired reservations go back on sale, and the reserve call's p99 stays under 1 s on the Mac. | Concurrency, EF Core, transactions, Kafka, outbox, idempotency, caching |
+| 1b | **Checkout:** Orders, Payments with the fake provider, the gateway, sign-in, plus Angular pages for browsing, a video, buying and "my copies" | A signed-in buyer buys a copy in the browser, and the 1a test still passes through the gateway. | Saga, JWT, authorization policies, API gateway |
 | 2 | **Video pipeline:** uploads to S3, FFmpeg conversion to HLS, the player and digital downloads | An uploaded 1 GB file becomes playable, and a broken file shows as Failed. | S3 and presigned URLs, background services, resumable work |
 | 3 | **Delivery tracking:** Delivery, the courier simulator, SignalR and the map | Buying a DVD shows the courier moving live until Delivered, including with two Delivery instances. | Real-time updates, SignalR scale-out, high-frequency events |
 | 4 | **Front door and monitoring:** Nginx, rate limiting and Grafana dashboards for checkout and Kafka consumer lag | One purchase shows as a single trace through every service in Grafana. | Reverse proxy versus API gateway, rate limiting, OpenTelemetry |
@@ -212,7 +217,7 @@ Watermarking each digital copy with its number and owner is stretch work after p
 The project runs as Scrumban, a mix of Scrum and Kanban:
 
 - **Backlog:** the user stories above, as GitHub issues, with their IDs, for example "C-1", in the title.
-- **Board:** a GitHub Projects board with the columns Backlog, Ready, In progress, Review and Done. At most two items can be in progress at once.
+- **Board:** a GitHub Projects board with the columns Backlog, Ready, In progress, Review and Done. At most three items can be in progress at once: raised from two on 2026-11-06 so that independent tasks can run in parallel. The limit still caps how many pull requests wait for review.
 - **Code:** Claude writes the code and opens a pull request for each piece, with a walkthrough in its description. The owner reviews and merges it. `AGENTS.md` has the details.
 - **Sprints:** two weeks each, with one sprint goal taken from the current phase. Each sprint ends with a short review and retro note in `docs/sprints/`.
 - **Definition of Done:**
@@ -292,4 +297,5 @@ newstore/
   - Helm for Kubernetes.
   - Kafka inside EKS instead of MSK.
   - A $20 budget alert.
-- Ways of working: two-week sprints, a work-in-progress limit of two, and a hand-written outbox.
+- Ways of working: two-week sprints, a work-in-progress limit of three, and a hand-written outbox.
+- Phase 1 is split into 1a, the last copy, and 1b, checkout, so each has a "done when" of its own.
