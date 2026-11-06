@@ -132,7 +132,7 @@ One pull request, five commits, each reviewable alone. Branch `phase-1/hygiene`.
 **Files:**
 - Modify: `.editorconfig`, every `.cs` file (the format commit), `Directory.Build.props`, `Directory.Packages.props`, `.github/dependabot.yml`, `src/Services/Catalog/Dockerfile`, `.dockerignore`.
 
-- [ ] **Step 1: `.editorconfig`**
+- [x] **Step 1: `.editorconfig`**
 
 Under `[*]` add `charset = utf-8`, `end_of_line = lf`, `trim_trailing_whitespace = true` and `insert_final_newline = true`. Delete `insert_final_newline = false` under `[*.cs]`. Change `dotnet_naming_symbols.type_parameters.applicable_kinds = namespace` to `type_parameter`. Commit: `style: tighten .editorconfig`.
 
