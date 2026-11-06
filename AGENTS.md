@@ -32,7 +32,7 @@ The owner is learning, so every change comes with its reasoning:
 - the main alternative, and the trade-off between them
 - the question an interviewer would ask about it
 
-Keep it to a few sentences per decision.
+Keep it to a few sentences per decision. Every statement about how a framework or tool behaves is checked against its documentation or a command you ran, with the source linked. Unchecked, it stays out of the walkthrough.
 
 ## Git, pull requests and the board
 
@@ -49,7 +49,7 @@ Keep it to a few sentences per decision.
 - Each service reads and writes only its own database. It learns about other services' data through their APIs and Kafka events.
 - Publish every event through the transactional outbox, and make every consumer idempotent.
 - Each service enforces its own permissions with authorization policies, in addition to the gateway's token check.
-- Record any choice with a real trade-off as a decision record in `docs/adr/`.
+- Record any choice with a real trade-off as a decision record in `docs/adr/`. Check each claim about an alternative against its documentation before writing it, and link the page.
 - When a change affects something the design describes, update `README.md` in the same change.
 
 ## Code
