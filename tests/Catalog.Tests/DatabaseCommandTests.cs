@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
@@ -37,7 +39,9 @@ public class DatabaseCommandTests(PostgresServer postgres)
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(ct);
         await using var count = new NpgsqlCommand("""SELECT count(*) FROM "__EFMigrationsHistory" """, connection);
-        Assert.NotEqual(0L, await count.ExecuteScalarAsync(ct)); // one row per applied migration
+        await using var scope = app.Services.CreateAsyncScope();
+        var migrations = scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Database.GetMigrations().Count();
+        Assert.Equal((long)migrations, await count.ExecuteScalarAsync(ct));
     }
 
     [Fact]

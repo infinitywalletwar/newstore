@@ -48,7 +48,9 @@ public static class CacheExtensions
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<ILogger<TolerantDistributedCache>>()));
 
-        builder.Services.AddSingleton(new RedisHealthCheck(redis));
+        // A factory, not an instance: the container disposes what it creates, and not what it is handed
+        // (https://learn.microsoft.com/dotnet/core/extensions/dependency-injection/guidelines#services-not-created-by-the-service-container).
+        builder.Services.AddSingleton(_ => new RedisHealthCheck(redis));
         builder.Services.AddHealthChecks().Add(new HealthCheckRegistration(
             "redis",
             services => services.GetRequiredService<RedisHealthCheck>(),
