@@ -13,7 +13,8 @@ internal static class MessagingHost
         string connectionString,
         string clientId,
         Action<MessagingBuilder>? configure = null,
-        Action<MessagingOptions>? options = null)
+        Action<MessagingOptions>? options = null,
+        Action<IServiceCollection>? services = null)
     {
         // An empty builder: no appsettings or environment variables from the machine that runs the tests.
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { ApplicationName = clientId });
@@ -33,6 +34,7 @@ internal static class MessagingHost
             options?.Invoke(o);
         });
 
+        services?.Invoke(builder.Services);
         return builder;
     }
 }

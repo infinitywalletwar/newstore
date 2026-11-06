@@ -580,7 +580,7 @@ Tests, with a raw `IConsumer` in the test to read the topic:
 
 Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apache image; if the container doesn't start, fall back to `confluentinc/cp-kafka:8.0.0` (arm64 exists) and record why. Commit: `feat(messaging): transactional outbox with a relay`.
 
-- [ ] **Step 2: Consumer, inbox and dead letters**
+- [x] **Step 2: Consumer, inbox and dead letters**
 
 - `Handler_runs_once_for_a_duplicate_message`: produce the same message (same `message-id`) twice → the handler ran once, one inbox row.
 - `Handler_writes_commit_with_the_inbox_row`: the handler adds a `Thing`; after the message, both the row and the inbox row exist.

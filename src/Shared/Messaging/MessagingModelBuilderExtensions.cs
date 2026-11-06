@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
+using NewStore.Messaging.Inbox;
 using NewStore.Messaging.Outbox;
 
 namespace NewStore.Messaging;
@@ -33,6 +34,23 @@ public static class MessagingModelBuilderExtensions
             entity.HasIndex(m => m.PublishedAt)
                 .HasDatabaseName("ix_outbox_messages_unpublished")
                 .HasFilter("published_at IS NULL");
+        });
+
+        return modelBuilder;
+    }
+
+    /// <summary>Adds the <c>inbox_messages</c> table to the context's model, with explicit names like <see cref="AddOutbox"/>.</summary>
+    public static ModelBuilder AddInbox(this ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        modelBuilder.Entity<InboxMessage>(entity =>
+        {
+            entity.ToTable("inbox_messages");
+            entity.HasKey(m => new { m.Consumer, m.MessageId });
+            entity.Property(m => m.Consumer).HasColumnName("consumer");
+            entity.Property(m => m.MessageId).HasColumnName("message_id").ValueGeneratedNever();
+            entity.Property(m => m.HandledAt).HasColumnName("handled_at");
         });
 
         return modelBuilder;

@@ -19,7 +19,11 @@ internal sealed class TopicCreator(
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var specifications = registry.Topics
+        // One dead-letter topic with one partition per handled topic: a failed message is an exception, not a stream.
+        var deadLetters = registry.HandledTopics
+            .Select(t => new TopicRegistration(t + options.Value.DeadLetterSuffix, 1));
+        var specifications = registry.Topics.Concat(deadLetters)
+            .DistinctBy(t => t.Name)
             .Select(t => new TopicSpecification { Name = t.Name, NumPartitions = t.Partitions, ReplicationFactor = -1 })
             .ToList();
 

@@ -28,6 +28,9 @@ internal sealed class Scenario
 
     public string Topic { get; }
 
+    /// <summary>The consumer group of the test's service. Unique, so tests that run side by side don't share a group.</summary>
+    public string ClientId { get; } = $"things-service-{Guid.NewGuid():N}";
+
     public string BootstrapServers => _kafka.BootstrapServers;
 
     public static async Task<Scenario> CreateAsync(PostgresServer postgres, KafkaServer kafka, bool createTopic = true)
@@ -56,11 +59,12 @@ internal sealed class Scenario
             .Options);
 
     public async Task<IHost> StartHostAsync(
-        string clientId = "things-service",
+        string? clientId = null,
         Action<MessagingBuilder>? configure = null,
-        Action<MessagingOptions>? options = null)
+        Action<MessagingOptions>? options = null,
+        Action<IServiceCollection>? services = null)
     {
-        var host = MessagingHost.CreateBuilder(BootstrapServers, ConnectionString, clientId, configure, options).Build();
+        var host = MessagingHost.CreateBuilder(BootstrapServers, ConnectionString, clientId ?? ClientId, configure, options, services).Build();
         await host.StartAsync(TestContext.Current.CancellationToken);
         return host;
     }
@@ -75,6 +79,26 @@ internal sealed class Scenario
         context.Things.Add(new Thing { Id = created.ThingId, Name = created.Name });
         outbox.Enqueue(created, topic, created.ThingId.ToString());
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Sends an event the way the relay would, without the outbox: the consumer tests start from the topic.</summary>
+    public async Task ProduceAsync(string topic, ThingCreated created, int times = 1)
+    {
+        using var producer = new ProducerBuilder<string, string>(new ProducerConfig { BootstrapServers = BootstrapServers }).Build();
+        for (var i = 0; i < times; i++)
+        {
+            var message = new Message<string, string>
+            {
+                Key = created.ThingId.ToString(),
+                Value = System.Text.Json.JsonSerializer.Serialize(created),
+                Headers =
+                [
+                    new Header("message-id", Encoding.UTF8.GetBytes(created.EventId.ToString())),
+                    new Header("type", Encoding.UTF8.GetBytes(typeof(ThingCreated).FullName!)),
+                ],
+            };
+            await producer.ProduceAsync(topic, message, TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>Reads <paramref name="topic"/> from the start until <paramref name="count"/> messages arrived or the time ran out.</summary>
