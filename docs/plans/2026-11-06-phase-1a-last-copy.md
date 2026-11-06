@@ -132,33 +132,33 @@ One pull request, five commits, each reviewable alone. Branch `phase-1/hygiene`.
 **Files:**
 - Modify: `.editorconfig`, every `.cs` file (the format commit), `Directory.Build.props`, `Directory.Packages.props`, `.github/dependabot.yml`, `src/Services/Catalog/Dockerfile`, `.dockerignore`.
 
-- [ ] **Step 1: `.editorconfig`**
+- [x] **Step 1: `.editorconfig`**
 
 Under `[*]` add `charset = utf-8`, `end_of_line = lf`, `trim_trailing_whitespace = true` and `insert_final_newline = true`. Delete `insert_final_newline = false` under `[*.cs]`. Change `dotnet_naming_symbols.type_parameters.applicable_kinds = namespace` to `type_parameter`. Commit: `style: tighten .editorconfig`.
 
-- [ ] **Step 2: The format commit**
+- [x] **Step 2: The format commit**
 
 Run `dotnet format NewStore.slnx`. Commit the result with no hand edits in it: `style: apply dotnet format`. Then `dotnet format NewStore.slnx --verify-no-changes` exits 0.
 
-- [ ] **Step 3: Build settings**
+- [x] **Step 3: Build settings**
 
 1. `Directory.Build.props`: add `<AnalysisLevel>latest-recommended</AnalysisLevel>` and `<ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>`.
 2. `Directory.Packages.props`: add `<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>` to its property group.
 3. `dotnet build NewStore.slnx`. Warnings are errors, so the new analyzers may fail the build. Fix each finding in the code when the fix is local. When a rule doesn't fit this code base, set `dotnet_diagnostic.<rule>.severity = none` in `.editorconfig` with a one-line comment saying why. If more than ten distinct rules fire, stop and report NEEDS_CONTEXT with the list.
 4. `dotnet test --solution NewStore.slnx` passes. Commit: `build: raise the analysis level and pin transitive packages`.
 
-- [ ] **Step 4: Dependabot**
+- [x] **Step 4: Dependabot**
 
 Add ecosystems `dotnet-sdk` and `docker-compose`, both with `directory: "/"` and a weekly schedule. Change the `docker` entry's `directory: "/src/Services/Catalog"` to `directories: ["/src/Services/*"]`. Commit: `ci: widen Dependabot to the SDK, Compose and every service`.
 
-- [ ] **Step 5: Docker build context**
+- [x] **Step 5: Docker build context**
 
 1. In the Dockerfile, replace `COPY src/ src/` with `COPY src/Shared/ src/Shared/` and `COPY src/Services/Catalog/ src/Services/Catalog/`.
 2. `.dockerignore`: add `.superpowers/` and `**/*.md`.
 3. `docker compose up -d --wait` builds and starts; `curl http://localhost:8101/health/ready` prints `Healthy`; `docker compose down`.
 4. Commit: `build(docker): copy only the shared and the service sources`.
 
-- [ ] **Step 6: Pull request**
+- [x] **Step 6: Pull request**
 
 Walkthrough: one paragraph per commit. Interview angle: "Why pin transitive packages?" (a transitive bump can change behaviour without any direct reference changing; pinning makes every version an explicit, reviewed line). `Closes #34`.
 

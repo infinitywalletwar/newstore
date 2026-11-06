@@ -8,7 +8,7 @@ namespace NewStore.Catalog.Tests;
 /// <see cref="List{T}"/> is not safe for that: Add raises the count before it writes the item, so a
 /// reader can see a null. A lock around every access fixes it, and tests read a <see cref="Snapshot"/>.
 /// </summary>
-public sealed class SpanSink : ICollection<Activity>
+public sealed class SpanCollection : ICollection<Activity>
 {
     private readonly Lock _gate = new();
     private readonly List<Activity> _spans = [];
