@@ -1,0 +1,19 @@
+# Overlay for the last-copy load test (tests/load/README.md):
+#   docker compose -f compose.yaml -f compose.load.yaml up -d --wait
+#   docker compose -f compose.yaml -f compose.load.yaml run --rm k6
+# It shortens Inventory's reservation TTL, so the expiry scenario can run in seconds. Never use it as a base stack.
+services:
+  inventory:
+    environment:
+      Inventory__ReservationTtl: "00:00:03"
+      Inventory__ExpirySweepInterval: "00:00:01"
+      Inventory__ReserveStrategy: ${RESERVE_STRATEGY:-ConditionalUpdate}
+
+  k6:
+    image: grafana/k6:1.8.2
+    profiles: [load]
+    volumes: ["./tests/load:/scripts:ro"]
+    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://inventory:8080", "-e", "P99_MS=${P99_MS:-1000}"]
+    depends_on:
+      inventory: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
