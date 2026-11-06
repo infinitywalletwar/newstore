@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using NewStore.Messaging.Inbox;
+using NewStore.Messaging.Telemetry;
 
 namespace NewStore.Messaging.Kafka;
 
@@ -139,6 +140,8 @@ internal sealed class KafkaConsumerService<TContext>(
             return;
         }
 
+        // One span for all attempts, so a retried message shows as one slow span with the failures inside.
+        using var activity = MessagingTelemetry.StartProcess(result.Topic, messageId, headers.GetString(MessageHeaders.TraceParent));
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -156,6 +159,7 @@ internal sealed class KafkaConsumerService<TContext>(
             catch (Exception ex)
             {
                 MessagingLog.HandlerFailed(logger, ex, result.Topic, result.Partition.Value, result.Offset.Value, attempt, settings.MaxHandlerAttempts);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
 
                 if (attempt >= settings.MaxHandlerAttempts)
                 {

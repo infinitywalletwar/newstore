@@ -590,7 +590,7 @@ Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apach
 
 Commit: `feat(messaging): idempotent consumer with a dead-letter topic`.
 
-- [ ] **Step 3: Telemetry**
+- [x] **Step 3: Telemetry**
 
 - `Publish_and_process_spans_share_the_request_trace`: start an `Activity` in the test, enqueue, commit; the producer span and the consumer span (collected with an in-memory exporter on a `TracerProvider` built in the test with source `NewStore.Messaging`) have that activity's `TraceId`.
 

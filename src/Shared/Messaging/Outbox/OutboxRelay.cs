@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using Confluent.Kafka;
 
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using NewStore.Messaging.Kafka;
+using NewStore.Messaging.Telemetry;
 
 namespace NewStore.Messaging.Outbox;
 
@@ -106,6 +109,7 @@ internal sealed class OutboxRelay<TContext>(
 
     private async Task SendAsync(OutboxMessage message)
     {
+        using var activity = MessagingTelemetry.StartPublish(message.Topic, message.Id, message.TraceParent);
         try
         {
             var kafkaMessage = new Message<string, string>
@@ -117,9 +121,11 @@ internal sealed class OutboxRelay<TContext>(
             kafkaMessage.Headers.Add(MessageHeaders.MessageId, message.Id.ToString());
             kafkaMessage.Headers.Add(MessageHeaders.Type, message.Type);
             kafkaMessage.Headers.Add(MessageHeaders.OccurredAt, message.OccurredAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
-            if (message.TraceParent is not null)
+            // The consumer's span becomes a child of this publish span. Without a listener there is no span:
+            // pass the request's context on unchanged.
+            if ((activity?.Id ?? message.TraceParent) is { } traceParent)
             {
-                kafkaMessage.Headers.Add(MessageHeaders.TraceParent, message.TraceParent);
+                kafkaMessage.Headers.Add(MessageHeaders.TraceParent, traceParent);
             }
 
             // No stopping token: a started send is allowed to finish, bounded by ProduceTimeout.
@@ -129,6 +135,7 @@ internal sealed class OutboxRelay<TContext>(
         }
         catch (Exception ex) when (ex is ProduceException<string, string> or KafkaException)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             message.Attempts++;
             message.LastError = ex.Message;
             MessagingLog.RelayMessageFailed(logger, message.Id, message.Topic, message.Attempts, ex.Message);
