@@ -26,8 +26,9 @@ internal sealed class IdempotentDispatcher<TContext>(
         var now = timeProvider.GetUtcNow();
 
         // The primary key (consumer, message_id) makes a second insert of the same message do nothing
-        // (ON CONFLICT DO NOTHING counts no row). An insert of the same key from a transaction that has not
-        // committed yet may block until that transaction ends (PostgreSQL docs, INSERT, "Notes").
+        // (ON CONFLICT DO NOTHING counts no row). If the same key was inserted by a transaction that has not
+        // committed yet, this insert waits for it (PostgreSQL docs, "Index Uniqueness Checks":
+        // https://www.postgresql.org/docs/current/index-unique-checks.html).
         var inserted = await context.Database.ExecuteSqlAsync(
             $"""
             INSERT INTO inbox_messages (consumer, message_id, handled_at)
