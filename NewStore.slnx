@@ -9,6 +9,10 @@
     <Project Path="src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/Shared/" />
+  <Folder Name="/tests/Shared/NewStore.TestSupport/">
+    <Project Path="tests/Shared/NewStore.TestSupport/NewStore.TestSupport.csproj" />
+  </Folder>
   <Folder Name="/tests/Catalog.Tests/">
     <Project Path="tests/Catalog.Tests/NewStore.Catalog.Tests.csproj" />
   </Folder>

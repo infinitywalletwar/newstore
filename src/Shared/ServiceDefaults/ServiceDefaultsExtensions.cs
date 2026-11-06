@@ -11,7 +11,10 @@ namespace NewStore.ServiceDefaults;
 
 public static class ServiceDefaultsExtensions
 {
-    /// <summary>Registers what every service shares. The "self" liveness check and telemetry.</summary>
+    /// <summary>
+    /// Registers what every service shares: the "self" liveness check, telemetry, RFC 9457 problem details
+    /// for error responses and the OpenAPI document.
+    /// </summary>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Liveness answers "is the process running?", so it checks nothing external.
@@ -20,17 +23,28 @@ public static class ServiceDefaultsExtensions
 
         builder.AddDefaultTelemetry();
 
+        builder.Services.AddProblemDetails();
+        builder.Services.AddOpenApi();
+
         return builder;
     }
 
-    /// <summary>/health/live runs only checks tagged "live"; /health/ready runs every check.</summary>
+    /// <summary>
+    /// Services call this before any other middleware. It turns unhandled exceptions and empty 4xx/5xx
+    /// responses into application/problem+json, maps /health/live (only checks tagged "live"),
+    /// /health/ready (every check) and the OpenAPI document at /openapi/v1.json in every environment.
+    /// </summary>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
+        app.UseExceptionHandler();
+        app.UseStatusCodePages();
+
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains(HealthCheckExtensions.LiveTag),
         });
         app.MapHealthChecks("/health/ready");
+        app.MapOpenApi();
 
         return app;
     }

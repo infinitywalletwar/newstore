@@ -57,12 +57,31 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Target .NET 10. A .NET 11 preview SDK is also installed and `dotnet` uses it by default, so `global.json` pins SDK 10.0.403. It also selects the Microsoft.Testing.Platform test runner, which xUnit 4 needs on the .NET 10 SDK. Upgrade the SDK, the `aspnet` image tag and the Microsoft.AspNetCore.* package versions together, so tests, containers and CI run the same runtime: SDK 10.0.403 ships runtime 10.0.14.
 - `Directory.Build.props` sets the target framework, nullable reference types, implicit usings and warnings as errors for every project, so project files leave these out.
 - Package versions live only in `Directory.Packages.props`. A project's `PackageReference` has no `Version`.
+- A service's `Program.cs` takes this shape (see ADR 0005). `migrate` and `seed` are one-shot commands: `RunDatabaseCommandsAsync` returns the exit code, and the host never starts. `migrate` applies pending migrations. `seed` calls the service's `IDatabaseSeeder<TContext>`, which must be safe to run every time. Arguments that start with `-` or `/` are configuration, not commands.
+
+  ```csharp
+  var builder = WebApplication.CreateBuilder(args);
+  builder.AddServiceDefaults();
+  builder.AddPostgresDatabase<CatalogDbContext>("Catalog");
+  var app = builder.Build();
+  if (await app.RunDatabaseCommandsAsync<CatalogDbContext>(args) is { } exitCode)
+  {
+      return exitCode;
+  }
+  app.MapDefaultEndpoints();
+  app.Run();
+  return 0;
+  ```
+
+- Errors are `application/problem+json` and every service serves `/openapi/v1.json` (ADR 0006). Call `MapDefaultEndpoints` before any other middleware.
+- A library's `ActivitySource` and `Meter` are named `NewStore.<Something>`, so `AddServiceDefaults` collects them without a change.
 - Each service is one project with feature folders. Split it into layers only when a real need appears, and record why.
 
 ## Tests
 
 - Run integration tests against the real PostgreSQL and Kafka a service uses, through Testcontainers. Pass the image tag to the builder, as in `new PostgreSqlBuilder("postgres:18.6")`. The parameterless constructor is obsolete, which fails the build.
-- Test projects set `<OutputType>Exe</OutputType>` and `<Using Include="Xunit" />`.
+- Test projects set `<OutputType>Exe</OutputType>` and `<Using Include="Xunit" />`. `NewStore.TestSupport` is a class library: it references `xunit.v3.extensibility.core`, because the umbrella `xunit.v3` package fails the build of a project that is not an executable.
+- Use `NewStore.TestSupport` (`tests/Shared/`) and never copy a factory: `NewStoreAppFactory<Program>` starts a service, `PostgresServer` is one PostgreSQL container per test assembly (register it with `[assembly: AssemblyFixture(typeof(PostgresServer))]`) that hands each test class its own database, and `WaitForSpanAsync` waits for an exported span. Each factory sees only its own spans.
 - Pass `TestContext.Current.CancellationToken` to every call that accepts a token. Otherwise analyzer xUnit1051 fails the build.
 - `WebApplicationFactory<Program>` uses the `Program` class that .NET 10 generates. Keep it generated: a hand-written `public partial class Program` trips an analyzer.
 
@@ -92,4 +111,6 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`
 - Start the local stack: `docker compose up -d --wait`. Stop it: `docker compose down`. Wipe its data: `docker compose down -v`.
 - Build the Catalog image: `docker compose build catalog`
+- Add a migration: `ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add <Name> --project src/Services/<Service>` (the local tool is pinned in `.config/dotnet-tools.json`; the environment variable makes the design-time host read `appsettings.Development.json`).
+- Apply migrations in the stack: `docker compose up -d --wait` runs the one-shot `catalog-migrate` job before `catalog` starts, and `--wait` succeeds although that job exits.
 - Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
