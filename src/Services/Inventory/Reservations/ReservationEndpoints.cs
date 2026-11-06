@@ -8,6 +8,8 @@ public static class ReservationEndpoints
     {
         routes.MapPost("/editions/{editionId:guid}/reservations", ReserveAsync);
         routes.MapGet("/reservations/{id:guid}", GetAsync);
+        routes.MapPost("/reservations/{id:guid}/confirm", ConfirmAsync);
+        routes.MapPost("/reservations/{id:guid}/release", ReleaseAsync);
         return routes;
     }
 
@@ -52,4 +54,21 @@ public static class ReservationEndpoints
             .FirstOrDefaultAsync(ct);
         return Results.Ok(ReservationResponse.From(reservation, copyNumber));
     }
+
+    private static async Task<IResult> ConfirmAsync(Guid id, ReservationService service, CancellationToken ct) =>
+        await service.ConfirmAsync(id, ct) switch
+        {
+            ConfirmOutcome.Confirmed c => Results.Ok(ReservationResponse.From(c.Reservation, c.CopyNumber)),
+            ConfirmOutcome.Expired => Problems.Conflict("reservation-expired", "The reservation ran out of time. The copy went back on sale."),
+            ConfirmOutcome.Released => Problems.Conflict("reservation-released", "The reservation was released."),
+            _ => Problems.NotFound("Reservation"),
+        };
+
+    private static async Task<IResult> ReleaseAsync(Guid id, ReservationService service, CancellationToken ct) =>
+        await service.ReleaseAsync(id, ct) switch
+        {
+            ReleaseOutcome.Done => Results.NoContent(),
+            ReleaseOutcome.AlreadyConfirmed => Problems.Conflict("reservation-confirmed", "A confirmed reservation cannot be released."),
+            _ => Problems.NotFound("Reservation"),
+        };
 }

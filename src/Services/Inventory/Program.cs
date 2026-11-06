@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using NewStore.Inventory;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
+using NewStore.ServiceDefaults.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,11 @@ builder.Services.AddOptions<InventoryOptions>().BindConfiguration("Inventory");
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddSingleton<InventoryMetrics>();
+builder.Services.AddScoped<ReservationService>();
+builder.Services.AddSingleton<SweeperHeartbeat>();
+builder.Services.AddHostedService<ReservationExpiryService>();
+builder.Services.AddHealthChecks()
+    .AddCheck<SweeperHealthCheck>("reservation-sweeper", tags: [HealthCheckExtensions.LiveTag]);
 builder.Services.AddScoped<ConditionalUpdateStrategy>();
 builder.Services.AddScoped<ConcurrencyTokenStrategy>();
 builder.Services.AddScoped<IReserveStrategy>(services =>
