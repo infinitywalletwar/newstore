@@ -191,7 +191,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
       public static IHostApplicationBuilder AddPostgresDatabase<TContext>(
           this IHostApplicationBuilder builder, string connectionName) where TContext : DbContext;
 
-      // Handles the service's command line. Returns null when args is empty: the host should run. Otherwise
+      // Handles the service's command line. Returns null when no command remains after dropping arguments that start with `-` or `/` (WebApplicationFactory passes `--environment=…`): the host should run. Otherwise
       // runs each argument in order and returns the exit code: "migrate" applies pending migrations;
       // "seed" calls IDatabaseSeeder<TContext> from DI (0 and a log line when none is registered).
       // An unknown argument logs it and returns 2. The host never starts.
@@ -261,7 +261,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
   public sealed class OtlpExportListener : EventListener { public int Failures { get; } }
   ```
 
-  Class fixtures receive the assembly fixture through their constructor: xUnit v3 injects assembly fixtures into class fixtures. Check this against the xUnit v3 docs before relying on it; if it isn't supported, make `PostgresServer` a collection fixture for the whole assembly instead and say so in the report.
+  Class fixtures receive the assembly fixture through their constructor: xUnit v3 injects assembly fixtures into class fixtures. Check this against the xUnit v3 docs before relying on it; if it isn't supported, make `PostgresServer` a collection fixture for the whole assembly instead and say so in the report. Checked 2026-11-06: the docs page covers only test classes, but the runner resolves a class fixture's constructor arguments through the parent mapping manager (FixtureMappingManager_reflection.cs), and xunit.v3 4.0.2 does it.
 
 - [x] **Step 1: Test support project**
 
