@@ -115,7 +115,7 @@ newstore/
 │   │                   ConcurrencyTokenStrategy.cs  ReservationExpiryService.cs
 │   └── Telemetry/InventoryMetrics.cs
 ├── tests/Shared/NewStore.TestSupport/         (Task 2)
-│   ├── NewStoreAppFactory.cs  SpanSink.cs  PostgresServer.cs  OtlpExportListener.cs
+│   ├── NewStoreAppFactory.cs  SpanCollection.cs  PostgresServer.cs  OtlpExportListener.cs
 ├── tests/Catalog.Tests/                       uses TestSupport from Task 2; Task 5 adds VideoTests, ChannelTests, CachingTests
 ├── tests/Inventory.Tests/                     (Task 3)
 ├── tests/Messaging.Tests/                     (Task 4)
@@ -171,7 +171,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 **Files:**
 - Create `tests/Shared/NewStore.TestSupport/`:
   - `NewStore.TestSupport.csproj`: `Microsoft.NET.Sdk`, references `xunit.v3`, `Microsoft.AspNetCore.Mvc.Testing`, `Testcontainers.PostgreSql`, `OpenTelemetry.Exporter.InMemory`, `Npgsql`, `Microsoft.EntityFrameworkCore`, and `<Using Include="Xunit" />`.
-  - `NewStoreAppFactory.cs`, `SpanSink.cs` (moved from Catalog.Tests), `PostgresServer.cs`, `OtlpExportListener.cs`.
+  - `NewStoreAppFactory.cs`, `SpanCollection.cs` (moved from Catalog.Tests), `PostgresServer.cs`, `OtlpExportListener.cs`.
 - Create `.config/dotnet-tools.json` with `dotnet-ef`.
 - Create `src/Shared/ServiceDefaults/Data/PostgresExtensions.cs`.
 - Create `src/Services/Catalog/CatalogDbContext.cs` (no entities yet) and its `Migrations/` with one empty `Initial` migration.
@@ -238,15 +238,15 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
   {
       public Dictionary<string, string?> Settings { get; }
       public string TraceIdPrefix { get; }
-      public SpanSink ExportedSpans { get; }
+      public SpanCollection ExportedSpans { get; }
       // Polls ExportedSpans every 50 ms until a span matches; fails the test after timeout (default 5 s).
       public Task<Activity> WaitForSpanAsync(Func<Activity, bool> match, TimeSpan? timeout = null);
       // Applies TContext's migrations to the configured database. Call it from a derived factory's InitializeAsync.
       public Task MigrateAsync<TContext>() where TContext : DbContext;
   }
 
-  // Phase 0's SpanSink, plus the prefix filter: Add ignores spans whose TraceId doesn't start with the prefix.
-  public sealed class SpanSink(string traceIdPrefix) : ICollection<Activity> { public Activity[] Snapshot(); }
+  // Phase 0's SpanCollection, plus the prefix filter: Add ignores spans whose TraceId doesn't start with the prefix.
+  public sealed class SpanCollection(string traceIdPrefix) : ICollection<Activity> { public Activity[] Snapshot(); }
 
   // One PostgreSQL container per test assembly (register it with [assembly: AssemblyFixture]).
   // CreateDatabaseAsync runs CREATE DATABASE "<name>_<n>" on the container and returns that database's
@@ -265,7 +265,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 
 - [ ] **Step 1: Test support project**
 
-1. Create the project and move `SpanSink` into it with the prefix filter. Write `NewStoreAppFactory<TProgram>`, `PostgresServer` and `OtlpExportListener`.
+1. Create the project and move `SpanCollection` into it with the prefix filter. Write `NewStoreAppFactory<TProgram>`, `PostgresServer` and `OtlpExportListener`.
 2. Convert `tests/Catalog.Tests`: `PostgresCatalogAppFactory` becomes a class fixture that takes `PostgresServer`, creates its database and sets `ConnectionStrings:Catalog`; `CatalogAppFactory` goes away in favour of `NewStoreAppFactory<Program>`. `TracingTests` drop their unique-path workaround, since spans are isolated now; they use `WaitForSpanAsync`.
 3. First find out what `TracerProvider.ForceFlush` returns when the OTLP endpoint refuses connections: write a throwaway test, run it, and record the result in the report. Then `Service_keeps_serving_when_collector_is_unreachable` gains: force a flush, then assert `OtlpExportListener.Failures > 0`. If `ForceFlush` already returns `false` on a failed export, assert that too.
 4. `dotnet test --project tests/Catalog.Tests`: all pass, with the span-isolation change visible in the diff. Commit: `test: share the app factory, span sink and database server`.
