@@ -22,7 +22,7 @@ One buyer holds at most one live copy per edition because of a partial unique in
 
 ## Measurements
 
-`tests/load/last-copy.js` on the Compose stack on the owner's Mac (Apple Silicon, Docker Desktop), 1000 virtual users for 10 copies, plus 10 for the expiry scenario; one run per strategy from a fresh volume. The collector ran with `verbosity: detailed` and Inventory exported metrics every 250 ms (an earlier ConditionalUpdate run without those settings measured reserve p50 325 ms and p99 432 ms; runs vary). Pool metrics come from the collector log.
+`tests/load/last-copy.js` on the Compose stack on the owner's Mac (Apple Silicon, OrbStack), 1000 virtual users for 10 copies, plus 10 for the expiry scenario; one run per strategy from a fresh volume. The collector ran with `verbosity: detailed` and Inventory exported metrics every 250 ms (an earlier ConditionalUpdate run without those settings measured reserve p50 325 ms and p99 432 ms; runs vary). Pool metrics come from the collector log.
 
 | | ConditionalUpdate | ConcurrencyToken |
 |---|---|---|

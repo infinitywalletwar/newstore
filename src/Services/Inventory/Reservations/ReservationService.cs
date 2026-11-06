@@ -61,7 +61,12 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
         // The number comes from a counter on the edition row, not from count(*) + 1. The UPDATE locks the
         // row until this transaction ends, so numbers follow commit order, and a rolled-back confirm
         // rolls the counter back too: no gaps. RETURNING makes it one statement. The query is not
-        // composed with LINQ (no SingleAsync): EF would wrap the UPDATE in a subquery, which PostgreSQL rejects.
+        // composed with LINQ (no SingleAsync). When a LINQ operator follows, EF treats the SQL as a subquery
+        // and composes over it ("Composing with LINQ" and "Querying scalar types" in
+        // https://learn.microsoft.com/ef/core/querying/sql-queries). PostgreSQL allows a data-modifying
+        // statement only at the top level or in a WITH attached to it
+        // (https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-MODIFYING),
+        // so an UPDATE inside a subquery is not valid. ToListAsync adds no operator; we take the single row ourselves.
         var assigned = await db.Database
             .SqlQuery<int>($"""
                 UPDATE editions SET copies_assigned = copies_assigned + 1
