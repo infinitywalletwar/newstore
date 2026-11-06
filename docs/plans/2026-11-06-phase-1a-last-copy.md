@@ -151,7 +151,7 @@ Run `dotnet format NewStore.slnx`. Commit the result with no hand edits in it: `
 
 Add ecosystems `dotnet-sdk` and `docker-compose`, both with `directory: "/"` and a weekly schedule. Change the `docker` entry's `directory: "/src/Services/Catalog"` to `directories: ["/src/Services/*"]`. Commit: `ci: widen Dependabot to the SDK, Compose and every service`.
 
-- [ ] **Step 5: Docker build context**
+- [x] **Step 5: Docker build context**
 
 1. In the Dockerfile, replace `COPY src/ src/` with `COPY src/Shared/ src/Shared/` and `COPY src/Services/Catalog/ src/Services/Catalog/`.
 2. `.dockerignore`: add `.superpowers/` and `**/*.md`.
