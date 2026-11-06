@@ -21,6 +21,7 @@ if (await app.RunDatabaseCommandsAsync<InventoryDbContext>(args) is { } exitCode
 }
 
 app.MapDefaultEndpoints();
+app.MapEditionEndpoints();
 
 app.Run();
 return 0;
