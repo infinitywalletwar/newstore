@@ -48,6 +48,8 @@ export const options = {
     sold_out: ['count==990'],
     http_req_failed: ['rate==0'],
     'http_req_duration{name:reserve}': ['p(99)<' + P99_MS],
+    // Confirm waits for the reservation's row lock and takes the edition's counter; it must stay as fast.
+    'http_req_duration{name:confirm}': ['p(99)<' + P99_MS],
   },
 };
 

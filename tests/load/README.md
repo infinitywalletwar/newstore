@@ -30,5 +30,6 @@ The thresholds, and what failing each one means:
 | `sold_out: count==990` | Every other buyer got a clean `409 sold-out`. |
 | `http_req_failed: rate==0` | No 5xx and no connection error. A `409` counts as a good answer here. |
 | `http_req_duration{name:reserve}: p(99)<P99_MS` | The slowest 1% of reserves took less than `P99_MS` (1000 ms by default; CI uses 2000). |
+| `http_req_duration{name:confirm}: p(99)<P99_MS` | The same for confirm, which takes a row lock and the edition's number counter. |
 
 `compose.load.yaml` shortens Inventory's reservation TTL to 3 seconds and its sweep interval to 1 second, so the expiry scenario takes seconds, not 10 minutes. It is for this test only; a stack started without it keeps the 10-minute TTL.
