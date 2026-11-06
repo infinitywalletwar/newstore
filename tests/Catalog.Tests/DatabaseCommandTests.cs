@@ -72,4 +72,15 @@ public class DatabaseCommandTests(PostgresServer postgres)
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task Options_are_configuration_not_commands()
+    {
+        var (app, _) = await BuildAppAsync();
+        await using var _ = app;
+
+        // WebApplicationFactory starts Program with options like these; they are not commands.
+        Assert.Null(await app.RunDatabaseCommandsAsync<CatalogDbContext>(["--environment=Testing", "--contentRoot=/tmp"]));
+        Assert.Equal(0, await app.RunDatabaseCommandsAsync<CatalogDbContext>(["--environment=Testing", "seed"]));
+    }
 }
