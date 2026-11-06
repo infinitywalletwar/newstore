@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
@@ -37,7 +39,9 @@ public class DatabaseCommandTests(PostgresServer postgres)
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(ct);
         await using var count = new NpgsqlCommand("""SELECT count(*) FROM "__EFMigrationsHistory" """, connection);
-        Assert.Equal(1L, await count.ExecuteScalarAsync(ct));
+        await using var scope = app.Services.CreateAsyncScope();
+        var migrations = scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Database.GetMigrations().Count();
+        Assert.Equal((long)migrations, await count.ExecuteScalarAsync(ct));
     }
 
     [Fact]
@@ -71,5 +75,16 @@ public class DatabaseCommandTests(PostgresServer postgres)
         var result = await app.RunDatabaseCommandsAsync<CatalogDbContext>([]);
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Options_are_configuration_not_commands()
+    {
+        var (app, _) = await BuildAppAsync();
+        await using var _ = app;
+
+        // WebApplicationFactory starts Program with options like these; they are not commands.
+        Assert.Null(await app.RunDatabaseCommandsAsync<CatalogDbContext>(["--environment=Testing", "--contentRoot=/tmp"]));
+        Assert.Equal(0, await app.RunDatabaseCommandsAsync<CatalogDbContext>(["--environment=Testing", "seed"]));
     }
 }

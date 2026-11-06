@@ -32,6 +32,8 @@ jobs:
       - name: Catalog is ready
         # --wait already waited for Catalog's health check; the retry is a second line of defence.
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
+      - name: Catalog finds the seeded video
+        run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Show logs
         if: failure()
         run: docker compose logs

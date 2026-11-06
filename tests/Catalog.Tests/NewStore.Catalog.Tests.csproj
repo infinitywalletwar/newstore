@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Testcontainers.Redis" />
     <ProjectReference Include="..\..\src\Services\Catalog\NewStore.Catalog.csproj" />
     <ProjectReference Include="..\Shared\NewStore.TestSupport\NewStore.TestSupport.csproj" />
   </ItemGroup>
