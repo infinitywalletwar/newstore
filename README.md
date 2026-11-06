@@ -244,7 +244,7 @@ newstore/
 ├── compose.yaml      the local stack, so `docker compose up` works from the root
 ├── src/
 │   ├── Gateway/
-│   ├── Services/     one folder per service
+│   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Caching/, Seed/ (sample-catalog.json)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
 ├── web/              the Angular app

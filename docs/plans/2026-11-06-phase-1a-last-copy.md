@@ -650,14 +650,14 @@ public sealed class Video
 - Caching: `AddHybridCache()` with `AddStackExchangeRedisCache` as L2 (`ConnectionStrings:Redis`; `AbortOnConnectFail = false`, `ConnectTimeout` and `SyncTimeout` 1000 ms). Keys `video:{id}` and `channel:{slug}:{page}:{pageSize}`, expiration 60 s, tag `channel:{channelId}`, so 1b can drop a channel's entries when its data changes. Search is not cached. Readiness check `"redis"` with `failureStatus: HealthStatus.Degraded`: a `PING` through a connection the check owns, 3 s budget; not tagged, so it is in `/health/ready` as Degraded, never Unhealthy.
 - Seeder: `CatalogSeeder : IDatabaseSeeder<CatalogDbContext>` reads `sample-catalog.json` (6 channels, 48 videos; titles and descriptions with distinctive words; one channel named `Orbital Kitchen`, one video titled `Sourdough in Zero Gravity`, and the words `orbital` and `sourdough` appear nowhere else), inserts only when `channels` is empty.
 
-- [ ] **Step 1: Model, migration, seed (failing tests, then code)**
+- [x] **Step 1: Model, migration, seed (failing tests, then code)**
 
 - `Seed_inserts_the_sample_catalog_once`: run the seeder twice → 6 channels, 48 videos.
 - Migration `AddChannelsAndVideos`; check the generated column and the GIN index are in it.
 
 Commit: `feat(catalog): channels, videos and the sample catalog`.
 
-- [ ] **Step 2: Browse and search (failing tests, then code)**
+- [x] **Step 2: Browse and search (failing tests, then code)**
 
 `VideoTests` on a seeded database:
 - `Browse_returns_videos_newest_first_with_paging`: page 1 of 20 has 20 items, newest first, `total` 48; page 3 has 8.
@@ -671,7 +671,7 @@ Commit: `feat(catalog): channels, videos and the sample catalog`.
 
 Commit: `feat(catalog): browse, search and channel pages`.
 
-- [ ] **Step 3: Cache and Redis (failing tests, then code)**
+- [x] **Step 3: Cache and Redis (failing tests, then code)**
 
 `CachingTests(RedisCatalogAppFactory)`:
 - `Second_read_of_a_video_is_served_from_the_cache`: request `GET /videos/{id}` twice; find the two server spans by `url.path`, take the later by `StartTimeUtc`; assert no `Npgsql` span has `ParentSpanId` equal to its `SpanId`, while the earlier one has at least one.
@@ -680,7 +680,7 @@ Commit: `feat(catalog): browse, search and channel pages`.
 
 Commit: `feat(catalog): HybridCache on Redis, and Redis as a degraded dependency`.
 
-- [ ] **Step 4: ADR 0009, Compose, CI, docs, pull request**
+- [x] **Step 4: ADR 0009, Compose, CI, docs, pull request**
 
 1. ADR 0009: HybridCache (L1 + L2, stampede protection, tags) over a bare `IDistributedCache` or `IMemoryCache`; 60 s staleness is fine for V-4 and E-3 says counts may lag; Redis is Degraded, not Unhealthy, with the reason.
 2. `compose.yaml` and `.github/workflows/ci.yml` lines from Files; in `compose-smoke`, `curl --fail 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'`. You can't run the stack on the Mac during the parallel run (Task 3 owns it); CI checks it.

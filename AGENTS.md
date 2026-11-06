@@ -113,4 +113,5 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Build the Catalog image: `docker compose build catalog`
 - Add a migration: `ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add <Name> --project src/Services/<Service>` (the local tool is pinned in `.config/dotnet-tools.json`; the environment variable makes the design-time host read `appsettings.Development.json`).
 - Apply migrations in the stack: `docker compose up -d --wait` runs the one-shot `catalog-migrate` job before `catalog` starts, and `--wait` succeeds although that job exits.
+- Seed a database: `docker compose up -d --wait` also runs `seed` in the `catalog-migrate` job (the command is `migrate seed`). Against a local database: `dotnet run --project src/Services/Catalog -- seed`.
 - Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
