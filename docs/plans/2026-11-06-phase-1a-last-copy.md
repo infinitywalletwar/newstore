@@ -191,7 +191,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
       public static IHostApplicationBuilder AddPostgresDatabase<TContext>(
           this IHostApplicationBuilder builder, string connectionName) where TContext : DbContext;
 
-      // Handles the service's command line. Returns null when args is empty: the host should run. Otherwise
+      // Handles the service's command line. Returns null when no command remains after dropping arguments that start with `-` or `/` (WebApplicationFactory passes `--environment=…`): the host should run. Otherwise
       // runs each argument in order and returns the exit code: "migrate" applies pending migrations;
       // "seed" calls IDatabaseSeeder<TContext> from DI (0 and a log line when none is registered).
       // An unknown argument logs it and returns 2. The host never starts.
@@ -261,7 +261,7 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
   public sealed class OtlpExportListener : EventListener { public int Failures { get; } }
   ```
 
-  Class fixtures receive the assembly fixture through their constructor: xUnit v3 injects assembly fixtures into class fixtures. Check this against the xUnit v3 docs before relying on it; if it isn't supported, make `PostgresServer` a collection fixture for the whole assembly instead and say so in the report.
+  Class fixtures receive the assembly fixture through their constructor: xUnit v3 injects assembly fixtures into class fixtures. Check this against the xUnit v3 docs before relying on it; if it isn't supported, make `PostgresServer` a collection fixture for the whole assembly instead and say so in the report. Checked 2026-11-06: the docs page covers only test classes, but the runner resolves a class fixture's constructor arguments through the parent mapping manager (FixtureMappingManager_reflection.cs), and xunit.v3 4.0.2 does it.
 
 - [x] **Step 1: Test support project**
 
@@ -569,7 +569,7 @@ public sealed class MessagingOptions
 - **Topics** (`TopicCreator : IHostedService`, registered before the consumer): `CreateTopicsAsync` for every `AddTopic` and for the dead-letter topic of every handled topic (1 partition); `TopicAlreadyExists` is fine; five attempts 2 s apart while the broker is starting.
 - **Telemetry** (`ActivitySource("NewStore.Messaging")`): producer span `publish <topic>` (kind Producer) whose parent is the stored `trace_parent`, so a request's spans and its event's span share one trace; consumer span `process <topic>` (kind Consumer) with the parent from the header. Attributes `messaging.system = kafka`, `messaging.destination.name`, `messaging.message.id`.
 
-- [ ] **Step 1: Model, outbox and the relay**
+- [x] **Step 1: Model, outbox and the relay**
 
 Tests, with a raw `IConsumer` in the test to read the topic:
 - `Enqueued_event_is_published_after_commit`: the message arrives with key, `message-id` = `EventId`, `type` and `traceparent` headers; `published_at` is set.
@@ -580,7 +580,7 @@ Tests, with a raw `IConsumer` in the test to read the topic:
 
 Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apache image; if the container doesn't start, fall back to `confluentinc/cp-kafka:8.0.0` (arm64 exists) and record why. Commit: `feat(messaging): transactional outbox with a relay`.
 
-- [ ] **Step 2: Consumer, inbox and dead letters**
+- [x] **Step 2: Consumer, inbox and dead letters**
 
 - `Handler_runs_once_for_a_duplicate_message`: produce the same message (same `message-id`) twice → the handler ran once, one inbox row.
 - `Handler_writes_commit_with_the_inbox_row`: the handler adds a `Thing`; after the message, both the row and the inbox row exist.
@@ -590,13 +590,13 @@ Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apach
 
 Commit: `feat(messaging): idempotent consumer with a dead-letter topic`.
 
-- [ ] **Step 3: Telemetry**
+- [x] **Step 3: Telemetry**
 
 - `Publish_and_process_spans_share_the_request_trace`: start an `Activity` in the test, enqueue, commit; the producer span and the consumer span (collected with an in-memory exporter on a `TracerProvider` built in the test with source `NewStore.Messaging`) have that activity's `TraceId`.
 
 Commit: `feat(messaging): trace events across the outbox and the consumer`.
 
-- [ ] **Step 4: ADR 0008, docs and the pull request**
+- [x] **Step 4: ADR 0008, docs and the pull request**
 
 1. ADR 0008: the partition key is the aggregate's id (one edition's events stay in order); JSON with `System.Text.Json`, the type in a header, additive changes only, and a schema registry when a second language or a breaking change appears; a dead-letter topic per topic; draining on shutdown; and why at-least-once plus an idempotent consumer, not Kafka transactions.
 2. `AGENTS.md`, Architecture rules: how a service publishes (`IOutbox.Enqueue` then `SaveChangesAsync`) and consumes (`AddHandler`), and that Kafka is never in a readiness check. README layout.
@@ -650,14 +650,14 @@ public sealed class Video
 - Caching: `AddHybridCache()` with `AddStackExchangeRedisCache` as L2 (`ConnectionStrings:Redis`; `AbortOnConnectFail = false`, `ConnectTimeout` and `SyncTimeout` 1000 ms). Keys `video:{id}` and `channel:{slug}:{page}:{pageSize}`, expiration 60 s, tag `channel:{channelId}`, so 1b can drop a channel's entries when its data changes. Search is not cached. Readiness check `"redis"` with `failureStatus: HealthStatus.Degraded`: a `PING` through a connection the check owns, 3 s budget; not tagged, so it is in `/health/ready` as Degraded, never Unhealthy.
 - Seeder: `CatalogSeeder : IDatabaseSeeder<CatalogDbContext>` reads `sample-catalog.json` (6 channels, 48 videos; titles and descriptions with distinctive words; one channel named `Orbital Kitchen`, one video titled `Sourdough in Zero Gravity`, and the words `orbital` and `sourdough` appear nowhere else), inserts only when `channels` is empty.
 
-- [ ] **Step 1: Model, migration, seed (failing tests, then code)**
+- [x] **Step 1: Model, migration, seed (failing tests, then code)**
 
 - `Seed_inserts_the_sample_catalog_once`: run the seeder twice → 6 channels, 48 videos.
 - Migration `AddChannelsAndVideos`; check the generated column and the GIN index are in it.
 
 Commit: `feat(catalog): channels, videos and the sample catalog`.
 
-- [ ] **Step 2: Browse and search (failing tests, then code)**
+- [x] **Step 2: Browse and search (failing tests, then code)**
 
 `VideoTests` on a seeded database:
 - `Browse_returns_videos_newest_first_with_paging`: page 1 of 20 has 20 items, newest first, `total` 48; page 3 has 8.
@@ -671,7 +671,7 @@ Commit: `feat(catalog): channels, videos and the sample catalog`.
 
 Commit: `feat(catalog): browse, search and channel pages`.
 
-- [ ] **Step 3: Cache and Redis (failing tests, then code)**
+- [x] **Step 3: Cache and Redis (failing tests, then code)**
 
 `CachingTests(RedisCatalogAppFactory)`:
 - `Second_read_of_a_video_is_served_from_the_cache`: request `GET /videos/{id}` twice; find the two server spans by `url.path`, take the later by `StartTimeUtc`; assert no `Npgsql` span has `ParentSpanId` equal to its `SpanId`, while the earlier one has at least one.
@@ -680,7 +680,7 @@ Commit: `feat(catalog): browse, search and channel pages`.
 
 Commit: `feat(catalog): HybridCache on Redis, and Redis as a degraded dependency`.
 
-- [ ] **Step 4: ADR 0009, Compose, CI, docs, pull request**
+- [x] **Step 4: ADR 0009, Compose, CI, docs, pull request**
 
 1. ADR 0009: HybridCache (L1 + L2, stampede protection, tags) over a bare `IDistributedCache` or `IMemoryCache`; 60 s staleness is fine for V-4 and E-3 says counts may lag; Redis is Degraded, not Unhealthy, with the reason.
 2. `compose.yaml` and `.github/workflows/ci.yml` lines from Files; in `compose-smoke`, `curl --fail 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'`. You can't run the stack on the Mac during the parallel run (Task 3 owns it); CI checks it.

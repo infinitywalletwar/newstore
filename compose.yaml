@@ -79,7 +79,7 @@ services:
     ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
     deploy: { resources: { limits: { memory: 256m } } }
 
-  # One-shot job: applies Catalog's migrations and exits (ADR 0005). The image's entrypoint is
+  # One-shot job: applies Catalog's migrations, seeds the sample catalog and exits (ADR 0005). The image's entrypoint is
   # `dotnet NewStore.Catalog.dll`, so `command` supplies the argument.
   catalog-migrate:
     build:
@@ -87,7 +87,7 @@ services:
       dockerfile: src/Services/Catalog/Dockerfile
     image: newstore/catalog:local
     pull_policy: build
-    command: ["migrate"]
+    command: ["migrate", "seed"]
     restart: "no"
     environment:
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
@@ -105,12 +105,14 @@ services:
     pull_policy: build
     environment:
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
+      ConnectionStrings__Redis: redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: catalog
     ports: ["127.0.0.1:8101:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       catalog-migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.

@@ -39,6 +39,8 @@ jobs:
         run: docker compose -f compose.yaml -f compose.load.yaml run --rm k6
         env:
           P99_MS: "2000"
+      - name: Catalog finds the seeded video
+        run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Show logs
         if: failure()
         run: docker compose -f compose.yaml -f compose.load.yaml logs
