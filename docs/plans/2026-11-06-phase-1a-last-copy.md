@@ -127,7 +127,7 @@ newstore/
 
 ### Task 1: Hygiene
 
-One pull request, five commits, each reviewable alone. Branch `phase-1/hygiene`. Issue #26.
+One pull request, five commits, each reviewable alone. Branch `phase-1/hygiene`. Issue #34.
 
 **Files:**
 - Modify: `.editorconfig`, every `.cs` file (the format commit), `Directory.Build.props`, `Directory.Packages.props`, `.github/dependabot.yml`, `src/Services/Catalog/Dockerfile`, `.dockerignore`.
@@ -160,13 +160,13 @@ Add ecosystems `dotnet-sdk` and `docker-compose`, both with `directory: "/"` and
 
 - [ ] **Step 6: Pull request**
 
-Walkthrough: one paragraph per commit. Interview angle: "Why pin transitive packages?" (a transitive bump can change behaviour without any direct reference changing; pinning makes every version an explicit, reviewed line). `Closes #26`.
+Walkthrough: one paragraph per commit. Interview angle: "Why pin transitive packages?" (a transitive bump can change behaviour without any direct reference changing; pinning makes every version an explicit, reviewed line). `Closes #34`.
 
 ---
 
 ### Task 2: Shared groundwork
 
-Everything the three parallel tasks would otherwise each build. Branch `phase-1/groundwork`. Issue #27.
+Everything the three parallel tasks would otherwise each build. Branch `phase-1/groundwork`. Issue #35.
 
 **Files:**
 - Create `tests/Shared/NewStore.TestSupport/`:
@@ -303,13 +303,13 @@ Everything the three parallel tasks would otherwise each build. Branch `phase-1/
 
 1. `AGENTS.md`: in Code, the `Program.cs` shape and the `migrate`/`seed` contract; in Tests, "use `NewStore.TestSupport`; never copy a factory"; in Commands, `dotnet ef` with the environment variable, `docker compose run --rm catalog-migrate` if Step 4 needed it. README layout gets `tests/Shared/` and `.config/`.
 2. CI: `dotnet build` already builds TestSupport through the solution. `compose-smoke` unchanged unless Step 4 says otherwise.
-3. Walkthrough: file by file; interview angles: "Why not run migrations at startup?", "Why is Redis or Kafka not in the readiness check?" (preview of Tasks 4 and 5), "How do you size a connection pool?". `Closes #27`.
+3. Walkthrough: file by file; interview angles: "Why not run migrations at startup?", "Why is Redis or Kafka not in the readiness check?" (preview of Tasks 4 and 5), "How do you size a connection pool?". `Closes #35`.
 
 ---
 
 ### Task 3: Inventory, the last copy
 
-The hard part `AGENTS.md` calls "reservations and copy numbers". Branch `phase-1/inventory`, worktree. Issue #28. Advances C-1 (#6), C-3 (#8), C-4 (#9), E-1 (#3) and E-3 (#5); those stories close in 1b, when a buyer can do this in the browser.
+The hard part `AGENTS.md` calls "reservations and copy numbers". Branch `phase-1/inventory`, worktree. Issue #36. Advances C-1 (#6), C-3 (#8), C-4 (#9), E-1 (#3) and E-3 (#5); those stories close in 1b, when a buyer can do this in the browser.
 
 **Files:**
 - Create `src/Services/Inventory/` as in File Structure. The csproj is `Microsoft.NET.Sdk.Web`, references ServiceDefaults and `Microsoft.EntityFrameworkCore.Design` (`PrivateAssets="all"`). `launchSettings.json` `http` profile: `http://localhost:5102`, `OTEL_EXPORTER_OTLP_ENDPOINT` `http://localhost:4317`, `OTEL_SERVICE_NAME` `inventory`. `appsettings.Development.json`: `ConnectionStrings:Inventory` = `Host=localhost;Port=5432;Database=inventory;Username=inventory;Password=inventory`. Dockerfile: Catalog's, with Inventory's paths.
@@ -493,13 +493,13 @@ Commit: `feat(inventory): confirm, release and expire reservations`.
 
 1. `compose-smoke`: after the Catalog curl, `curl … http://localhost:8102/health/ready`; then "Run the last-copy load test": `docker compose -f compose.yaml -f compose.load.yaml run --rm k6` with `P99_MS=2000` in the step's `env` (the runner is slower than the Mac). Both compose commands in the job use both files.
 2. `AGENTS.md`: the port rows (8102, 5102) and the k6 command. README layout.
-3. Walkthrough: this is a hard part. Explain reserve, confirm and the sweeper step by step, show the test that proves each, and suggest one small change for the owner (for example: remove the partial index's `WHERE` and see which test fails and why). Interview angles: "How do you prevent overselling?", "Why does the copy number come from an `UPDATE … RETURNING` and not from `count(*) + 1`?", "What does `FOR UPDATE` cost under contention?". `Closes #28`.
+3. Walkthrough: this is a hard part. Explain reserve, confirm and the sweeper step by step, show the test that proves each, and suggest one small change for the owner (for example: remove the partial index's `WHERE` and see which test fails and why). Interview angles: "How do you prevent overselling?", "Why does the copy number come from an `UPDATE … RETURNING` and not from `count(*) + 1`?", "What does `FOR UPDATE` cost under contention?". `Closes #36`.
 
 ---
 
 ### Task 4: Messaging: the outbox and Kafka
 
-The hard parts `AGENTS.md` calls "the outbox" and "idempotent consumers". A library with tests; no service uses it in 1a. Branch `phase-1/messaging`, worktree. Issue #29.
+The hard parts `AGENTS.md` calls "the outbox" and "idempotent consumers". A library with tests; no service uses it in 1a. Branch `phase-1/messaging`, worktree. Issue #37.
 
 **Files:**
 - Create `src/Shared/Messaging/` as in File Structure. `NewStore.Messaging.csproj`: `Microsoft.NET.Sdk`, references `Confluent.Kafka`, `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` and `<FrameworkReference Include="Microsoft.AspNetCore.App" />` (for health checks and hosting).
@@ -600,13 +600,13 @@ Commit: `feat(messaging): trace events across the outbox and the consumer`.
 
 1. ADR 0008: the partition key is the aggregate's id (one edition's events stay in order); JSON with `System.Text.Json`, the type in a header, additive changes only, and a schema registry when a second language or a breaking change appears; a dead-letter topic per topic; draining on shutdown; and why at-least-once plus an idempotent consumer, not Kafka transactions.
 2. `AGENTS.md`, Architecture rules: how a service publishes (`IOutbox.Enqueue` then `SaveChangesAsync`) and consumes (`AddHandler`), and that Kafka is never in a readiness check. README layout.
-3. Walkthrough: two hard parts. Explain the relay's query and `SKIP LOCKED`, the inbox insert, and the dead-letter path, each with its test; suggest one change (for example: remove `FOR UPDATE SKIP LOCKED` and run the two-relay test). Interview angles: "Why an outbox instead of publishing after `SaveChanges`?", "What does exactly-once mean here?", "What happens to the trace across Kafka?". `Closes #29`.
+3. Walkthrough: two hard parts. Explain the relay's query and `SKIP LOCKED`, the inbox insert, and the dead-letter path, each with its test; suggest one change (for example: remove `FOR UPDATE SKIP LOCKED` and run the two-relay test). Interview angles: "Why an outbox instead of publishing after `SaveChanges`?", "What does exactly-once mean here?", "What happens to the trace across Kafka?". `Closes #37`.
 
 ---
 
 ### Task 5: Catalog reads: channels, sample videos, search and the cache
 
-V-4 through the API. Branch `phase-1/catalog-reads`, worktree. Issue #30. Advances V-4 (#2); the page is 1b.
+V-4 through the API. Branch `phase-1/catalog-reads`, worktree. Issue #38. Advances V-4 (#2); the page is 1b.
 
 **Files:**
 - Create `src/Services/Catalog/Channels/`, `Videos/`, `Caching/RedisHealthCheck.cs`, `Seed/CatalogSeeder.cs`, `Seed/sample-catalog.json` (copied to the output and the publish folder), a second migration `AddChannelsAndVideos`.
@@ -685,7 +685,7 @@ Commit: `feat(catalog): HybridCache on Redis, and Redis as a degraded dependency
 1. ADR 0009: HybridCache (L1 + L2, stampede protection, tags) over a bare `IDistributedCache` or `IMemoryCache`; 60 s staleness is fine for V-4 and E-3 says counts may lag; Redis is Degraded, not Unhealthy, with the reason.
 2. `compose.yaml` and `.github/workflows/ci.yml` lines from Files; in `compose-smoke`, `curl --fail 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'`. You can't run the stack on the Mac during the parallel run (Task 3 owns it); CI checks it.
 3. `AGENTS.md` Commands: the seed command. README layout.
-4. Walkthrough: file by file; interview angles: "Where would you put a cache, and what goes wrong when it's a dependency?", "How does full-text search differ from `LIKE`?", "What is a cache stampede and how does HybridCache prevent it?". `Closes #30`.
+4. Walkthrough: file by file; interview angles: "Where would you put a cache, and what goes wrong when it's a dependency?", "How does full-text search differ from `LIKE`?", "What is a cache stampede and how does HybridCache prevent it?". `Closes #38`.
 
 ---
 

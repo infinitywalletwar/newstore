@@ -10,13 +10,13 @@ Sprint 1 ended early, on 2026-11-05, because its goal was reached. Its review an
 
 | Issue | Task |
 |---|---|
-| #26 | Hygiene |
-| #27 | Shared groundwork |
-| #28 | Inventory, the last copy |
-| #29 | Messaging: the outbox and Kafka |
-| #30 | Catalog reads: channels, sample videos, search and the cache |
+| #34 | Hygiene |
+| #35 | Shared groundwork |
+| #36 | Inventory, the last copy |
+| #37 | Messaging: the outbox and Kafka |
+| #38 | Catalog reads: channels, sample videos, search and the cache |
 
-#26 and #27 run one after the other. #28, #29 and #30 are independent and run in parallel, which is why the work-in-progress limit went from two to three (README, How we work).
+#34 and #35 run one after the other. #36, #37 and #38 are independent and run in parallel, which is why the work-in-progress limit went from two to three (README, How we work).
 
 ## Review
 
