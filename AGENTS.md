@@ -101,6 +101,8 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   | 4317, 4318 | OpenTelemetry Collector (gRPC, HTTP) |
   | 8101 | Catalog in Compose |
   | 5101 | Catalog with `dotnet run` |
+  | 8102 | Inventory in Compose |
+  | 5102 | Inventory with `dotnet run` |
 
   Each new service takes the next number: 81NN in Compose and 51NN with `dotnet run`.
 
@@ -113,4 +115,5 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Build the Catalog image: `docker compose build catalog`
 - Add a migration: `ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add <Name> --project src/Services/<Service>` (the local tool is pinned in `.config/dotnet-tools.json`; the environment variable makes the design-time host read `appsettings.Development.json`).
 - Apply migrations in the stack: `docker compose up -d --wait` runs the one-shot `catalog-migrate` job before `catalog` starts, and `--wait` succeeds although that job exits.
+- Run the last-copy load test (1000 buyers, 10 copies; see `tests/load/README.md`): `docker compose -f compose.yaml -f compose.load.yaml up -d --wait`, then `docker compose -f compose.yaml -f compose.load.yaml run --rm k6`. The overlay shortens Inventory's reservation TTL, so use it for this test only.
 - Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
