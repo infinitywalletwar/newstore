@@ -13,6 +13,14 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
   - package-ecosystem: "docker"
-    directory: "/src/Services/Catalog"
+    directories: ["/src/Services/*"]
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "dotnet-sdk"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker-compose"
+    directory: "/"
     schedule:
       interval: "weekly"

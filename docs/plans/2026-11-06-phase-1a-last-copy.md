@@ -147,7 +147,7 @@ Run `dotnet format NewStore.slnx`. Commit the result with no hand edits in it: `
 3. `dotnet build NewStore.slnx`. Warnings are errors, so the new analyzers may fail the build. Fix each finding in the code when the fix is local. When a rule doesn't fit this code base, set `dotnet_diagnostic.<rule>.severity = none` in `.editorconfig` with a one-line comment saying why. If more than ten distinct rules fire, stop and report NEEDS_CONTEXT with the list.
 4. `dotnet test --solution NewStore.slnx` passes. Commit: `build: raise the analysis level and pin transitive packages`.
 
-- [ ] **Step 4: Dependabot**
+- [x] **Step 4: Dependabot**
 
 Add ecosystems `dotnet-sdk` and `docker-compose`, both with `directory: "/"` and a weekly schedule. Change the `docker` entry's `directory: "/src/Services/Catalog"` to `directories: ["/src/Services/*"]`. Commit: `ci: widen Dependabot to the SDK, Compose and every service`.
 
