@@ -8,6 +8,9 @@
   <Folder Name="/src/Shared/ServiceDefaults/">
     <Project Path="src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj" />
   </Folder>
+  <Folder Name="/src/Shared/Messaging/">
+    <Project Path="src/Shared/Messaging/NewStore.Messaging.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Shared/" />
   <Folder Name="/tests/Shared/NewStore.TestSupport/">
@@ -15,5 +18,8 @@
   </Folder>
   <Folder Name="/tests/Catalog.Tests/">
     <Project Path="tests/Catalog.Tests/NewStore.Catalog.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Messaging.Tests/">
+    <Project Path="tests/Messaging.Tests/NewStore.Messaging.Tests.csproj" />
   </Folder>
 </Solution>

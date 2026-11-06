@@ -247,8 +247,10 @@ newstore/
 │   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Caching/, Seed/ (sample-catalog.json)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
+│       └── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
 ├── web/              the Angular app
 ├── tests/            unit, integration, contract and load tests
+│   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
 │   └── Shared/       NewStore.TestSupport: the app factory, span sink and PostgreSQL server every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool
 ├── deploy/           files Compose mounts, Helm charts and Terraform

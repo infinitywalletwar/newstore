@@ -569,7 +569,7 @@ public sealed class MessagingOptions
 - **Topics** (`TopicCreator : IHostedService`, registered before the consumer): `CreateTopicsAsync` for every `AddTopic` and for the dead-letter topic of every handled topic (1 partition); `TopicAlreadyExists` is fine; five attempts 2 s apart while the broker is starting.
 - **Telemetry** (`ActivitySource("NewStore.Messaging")`): producer span `publish <topic>` (kind Producer) whose parent is the stored `trace_parent`, so a request's spans and its event's span share one trace; consumer span `process <topic>` (kind Consumer) with the parent from the header. Attributes `messaging.system = kafka`, `messaging.destination.name`, `messaging.message.id`.
 
-- [ ] **Step 1: Model, outbox and the relay**
+- [x] **Step 1: Model, outbox and the relay**
 
 Tests, with a raw `IConsumer` in the test to read the topic:
 - `Enqueued_event_is_published_after_commit`: the message arrives with key, `message-id` = `EventId`, `type` and `traceparent` headers; `published_at` is set.
@@ -580,7 +580,7 @@ Tests, with a raw `IConsumer` in the test to read the topic:
 
 Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apache image; if the container doesn't start, fall back to `confluentinc/cp-kafka:8.0.0` (arm64 exists) and record why. Commit: `feat(messaging): transactional outbox with a relay`.
 
-- [ ] **Step 2: Consumer, inbox and dead letters**
+- [x] **Step 2: Consumer, inbox and dead letters**
 
 - `Handler_runs_once_for_a_duplicate_message`: produce the same message (same `message-id`) twice → the handler ran once, one inbox row.
 - `Handler_writes_commit_with_the_inbox_row`: the handler adds a `Thing`; after the message, both the row and the inbox row exist.
@@ -590,13 +590,13 @@ Use `new KafkaBuilder("apache/kafka:4.4.0")`. Testcontainers 4.x knows the Apach
 
 Commit: `feat(messaging): idempotent consumer with a dead-letter topic`.
 
-- [ ] **Step 3: Telemetry**
+- [x] **Step 3: Telemetry**
 
 - `Publish_and_process_spans_share_the_request_trace`: start an `Activity` in the test, enqueue, commit; the producer span and the consumer span (collected with an in-memory exporter on a `TracerProvider` built in the test with source `NewStore.Messaging`) have that activity's `TraceId`.
 
 Commit: `feat(messaging): trace events across the outbox and the consumer`.
 
-- [ ] **Step 4: ADR 0008, docs and the pull request**
+- [x] **Step 4: ADR 0008, docs and the pull request**
 
 1. ADR 0008: the partition key is the aggregate's id (one edition's events stay in order); JSON with `System.Text.Json`, the type in a header, additive changes only, and a schema registry when a second language or a breaking change appears; a dead-letter topic per topic; draining on shutdown; and why at-least-once plus an idempotent consumer, not Kafka transactions.
 2. `AGENTS.md`, Architecture rules: how a service publishes (`IOutbox.Enqueue` then `SaveChangesAsync`) and consumes (`AddHandler`), and that Kafka is never in a readiness check. README layout.
