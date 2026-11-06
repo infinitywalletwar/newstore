@@ -15,6 +15,10 @@ namespace NewStore.ServiceDefaults.Telemetry;
 
 internal static class TelemetryExtensions
 {
+    // Wildcard (OpenTelemetry .NET supports * in AddSource and AddMeter): every ActivitySource and Meter
+    // whose name starts with "NewStore.".
+    private const string NewStoreInstrumentation = "NewStore.*";
+
     /// <summary>
     /// Traces, metrics and logs for every service. Export goes over OTLP to the collector, and only
     /// when OTEL_EXPORTER_OTLP_ENDPOINT is set. Tracing is always registered, so tests can attach
@@ -40,13 +44,16 @@ internal static class TelemetryExtensions
                 // are dropped too: the default sampler follows the parent's decision.
                 .AddAspNetCoreInstrumentation(options => options.Filter = context => !IsHealthPath(context.Request.Path))
                 .AddHttpClientInstrumentation()
-                .AddNpgsql())
+                .AddNpgsql()
+                // A library's own ActivitySource named NewStore.<Something> needs no change here.
+                .AddSource(NewStoreInstrumentation))
             .WithMetrics(metrics => metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
                 // Connection-pool usage and waits: the readiness check no longer reports a full pool.
-                .AddNpgsqlInstrumentation());
+                .AddNpgsqlInstrumentation()
+                .AddMeter(NewStoreInstrumentation));
 
         if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
         {

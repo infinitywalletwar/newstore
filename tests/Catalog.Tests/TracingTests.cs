@@ -36,4 +36,21 @@ public class TracingTests(PostgresCatalogAppFactory factory) : IClassFixture<Pos
         // isolated per factory, so any Npgsql query span here belongs to this app.
         Assert.DoesNotContain(spans, s => s.Source.Name == "Npgsql" && s.GetTagItem("db.query.text") as string == "SELECT 1");
     }
+
+    [Fact]
+    public async Task Activity_source_named_NewStore_dot_something_is_collected()
+    {
+        using var client = factory.CreateClient();
+        using var source = new ActivitySource("NewStore.Probe");
+        // Join a trace that carries this factory's prefix, as a request would.
+        var traceId = ActivityTraceId.CreateFromString(factory.TraceIdPrefix + new string('a', 24));
+        var parent = new ActivityContext(traceId, ActivitySpanId.CreateRandom(), ActivityTraceFlags.Recorded);
+
+        using (source.StartActivity("probe", ActivityKind.Internal, parent))
+        {
+        }
+
+        var span = await factory.WaitForSpanAsync(s => s.Source.Name == "NewStore.Probe");
+        Assert.Equal("probe", span.OperationName);
+    }
 }
