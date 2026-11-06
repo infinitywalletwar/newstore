@@ -569,7 +569,7 @@ public sealed class MessagingOptions
 - **Topics** (`TopicCreator : IHostedService`, registered before the consumer): `CreateTopicsAsync` for every `AddTopic` and for the dead-letter topic of every handled topic (1 partition); `TopicAlreadyExists` is fine; five attempts 2 s apart while the broker is starting.
 - **Telemetry** (`ActivitySource("NewStore.Messaging")`): producer span `publish <topic>` (kind Producer) whose parent is the stored `trace_parent`, so a request's spans and its event's span share one trace; consumer span `process <topic>` (kind Consumer) with the parent from the header. Attributes `messaging.system = kafka`, `messaging.destination.name`, `messaging.message.id`.
 
-- [ ] **Step 1: Model, outbox and the relay**
+- [x] **Step 1: Model, outbox and the relay**
 
 Tests, with a raw `IConsumer` in the test to read the topic:
 - `Enqueued_event_is_published_after_commit`: the message arrives with key, `message-id` = `EventId`, `type` and `traceparent` headers; `published_at` is set.
