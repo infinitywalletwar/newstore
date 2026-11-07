@@ -21,4 +21,21 @@ public sealed class MessagingOptions
     public int MaxHandlerAttempts { get; set; } = 3;
 
     public string DeadLetterSuffix { get; set; } = ".dlt";
+
+    /// <summary>
+    /// How long a published outbox row stays. A published row is only an audit trail; one day keeps the table small
+    /// and leaves a day to inspect what was sent. Unpublished rows are never deleted.
+    /// </summary>
+    public TimeSpan OutboxRetention { get; set; } = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// How long an inbox row stays. An inbox row is the proof that a message was handled, so a duplicate older than this is
+    /// handled again. Seven days equals Kafka's default topic retention (<c>log.retention.hours</c> = 168): a duplicate cannot
+    /// arrive from the topic after the topic dropped the message, unless someone replays older data on purpose.
+    /// Raise it before such a replay.
+    /// </summary>
+    public TimeSpan InboxRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>The pause between two cleanup passes. The first pass runs after the first interval, not at startup.</summary>
+    public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(5);
 }

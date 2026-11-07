@@ -43,4 +43,13 @@ internal static partial class MessagingLog
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Committing offsets failed: {Error}")]
     public static partial void CommitFailed(ILogger logger, string error);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Deleted {Outbox} outbox and {Inbox} inbox rows older than their retention")]
+    public static partial void CleanupDeleted(ILogger logger, int outbox, int inbox);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Cleanup found no outbox or inbox rows past their retention.")]
+    public static partial void CleanupNothingToDelete(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The cleanup pass failed; it tries again after the interval.")]
+    public static partial void CleanupFailed(ILogger logger, Exception exception);
 }
