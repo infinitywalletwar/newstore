@@ -3,10 +3,10 @@ using Confluent.Kafka.Admin;
 
 using Testcontainers.Kafka;
 
-namespace NewStore.Messaging.Tests;
+namespace NewStore.TestSupport;
 
 /// <summary>
-/// One Kafka container per test assembly, like <see cref="PostgresServer"/>. A class that pauses the broker uses a subclass as a
+/// One Kafka container per test assembly, like <see cref="PostgresServer"/>: register it with <c>[assembly: AssemblyFixture(typeof(KafkaServer))]</c>. A class that pauses the broker uses a subclass as a
 /// class fixture, so other tests keep their broker.
 /// </summary>
 public class KafkaServer : IAsyncLifetime
