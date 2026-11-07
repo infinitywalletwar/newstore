@@ -115,6 +115,20 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
         return new ReleaseOutcome.Done();
     }
 
+    // Lock order, for every path that touches both tables: the reservation row first, the edition row second.
+    // - ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
+    //   ReturnCopyAsync or the counter UPDATE on the edition.
+    // - SweepAsync: the data-modifying WITH updates the reservations, and the outer UPDATE editions reads
+    //   `expired` through a GROUP BY, planned as a HashAggregate. For that node the executor fills the hash
+    //   table from all of `expired` before it retrieves the first group: ExecAgg calls agg_fill_hash_table, then
+    //   agg_retrieve_hash_table (nodeAgg.c, REL_18_STABLE, https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/executor/nodeAgg.c). So no edition row is locked
+    //   before the last reservation row is. The plan is in ADR 0007, "Lock order".
+    // PostgreSQL documents: "The sub-statements in WITH are executed concurrently with each other and with
+    // the main query. Therefore, when using data-modifying statements in WITH, the order in which the
+    // specified updates actually happen is unpredictable."
+    // (https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-MODIFYING).
+    // That sentence is why this comment exists. That is the executor's behaviour for the plan chosen, not a documented SQL guarantee;
+    // LockOrderTests (50 expired confirms against 5 sweeps, 20 rounds) is the evidence, and shows no deadlock.
     /// <summary>
     /// Expires every Pending reservation due at <paramref name="now"/> and gives the copies back, in one
     /// statement: atomic, and safe with several instances sweeping (the second finds nothing left to update).
