@@ -84,6 +84,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Errors are `application/problem+json` and every service serves `/openapi/v1.json` (ADR 0006). Call `MapDefaultEndpoints` before any other middleware.
 - A library's `ActivitySource` and `Meter` are named `NewStore.<Something>`, so `AddServiceDefaults` collects them without a change.
 - Each service is one project with feature folders. Split it into layers only when a real need appears, and record why.
+- A service's Dockerfile copies the `.csproj` of every project it references, directly or not, before `dotnet restore`. A missing one fails `dotnet publish --no-restore` with NETSDK1004. Check it with `docker compose build <service>` whenever a project reference changes.
 
 ## Tests
 
