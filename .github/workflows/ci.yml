@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
+      - name: Every project is in the solution
+        # `dotnet test --solution` skips a project the solution does not list; a merge once dropped one.
+        run: diff <(find src tests -name '*.csproj' | sort) <(grep -o 'Path="[^"]*\.csproj"' NewStore.slnx | sed 's/^Path="//; s/"$//' | sort)
       - run: dotnet restore NewStore.slnx
       - run: dotnet format NewStore.slnx --verify-no-changes --no-restore
       - run: dotnet build NewStore.slnx -c Release --no-restore

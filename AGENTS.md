@@ -89,6 +89,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Run integration tests against the real PostgreSQL and Kafka a service uses, through Testcontainers. Pass the image tag to the builder, as in `new PostgreSqlBuilder("postgres:18.6")`. The parameterless constructor is obsolete, which fails the build.
 - Test projects set `<OutputType>Exe</OutputType>` and `<Using Include="Xunit" />`. `NewStore.TestSupport` is a class library: it references `xunit.v3.extensibility.core`, because the umbrella `xunit.v3` package fails the build of a project that is not an executable.
 - Use `NewStore.TestSupport` (`tests/Shared/`) and never copy a factory: `NewStoreAppFactory<Program>` starts a service, `PostgresServer` is one PostgreSQL container per test assembly (register it with `[assembly: AssemblyFixture(typeof(PostgresServer))]`) that hands each test class its own database, and `WaitForSpanAsync` waits for an exported span. Each factory sees only its own spans.
+- Every project must be listed in `NewStore.slnx`. CI compares the `.csproj` files on disk with the solution and fails on a difference, because `dotnet test --solution` silently skips an unlisted project.
 - Pass `TestContext.Current.CancellationToken` to every call that accepts a token. Otherwise analyzer xUnit1051 fails the build.
 - `WebApplicationFactory<Program>` uses the `Program` class that .NET 10 generates. Keep it generated: a hand-written `public partial class Program` trips an analyzer.
 
