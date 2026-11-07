@@ -18,6 +18,19 @@ Sprint 1 ended early, on 2026-11-05, because its goal was reached. Its review an
 
 #34 and #35 run one after the other. #36, #37 and #38 are independent and run in parallel, which is why the work-in-progress limit went from two to three (README, How we work).
 
+The goal was reached on 2026-11-06. The rest of the sprint went to follow-ups from the reviews and to two more Phase 1a stories, E-2 and E-3:
+
+| Issue | Task | Pull request |
+|---|---|---|
+| #48 | Silence analyzers in migrations in one place | #49 |
+| #50 | CI misses a project dropped from the solution | #52 |
+| #53 | Outbox and inbox rows are never deleted | #55 |
+| #54 | Confirm versus sweep: lock order | #56 |
+| #57 | E-2 in the API: the edition lock and the end of a sale | #58, #59 |
+| – | E-3: the edition snapshot event and ADR 0011 | #62 |
+| #60 | Inventory publishes edition snapshots (E-3) | #64 |
+| #61 | Catalog keeps a copy of editions (E-3) | #63 |
+
 ## Review
 
 ## Retro
@@ -35,3 +48,10 @@ Phase 1a's five tasks and the migrations follow-up cost about $9.50 of agent tim
 Changed in `~/.claude/agents/code-writer.md`: before writing the walkthrough, grep the diff for every test, type, member and file it names; a link points at the section that states the claim, and the report quotes that sentence; facts about the Mac come from a command such as `docker info`, never from memory.
 
 One lesson was not the agent's. Merging `main` into the Inventory branch on GitHub resolved the conflict in `NewStore.slnx` by dropping `tests/Messaging.Tests`, and CI stayed green, because `dotnet test --solution` runs only the projects the solution lists. The main session now diffs every shared file for removed lines after such a merge, and a follow-up adds a CI step that compares the `.csproj` files on disk with the solution.
+
+### The follow-ups and E-2/E-3 (Claude)
+
+The seven follow-up tasks cost about $3.90 of agent time, not counting the fix rounds of Tasks 8 and 9. This time the review caught a code bug: E-2's migration added the edition lock without locking editions that already had reservations. Two lessons were the main session's own:
+
+- **A pull request merged before its fix round.** #43 and #58 were merged while a fix was still on its way, so each fix needed a new pull request (#44, #59). A merged migration can't be edited, because EF Core records applied migrations by name, so #59 adds a corrective migration. Now the main session writes "ready to merge" only once the fix round is pushed and CI is green.
+- **A brief that skipped the images.** The E-3 briefs kept the agents off the Compose stack, so nobody built the images. CI's compose-smoke then failed: each Dockerfile restores from the project files it copies, and the new `NewStore.Contracts` project wasn't among them. `AGENTS.md` now says to run `docker compose build <service>` whenever a project reference changes. That command builds images without starting the stack.
