@@ -27,6 +27,8 @@ public static class ReservationEndpoints
                 return Results.Created($"/reservations/{reserved.Reservation.Id}", ReservationResponse.From(reserved.Reservation));
             case ReserveOutcome.SoldOut:
                 return Problems.Conflict("sold-out", "Every copy of this edition is taken.");
+            case ReserveOutcome.SaleEnded:
+                return Problems.Conflict("sale-ended", "This edition's sale has ended.");
             case ReserveOutcome.AlreadyHolding:
                 return Problems.Conflict("already-holding", "This buyer already holds a copy of this edition.");
             case ReserveOutcome.Contended:

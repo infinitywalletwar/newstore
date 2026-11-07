@@ -35,12 +35,18 @@ public sealed class ConcurrencyTokenStrategy(
                 return (new ReserveOutcome.NotFound(), attempt);
             }
 
+            if (edition.EndedAt is not null)
+            {
+                return (new ReserveOutcome.SaleEnded(), attempt);
+            }
+
             if (edition.CopiesLeft == 0)
             {
                 return (new ReserveOutcome.SoldOut(), attempt);
             }
 
             edition.CopiesLeft--;
+            edition.LockedAt ??= time.GetUtcNow();
             var reservation = ReserveSupport.NewPending(editionId, buyerId, time, options.Value);
             db.Reservations.Add(reservation);
             try

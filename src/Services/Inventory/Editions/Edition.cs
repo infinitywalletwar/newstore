@@ -20,6 +20,12 @@ public sealed class Edition
 
     public DateTimeOffset CreatedAt { get; init; }
 
+    /// <summary>Set by the first successful reserve and never cleared: price and copies are fixed from then on.</summary>
+    public DateTimeOffset? LockedAt { get; set; }
+
+    /// <summary>Set once when the creator ends the sale. The unsold copies are withdrawn.</summary>
+    public DateTimeOffset? EndedAt { get; set; }
+
     /// <summary>PostgreSQL's <c>xmin</c> system column: it changes with every update of the row.</summary>
     public uint Version { get; private set; }
 }

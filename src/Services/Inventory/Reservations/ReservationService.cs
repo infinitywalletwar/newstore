@@ -132,7 +132,8 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
     /// <summary>
     /// Expires every Pending reservation due at <paramref name="now"/> and gives the copies back, in one
     /// statement: atomic, and safe with several instances sweeping (the second finds nothing left to update).
-    /// Returns how many reservations expired.
+    /// Editions whose sale has ended get nothing back (<c>ended_at IS NULL</c> in the CASE); the returned count is
+    /// still the number of reservations that expired. Returns how many reservations expired.
     /// </summary>
     public async Task<int> SweepAsync(DateTimeOffset now, CancellationToken ct)
     {
@@ -143,7 +144,7 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
                     UPDATE reservations SET status = 'Expired'
                     WHERE status = 'Pending' AND expires_at <= {now}
                     RETURNING edition_id)
-                UPDATE editions e SET copies_left = e.copies_left + x.n
+                UPDATE editions e SET copies_left = e.copies_left + CASE WHEN e.ended_at IS NULL THEN x.n ELSE 0 END
                 FROM (SELECT edition_id, count(*) AS n FROM expired GROUP BY edition_id) x
                 WHERE e.id = x.edition_id
                 RETURNING x.n::int AS "Value"
@@ -165,8 +166,9 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
     }
 
     // Atomic in SQL, so it never trips the edition's concurrency token or loses a concurrent reserve's decrement.
+    // On an ended edition the copy stays withdrawn: the sale is over, so it does not go back on the shelf.
     private Task<int> ReturnCopyAsync(Guid editionId, CancellationToken ct) =>
         db.Editions
             .Where(e => e.Id == editionId)
-            .ExecuteUpdateAsync(set => set.SetProperty(e => e.CopiesLeft, e => e.CopiesLeft + 1), ct);
+            .ExecuteUpdateAsync(set => set.SetProperty(e => e.CopiesLeft, e => e.EndedAt == null ? e.CopiesLeft + 1 : e.CopiesLeft), ct);
 }

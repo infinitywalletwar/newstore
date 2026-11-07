@@ -88,11 +88,19 @@ namespace NewStore.Inventory.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("creator_id");
 
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
                     b.Property<string>("Format")
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("format");
+
+                    b.Property<DateTimeOffset?>("LockedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_at");
 
                     b.Property<decimal>("Price")
                         .HasColumnType("numeric(10,2)")
