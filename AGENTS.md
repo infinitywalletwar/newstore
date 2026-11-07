@@ -52,6 +52,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   - To publish, call `IOutbox.Enqueue(event, topic, key)` in the same unit of work as the business change, then `SaveChangesAsync`. The key is the aggregate's id. Never produce to Kafka directly.
   - To consume, write an `IIntegrationEventHandler<TEvent>` and register it with `AddMessaging<TContext>(m => m.AddHandler<TEvent, THandler>("topic"))`. The handler needs no idempotency code: it runs inside the inbox transaction, once per message id, and its writes commit with the inbox row.
   - The context's model calls `modelBuilder.AddOutbox()` and `modelBuilder.AddInbox()`, and the service's migration creates `outbox_messages` and `inbox_messages`. `AddTopic` creates topics at startup.
+  - `MessagingCleanup` deletes published outbox rows one day after publishing and inbox rows after seven days (`Messaging:OutboxRetention`, `Messaging:InboxRetention`). A consumer that replays older messages raises the inbox retention first, or they are handled again.
   - Kafka is never in a readiness check: a service without Kafka still serves reads. The relay's `outbox-relay` check is a live check only.
 - Each service enforces its own permissions with authorization policies, in addition to the gateway's token check.
 - Record any choice with a real trade-off as a decision record in `docs/adr/`. Check each claim about an alternative against its documentation before writing it, and link the page.
