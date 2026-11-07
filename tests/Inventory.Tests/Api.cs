@@ -3,7 +3,8 @@ using System.Net.Http.Json;
 namespace NewStore.Inventory.Tests;
 
 public sealed record EditionDto(
-    Guid Id, Guid VideoId, Guid CreatorId, string Format, decimal Price, int CopiesTotal, int CopiesLeft, int CopiesSold);
+    Guid Id, Guid VideoId, Guid CreatorId, string Format, decimal Price, int CopiesTotal, int CopiesLeft, int CopiesSold,
+    DateTimeOffset? LockedAt, DateTimeOffset? EndedAt);
 
 public sealed record ReservationDto(
     Guid Id, Guid EditionId, Guid BuyerId, string Status, DateTimeOffset ReservedAt, DateTimeOffset ExpiresAt, int? CopyNumber);
@@ -33,6 +34,13 @@ internal static class Api
 
     public static async Task<EditionDto> GetEditionAsync(this HttpClient client, Guid id) =>
         (await client.GetFromJsonAsync<EditionDto>($"/editions/{id}", Ct))!;
+
+    public static Task<HttpResponseMessage> UpdateEditionAsync(
+        this HttpClient client, Guid id, decimal? price = null, int? copies = null) =>
+        client.PatchAsJsonAsync($"/editions/{id}", new { price, copies }, Ct);
+
+    public static Task<HttpResponseMessage> EndSaleAsync(this HttpClient client, Guid id) =>
+        client.PostAsync($"/editions/{id}/end-sale", content: null, Ct);
 
     public static Task<HttpResponseMessage> ReserveAsync(this HttpClient client, Guid editionId, Guid buyerId) =>
         client.PostAsJsonAsync($"/editions/{editionId}/reservations", new { buyerId }, Ct);

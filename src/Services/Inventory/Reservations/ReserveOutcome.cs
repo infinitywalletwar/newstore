@@ -11,6 +11,9 @@ public abstract record ReserveOutcome
 
     public sealed record NotFound : ReserveOutcome;
 
+    /// <summary>The creator ended the sale; no copy can be reserved any more.</summary>
+    public sealed record SaleEnded : ReserveOutcome;
+
     /// <summary>ConcurrencyToken gave up after <see cref="InventoryOptions.MaxReserveAttempts"/>.</summary>
     public sealed record Contended(int Attempts) : ReserveOutcome;
 }

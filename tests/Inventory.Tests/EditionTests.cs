@@ -79,4 +79,68 @@ public class EditionTests(ConditionalUpdateFixture fixture) : IClassFixture<Cond
 
         Assert.Empty(copies);
     }
+
+    [Fact]
+    public async Task Edit_before_any_reservation_changes_price_and_copies()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+
+        var response = await client.UpdateEditionAsync(edition.Id, price: 12.50m, copies: 5);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = (await response.Content.ReadFromJsonAsync<EditionDto>(ct))!;
+        Assert.Equal(12.50m, updated.Price);
+        Assert.Equal(5, updated.CopiesTotal);
+        Assert.Equal(5, updated.CopiesLeft);
+        Assert.Equal(updated, await client.GetEditionAsync(edition.Id));
+    }
+
+    [Fact]
+    public async Task Edit_with_no_fields_returns_400_validation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync();
+
+        var response = await client.PatchAsJsonAsync($"/editions/{edition.Id}", new { }, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        Assert.True(body.RootElement.GetProperty("errors").TryGetProperty("request", out _));
+    }
+
+    [Fact]
+    public async Task Edit_of_unknown_edition_returns_404()
+    {
+        using var client = fixture.CreateClient();
+
+        var response = await client.UpdateEditionAsync(Guid.NewGuid(), copies: 5);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:not-found", (await response.ReadProblemAsync()).Type);
+    }
+
+    [Fact]
+    public async Task End_sale_withdraws_unsold_copies_and_is_idempotent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+
+        var first = await client.EndSaleAsync(edition.Id);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var ended = (await first.Content.ReadFromJsonAsync<EditionDto>(ct))!;
+        Assert.Equal(0, ended.CopiesLeft);
+        Assert.NotNull(ended.EndedAt);
+
+        var second = await client.EndSaleAsync(edition.Id);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(ended.EndedAt, (await second.Content.ReadFromJsonAsync<EditionDto>(ct))!.EndedAt);
+
+        var edit = await client.UpdateEditionAsync(edition.Id, copies: 5);
+        Assert.Equal(HttpStatusCode.Conflict, edit.StatusCode);
+        Assert.Equal("urn:newstore:problem:sale-ended", (await edit.ReadProblemAsync()).Type);
+    }
 }

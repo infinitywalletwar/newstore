@@ -1,5 +1,8 @@
 using System.Net.Http.Json;
 
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace NewStore.Inventory.Tests;
 
 /// <summary>
@@ -231,6 +234,103 @@ public abstract class ReservationTests(InventoryFixture fixture)
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.ConfirmAsync(Guid.NewGuid())).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.ReleaseAsync(Guid.NewGuid())).StatusCode);
+    }
+
+    [Fact]
+    public async Task Edit_after_a_reservation_returns_409_edition_locked_even_after_release()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var reservation = await client.ReserveOkAsync(edition.Id);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.ReleaseAsync(reservation.Id)).StatusCode);
+
+        var response = await client.UpdateEditionAsync(edition.Id, copies: 5);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:edition-locked", (await response.ReadProblemAsync()).Type);
+        var after = await client.GetEditionAsync(edition.Id);
+        Assert.NotNull(after.LockedAt);
+        Assert.Equal(10, after.CopiesTotal);
+    }
+
+    [Fact]
+    public async Task Reserve_after_the_sale_ended_returns_409_sale_ended()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        await client.EndSaleAsync(edition.Id);
+
+        var response = await client.ReserveAsync(edition.Id, Guid.NewGuid());
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:sale-ended", (await response.ReadProblemAsync()).Type);
+    }
+
+    [Fact]
+    public async Task Pending_reservation_survives_the_end_of_the_sale()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var reservation = await client.ReserveOkAsync(edition.Id);
+        await client.EndSaleAsync(edition.Id);
+
+        var response = await client.ConfirmAsync(reservation.Id);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, (await response.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.CopyNumber);
+        var after = await client.GetEditionAsync(edition.Id);
+        Assert.Equal(1, after.CopiesSold);
+        Assert.Equal(0, after.CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Expired_reservation_does_not_return_its_copy_after_the_sale_ended()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var reservation = await client.ReserveOkAsync(edition.Id);
+        await client.EndSaleAsync(edition.Id);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(11));
+        await using (var scope = fixture.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ReservationService>()
+                .SweepAsync(fixture.Clock.GetUtcNow(), Ct);
+        }
+
+        Assert.Equal("Expired", (await client.GetReservationAsync(reservation.Id)).Status);
+        Assert.Equal(0, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Edit_and_reserve_racing_never_leave_the_count_inconsistent()
+    {
+        using var client = fixture.CreateClient();
+
+        for (var round = 0; round < 20; round++)
+        {
+            var edition = await client.CreateEditionAsync(copies: 10);
+            var reserves = Enumerable.Range(0, 5)
+                .Select(_ => Task.Run(() => client.ReserveAsync(edition.Id, Guid.NewGuid()), Ct)).ToList();
+            var edit = Task.Run(() => client.UpdateEditionAsync(edition.Id, copies: 7), Ct);
+            await Task.WhenAll(reserves.Append(edit));
+
+            var editStatus = (await edit).StatusCode;
+            Assert.True(
+                editStatus is HttpStatusCode.OK or HttpStatusCode.Conflict, $"round {round}: PATCH answered {editStatus}");
+
+            await using var scope = fixture.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            var row = await db.Editions.AsNoTracking().SingleAsync(e => e.Id == edition.Id, Ct);
+            var held = await db.Reservations.CountAsync(
+                r => r.EditionId == edition.Id
+                    && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Confirmed), Ct);
+            Assert.Equal(held, row.CopiesTotal - row.CopiesLeft);
+            if (held > 0)
+            {
+                Assert.NotNull(row.LockedAt);
+            }
+        }
     }
 
     [Fact]
