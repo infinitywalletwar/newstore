@@ -325,7 +325,9 @@ public abstract class ReservationTests(InventoryFixture fixture)
             var held = await db.Reservations.CountAsync(
                 r => r.EditionId == edition.Id
                     && (r.Status == ReservationStatus.Pending || r.Status == ReservationStatus.Confirmed), Ct);
-            Assert.Equal(held, row.CopiesTotal - row.CopiesLeft);
+            Assert.True(
+                held == row.CopiesTotal - row.CopiesLeft,
+                $"round {round}: {held} live reservations, copies_total {row.CopiesTotal}, copies_left {row.CopiesLeft}");
             if (held > 0)
             {
                 Assert.NotNull(row.LockedAt);
