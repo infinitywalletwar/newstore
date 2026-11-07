@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 
 using NewStore.Catalog.Channels;
+using NewStore.Catalog.Editions;
 using NewStore.Catalog.Videos;
+using NewStore.Messaging;
 
 namespace NewStore.Catalog;
 
@@ -11,8 +13,13 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
 
     public DbSet<Video> Videos => Set<Video>();
 
+    public DbSet<EditionCopy> Editions => Set<EditionCopy>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.AddOutbox();
+        modelBuilder.AddInbox();
+
         modelBuilder.Entity<Channel>(channel =>
         {
             channel.Property(c => c.Name).HasMaxLength(Channel.NameMaxLength);
@@ -32,6 +39,13 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
             video.HasGeneratedTsVectorColumn(v => v.SearchVector, "simple", v => new { v.Title, v.Description })
                 .HasIndex(v => v.SearchVector)
                 .HasMethod("GIN");
+        });
+
+        modelBuilder.Entity<EditionCopy>(edition =>
+        {
+            edition.ToTable("editions");
+            edition.Property(e => e.Id).ValueGeneratedNever();
+            edition.HasIndex(e => e.VideoId);
         });
     }
 }

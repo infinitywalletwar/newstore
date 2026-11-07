@@ -106,6 +106,7 @@ services:
     environment:
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
       ConnectionStrings__Redis: redis:6379
+      Messaging__BootstrapServers: kafka:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: catalog
     ports: ["127.0.0.1:8101:8080"]
@@ -113,6 +114,7 @@ services:
       postgres: { condition: service_healthy }
       catalog-migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.

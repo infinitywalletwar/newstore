@@ -7,14 +7,19 @@ using OpenTelemetry.Trace;
 
 namespace NewStore.Catalog.Tests;
 
-public class HealthWithoutDatabaseTests
+public class HealthWithoutDatabaseTests(KafkaServer kafka)
 {
     // Nothing listens on port 1, so the connection is refused at once.
     private const string RefusedDatabase =
         "Host=127.0.0.1;Port=1;Database=catalog;Username=catalog;Password=catalog;Timeout=2";
 
-    private static NewStoreAppFactory<Program> FactoryFor(string connectionString) =>
-        new() { Settings = { ["ConnectionStrings:Catalog"] = connectionString } };
+    // The host also starts the messaging services, which need a reachable broker. The database is the only dependency left broken.
+    private NewStoreAppFactory<Program> FactoryFor(string connectionString)
+    {
+        var factory = new NewStoreAppFactory<Program> { Settings = { ["ConnectionStrings:Catalog"] = connectionString } };
+        factory.UseKafka(kafka);
+        return factory;
+    }
 
     [Fact]
     public async Task Ready_returns_unhealthy_when_database_refuses_connections()
