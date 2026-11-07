@@ -5,7 +5,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 | Phase | Plan | Sprint note |
 |---|---|---|
 | 0 Foundation (done 2026-11-05) | [`2026-11-03-phase-0-foundation.md`](plans/2026-11-03-phase-0-foundation.md) | [`sprint-01.md`](sprints/sprint-01.md) |
-| 1a Buy the last copy | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
+| 1a Buy the last copy (done 2026-11-07; the mock interview is still to come) | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
 
 ## Already decided
 
@@ -28,27 +28,20 @@ If gh is missing a scope, Claude runs `gh auth refresh -h github.com -s <scope>`
 
 The roadmap's learning loop says to read the stage's topics before the phase starts. They're in `~/Dev/stdy/roadmap/`. If you'd rather read as you go, read each task's topics before you review its pull request.
 
-**Phase 1a.** The Stage 1 topics aren't written yet; they get written alongside the tasks that need them, in this order:
+**Phase 1b.** Its Stage 1 topics are written: 08 Sagas, 09 OAuth 2.0, OIDC and JWT, 10 Async/await in depth, 11 Authorization policies, 12 API gateway with YARP and 13 Resilience. The Phase 1b plan maps them to its tasks.
 
-| Task | Read first |
-|---|---|
-| 1 Hygiene, 2 Shared groundwork | Stage 0: 01 Solution structure, 09 Integration testing; Stage 1: EF Core and migrations |
-| 3 Inventory, the last copy | Stage 1: transactions and isolation levels, optimistic and pessimistic concurrency, API design and error handling |
-| 4 Messaging: the outbox and Kafka | Stage 1: Kafka, the transactional outbox, idempotent consumers |
-| 5 Catalog reads | Stage 1: API design and error handling; Stage 4: caching with HybridCache |
-
-**Phase 0** mapped its tasks to Stage 0 topics 01 to 09; see the Phase 0 plan's task headings.
+**Phase 1a** read Stage 1 topics 01 to 07 and Stage 4's caching with HybridCache. **Phase 0** read Stage 0 topics 01 to 09. Each plan's task headings say which topic goes with which task.
 
 ## 3. Start the session
 
 Start Claude Code in `~/Dev/stdy`, not in `example/newstore`, because Claude's memory for this project belongs to that folder. Then paste one of:
 
 ```text
-Start Phase 1a of newstore. Follow example/newstore/docs/getting-started.md.
+Start Phase 1b of newstore. Follow example/newstore/docs/getting-started.md.
 ```
 
 ```text
-Continue Phase 1a of newstore from where we stopped.
+Continue Phase 1b of newstore from where we stopped.
 ```
 
 ## 4. Who does what
