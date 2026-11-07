@@ -6,7 +6,7 @@ using Npgsql;
 
 namespace NewStore.Catalog.Tests;
 
-public class HealthEndpointTests(PostgresCatalogAppFactory factory) : IClassFixture<PostgresCatalogAppFactory>
+public class HealthEndpointTests(PostgresCatalogAppFactory factory, KafkaServer kafka) : IClassFixture<PostgresCatalogAppFactory>
 {
     [Fact]
     public async Task Live_returns_healthy()
@@ -43,6 +43,7 @@ public class HealthEndpointTests(PostgresCatalogAppFactory factory) : IClassFixt
             Timeout = 30,
         };
         await using var busyApp = new NewStoreAppFactory<Program> { Settings = { ["ConnectionStrings:Catalog"] = csb.ConnectionString } };
+        busyApp.UseKafka(kafka);
         using var client = busyApp.CreateClient();
         // Hold the only request connection, as a busy service would.
         await using var held = await busyApp.Services.GetRequiredService<NpgsqlDataSource>().OpenConnectionAsync(ct);
