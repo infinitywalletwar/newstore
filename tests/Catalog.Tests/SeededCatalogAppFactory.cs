@@ -8,12 +8,13 @@ namespace NewStore.Catalog.Tests;
 /// Catalog on its own database with the sample catalog (6 channels, 48 videos) already in it. A subclass
 /// can add settings in <see cref="ConfigureSettingsAsync"/>, which runs before the app first starts.
 /// </summary>
-public class SeededCatalogAppFactory(PostgresServer postgres) : NewStoreAppFactory<Program>, IAsyncLifetime
+public class SeededCatalogAppFactory(PostgresServer postgres, KafkaServer kafka) : NewStoreAppFactory<Program>, IAsyncLifetime
 {
     public async ValueTask InitializeAsync()
     {
         var ct = TestContext.Current.CancellationToken;
         Settings["ConnectionStrings:Catalog"] = await postgres.CreateDatabaseAsync("catalog", ct);
+        this.UseKafka(kafka);
         await ConfigureSettingsAsync();
 
         await MigrateAsync<CatalogDbContext>();

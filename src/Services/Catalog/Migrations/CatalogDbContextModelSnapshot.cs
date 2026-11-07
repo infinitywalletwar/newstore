@@ -67,6 +67,54 @@ namespace NewStore.Catalog.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NewStore.Catalog.Editions.EditionCopy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("CopiesLeft")
+                        .HasColumnType("integer")
+                        .HasColumnName("copies_left");
+
+                    b.Property<int>("CopiesTotal")
+                        .HasColumnType("integer")
+                        .HasColumnName("copies_total");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("format");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("numeric")
+                        .HasColumnName("price");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.Property<Guid>("VideoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("video_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_editions");
+
+                    b.HasIndex("VideoId")
+                        .HasDatabaseName("ix_editions_video_id");
+
+                    b.ToTable("editions", (string)null);
+                });
+
             modelBuilder.Entity("NewStore.Catalog.Videos.Video", b =>
                 {
                     b.Property<Guid>("Id")
@@ -120,6 +168,82 @@ namespace NewStore.Catalog.Migrations
                         .HasDatabaseName("ix_videos_channel_id_published_at");
 
                     b.ToTable("videos", (string)null);
+                });
+
+            modelBuilder.Entity("NewStore.Messaging.Inbox.InboxMessage", b =>
+                {
+                    b.Property<string>("Consumer")
+                        .HasColumnType("text")
+                        .HasColumnName("consumer");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTimeOffset>("HandledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("handled_at");
+
+                    b.HasKey("Consumer", "MessageId")
+                        .HasName("pk_inbox_messages");
+
+                    b.ToTable("inbox_messages", (string)null);
+                });
+
+            modelBuilder.Entity("NewStore.Messaging.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Topic")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("topic");
+
+                    b.Property<string>("TraceParent")
+                        .HasColumnType("text")
+                        .HasColumnName("trace_parent");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_outbox_messages");
+
+                    b.HasIndex("PublishedAt")
+                        .HasDatabaseName("ix_outbox_messages_unpublished")
+                        .HasFilter("published_at IS NULL");
+
+                    b.ToTable("outbox_messages", (string)null);
                 });
 
             modelBuilder.Entity("NewStore.Catalog.Videos.Video", b =>

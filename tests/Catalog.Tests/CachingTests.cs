@@ -5,7 +5,7 @@ using NewStore.Catalog.Videos;
 
 namespace NewStore.Catalog.Tests;
 
-public class CachingTests(PostgresServer postgres, RedisCatalogAppFactory factory) : IClassFixture<RedisCatalogAppFactory>
+public class CachingTests(PostgresServer postgres, KafkaServer kafka, RedisCatalogAppFactory factory) : IClassFixture<RedisCatalogAppFactory>
 {
     private static async Task<Guid> SomeVideoIdAsync(HttpClient client, string q) =>
         (await client.GetFromJsonAsync<PagedResult<VideoSummary>>($"/videos?q={q}", TestContext.Current.CancellationToken))!
@@ -39,7 +39,7 @@ public class CachingTests(PostgresServer postgres, RedisCatalogAppFactory factor
     {
         var ct = TestContext.Current.CancellationToken;
         // Own app and container: stopping Redis must not touch the other tests' fixture.
-        var own = new RedisCatalogAppFactory(postgres);
+        var own = new RedisCatalogAppFactory(postgres, kafka);
         await own.InitializeAsync();
         await using var _ = own;
         using var client = own.CreateClient();
