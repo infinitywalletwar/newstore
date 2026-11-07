@@ -43,6 +43,36 @@ Notes on reading the table:
 - Both strategies are correct. They differ in work: ConcurrencyToken needed 9.3 database attempts per reserve on average, each a read and a write in their own round trip, and p99 of 4.3 s. ConditionalUpdate needed one.
 - One run of each: the numbers show the order of magnitude, not a benchmark.
 
+## Lock order
+
+Three paths lock a reservation row and an edition row, and each takes the reservation first:
+
+- `ConfirmAsync` and `ReleaseAsync` lock the reservation with `SELECT … FOR UPDATE`, then update the edition (the counter `UPDATE`, or `ReturnCopyAsync`). A confirm of a reservation that has expired but is not swept yet takes this path too.
+- `SweepAsync` is one statement with a data-modifying `WITH`. PostgreSQL documents: "The sub-statements in WITH are executed concurrently with each other and with the main query. Therefore, when using data-modifying statements in WITH, the order in which the specified updates actually happen is unpredictable." ([WITH, data-modifying statements](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-MODIFYING)). If the sweep could lock an edition before a reservation, it could deadlock with a confirm.
+
+The plan of the sweep (`EXPLAIN (COSTS OFF)`, PostgreSQL 18 in Testcontainers, 50 pending reservations of one edition):
+
+```
+Update on editions e
+  CTE expired
+    ->  Update on reservations
+          ->  Index Scan using ix_reservations_status_expires_at on reservations
+                Index Cond: (((status)::text = 'Pending'::text) AND (expires_at <= '…'::timestamp with time zone))
+  ->  Nested Loop
+        ->  Subquery Scan on x
+              ->  HashAggregate
+                    Group Key: expired.edition_id
+                    ->  CTE Scan on expired
+        ->  Index Scan using pk_editions on editions e
+              Index Cond: (id = x.edition_id)
+```
+
+`Update on editions` reads `expired` through a `HashAggregate`, which has to consume the whole CTE before it returns a row. So in this plan every reservation row is locked before the first edition row. That is how this planner built this statement, not a guarantee of the documentation; the plan can change with the data or the version.
+
+Evidence: `LockOrderTests` runs 50 confirms of expired, unswept reservations and 5 sweeps at once, each on its own scope, for 20 rounds with a fresh edition each. It finished without a deadlock, every confirm answered `Expired`, and the edition ended with `copies_left` 50 and `copies_assigned` 0. A passing test shows no deadlock in 20 rounds; it does not prove there can be none.
+
+If a deadlock ever appears, PostgreSQL aborts one of the transactions with SQLSTATE `40P01`. The sweep would retry on its next tick; a confirm would return 500 and the buyer retries. The candidate fix is two statements in one transaction, reservations first and editions second, which costs one more round trip per tick. We do not take it now: no deadlock has been observed.
+
 ## Alternatives considered
 
 - **Pessimistic lock: `SELECT … FOR UPDATE` on the edition row, then update.** PostgreSQL blocks other transactions that try to update or lock the row until the first transaction ends ([Explicit Locking, row-level locks](https://www.postgresql.org/docs/18/explicit-locking.html)). It is correct, and it queues on the same row as the conditional UPDATE does. It costs one more round trip with the lock held. We did not measure it.
