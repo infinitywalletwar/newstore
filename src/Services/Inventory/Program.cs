@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Options;
 
+using NewStore.Contracts.Inventory;
 using NewStore.Inventory;
+using NewStore.Messaging;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
 using NewStore.ServiceDefaults.HealthChecks;
@@ -21,6 +23,11 @@ builder.Services.AddSingleton<SweeperHeartbeat>();
 builder.Services.AddHostedService<ReservationExpiryService>();
 builder.Services.AddHealthChecks()
     .AddCheck<SweeperHealthCheck>("reservation-sweeper", tags: [HealthCheckExtensions.LiveTag]);
+builder.AddMessaging<InventoryDbContext>(m => m.AddTopic(EditionSnapshot.Topic, EditionSnapshot.Partitions));
+builder.Services.AddSingleton<EditionSnapshotHeartbeat>();
+builder.Services.AddHostedService<EditionSnapshotPublisher>();
+builder.Services.AddHealthChecks()
+    .AddCheck<EditionSnapshotHealthCheck>("edition-snapshots", tags: [HealthCheckExtensions.LiveTag]);
 builder.Services.AddScoped<ConditionalUpdateStrategy>();
 builder.Services.AddScoped<ConcurrencyTokenStrategy>();
 builder.Services.AddScoped<IReserveStrategy>(services =>

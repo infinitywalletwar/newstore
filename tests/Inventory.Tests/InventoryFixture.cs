@@ -10,7 +10,7 @@ namespace NewStore.Inventory.Tests;
 /// Inventory on its own database, with a clock the test moves. A class fixture: each test class gets
 /// one app, one database and one <see cref="Clock"/>. Subclasses choose the reserve strategy.
 /// </summary>
-public abstract class InventoryFixture(PostgresServer postgres, ReserveStrategy strategy)
+public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafka, ReserveStrategy strategy)
     : NewStoreAppFactory<Program>, IAsyncLifetime
 {
     /// <summary>Every "now" of the service, including the sweeper's timer.</summary>
@@ -20,6 +20,7 @@ public abstract class InventoryFixture(PostgresServer postgres, ReserveStrategy 
     {
         Settings["ConnectionStrings:Inventory"] =
             await postgres.CreateDatabaseAsync("inventory", TestContext.Current.CancellationToken);
+        Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         Settings["Inventory:ReserveStrategy"] = strategy.ToString();
         Settings["Inventory:ExpirySweepInterval"] = "00:00:01";
         await MigrateAsync<InventoryDbContext>();
@@ -36,8 +37,8 @@ public abstract class InventoryFixture(PostgresServer postgres, ReserveStrategy 
     }
 }
 
-public sealed class ConditionalUpdateFixture(PostgresServer postgres)
-    : InventoryFixture(postgres, ReserveStrategy.ConditionalUpdate);
+public sealed class ConditionalUpdateFixture(PostgresServer postgres, KafkaServer kafka)
+    : InventoryFixture(postgres, kafka, ReserveStrategy.ConditionalUpdate);
 
-public sealed class ConcurrencyTokenFixture(PostgresServer postgres)
-    : InventoryFixture(postgres, ReserveStrategy.ConcurrencyToken);
+public sealed class ConcurrencyTokenFixture(PostgresServer postgres, KafkaServer kafka)
+    : InventoryFixture(postgres, kafka, ReserveStrategy.ConcurrencyToken);
