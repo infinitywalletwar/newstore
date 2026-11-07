@@ -67,7 +67,7 @@ Update on editions e
               Index Cond: (id = x.edition_id)
 ```
 
-`Update on editions` reads `expired` through a `HashAggregate`, which has to consume the whole CTE before it returns a row. So in this plan every reservation row is locked before the first edition row. That is how this planner built this statement, not a guarantee of the documentation; the plan can change with the data or the version.
+`Update on editions` reads `expired` through a `HashAggregate`. For a hashed aggregate the executor reads all the input before it returns a group: `ExecAgg` runs `if (!node->table_filled) agg_fill_hash_table(node);` and then `agg_retrieve_hash_table(node)`. The comments in the source say "ExecAgg for hashed case: read input and build hash table" and "ExecAgg for hashed case: retrieving groups from hash table" ([`nodeAgg.c`, REL_18_STABLE](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/executor/nodeAgg.c)). So in this plan every reservation row is locked before the first edition row. That is the executor's behaviour for the plan chosen, not a documented SQL guarantee; the plan can change with the data or the version.
 
 Evidence: `LockOrderTests` runs 50 confirms of expired, unswept reservations and 5 sweeps at once, each on its own scope, for 20 rounds with a fresh edition each. It finished without a deadlock, every confirm answered `Expired`, and the edition ended with `copies_left` 50 and `copies_assigned` 0. A passing test shows no deadlock in 20 rounds; it does not prove there can be none.
 
