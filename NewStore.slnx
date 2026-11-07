@@ -14,6 +14,9 @@
   <Folder Name="/src/Shared/Messaging/">
     <Project Path="src/Shared/Messaging/NewStore.Messaging.csproj" />
   </Folder>
+  <Folder Name="/src/Shared/Contracts/">
+    <Project Path="src/Shared/Contracts/NewStore.Contracts.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Shared/" />
   <Folder Name="/tests/Shared/NewStore.TestSupport/">

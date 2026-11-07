@@ -8,7 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="Testcontainers.Kafka" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />

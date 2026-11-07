@@ -247,13 +247,14 @@ newstore/
 │   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Caching/, Seed/ (sample-catalog.json)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
-│       └── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
+│       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
+│       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
 ├── web/              the Angular app
 ├── compose.load.yaml overlay for the k6 load test: a short reservation TTL and the k6 service
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
-│   └── Shared/       NewStore.TestSupport: the app factory, span sink and PostgreSQL server every test project uses
+│   └── Shared/       NewStore.TestSupport: the app factory, span sink, and the PostgreSQL and Kafka servers every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool
 ├── deploy/           files Compose mounts, Helm charts and Terraform
 └── docs/
