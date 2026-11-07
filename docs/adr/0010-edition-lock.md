@@ -24,6 +24,7 @@ Story E-2: a creator cannot change an edition's price or number of copies once i
 
 - A creator cannot unlock an edition by getting all reservations released. That is the intent of the story, and it keeps the rule to a single column.
 - After an end, `copies_left` can be 0 while `copies_total - copies_assigned > 0`: `copies_left` counts copies on sale, not copies unsold. Pending reservations that later confirm raise `copies_assigned` without touching `copies_left`.
+- The migration backfills `locked_at` from the earliest reservation (any status), so editions reserved before this change are locked too. `MigrationTests` proves it.
 - `copies_left == copies_total` holds for every unlocked edition, so the edit sets both to the new count without arithmetic.
 - The edit and the reserve contend on the same row as two reserves do; no new lock, no new index.
 - `EditionTests` and the abstract `ReservationTests` (both strategies) cover the rules; `Edit_and_reserve_racing_never_leave_the_count_inconsistent` races five reserves against one edit for 20 rounds and checks `copies_total - copies_left` equals the Pending plus Confirmed reservations. As with ADR 0007, a passing race shows no failure in 20 rounds, not a proof.

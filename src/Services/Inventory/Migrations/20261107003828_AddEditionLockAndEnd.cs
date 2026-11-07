@@ -22,6 +22,14 @@ namespace NewStore.Inventory.Migrations
                 table: "editions",
                 type: "timestamp with time zone",
                 nullable: true);
+
+            // Editions reserved before this migration are locked too: the earliest reservation, in any status.
+            migrationBuilder.Sql(
+                """
+                UPDATE editions e SET locked_at = r.first_reserved_at
+                FROM (SELECT edition_id, min(reserved_at) AS first_reserved_at FROM reservations GROUP BY edition_id) r
+                WHERE r.edition_id = e.id;
+                """);
         }
 
         /// <inheritdoc />
