@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 
+using NewStore.Messaging;
+
 namespace NewStore.Inventory;
 
 public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : DbContext(options)
@@ -7,6 +9,7 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
     public DbSet<Edition> Editions => Set<Edition>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
     public DbSet<Copy> Copies => Set<Copy>();
+    public DbSet<EditionSnapshotRow> EditionSnapshots => Set<EditionSnapshotRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,5 +51,16 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
             copy.HasIndex(c => new { c.EditionId, c.Number }).IsUnique();
             copy.HasIndex(c => c.ReservationId).IsUnique();
         });
+
+        modelBuilder.Entity<EditionSnapshotRow>(snapshot =>
+        {
+            snapshot.HasKey(s => s.EditionId);
+            snapshot.Property(s => s.EditionId).ValueGeneratedNever();
+            snapshot.Property(s => s.Price).HasColumnType("numeric(10,2)");
+            snapshot.HasOne<Edition>().WithMany().HasForeignKey(s => s.EditionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Inventory publishes through the outbox. It consumes nothing yet, so there is no AddInbox.
+        modelBuilder.AddOutbox();
     }
 }

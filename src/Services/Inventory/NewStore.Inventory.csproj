@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\ServiceDefaults\NewStore.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Shared\Contracts\NewStore.Contracts.csproj" />
     <PackageReference Include="Npgsql.DependencyInjection" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>

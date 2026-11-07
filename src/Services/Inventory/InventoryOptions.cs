@@ -11,4 +11,10 @@ public sealed class InventoryOptions
 
     /// <summary>Used by <see cref="ReserveStrategy.ConcurrencyToken"/> only.</summary>
     public int MaxReserveAttempts { get; set; } = 20;
+
+    /// <summary>How often the snapshot pass looks for editions that changed (ADR 0011).</summary>
+    public TimeSpan SnapshotInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The most editions one pass sends.</summary>
+    public int SnapshotBatchSize { get; set; } = 500;
 }

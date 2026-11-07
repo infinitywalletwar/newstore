@@ -125,6 +125,42 @@ namespace NewStore.Inventory.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NewStore.Inventory.EditionSnapshotRow", b =>
+                {
+                    b.Property<Guid>("EditionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("edition_id");
+
+                    b.Property<int>("CopiesLeft")
+                        .HasColumnType("integer")
+                        .HasColumnName("copies_left");
+
+                    b.Property<int>("CopiesTotal")
+                        .HasColumnType("integer")
+                        .HasColumnName("copies_total");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("price");
+
+                    b.Property<DateTimeOffset>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("EditionId")
+                        .HasName("pk_edition_snapshots");
+
+                    b.ToTable("edition_snapshots", (string)null);
+                });
+
             modelBuilder.Entity("NewStore.Inventory.Reservation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -167,6 +203,62 @@ namespace NewStore.Inventory.Migrations
                     b.ToTable("reservations", (string)null);
                 });
 
+            modelBuilder.Entity("NewStore.Messaging.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Topic")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("topic");
+
+                    b.Property<string>("TraceParent")
+                        .HasColumnType("text")
+                        .HasColumnName("trace_parent");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_outbox_messages");
+
+                    b.HasIndex("PublishedAt")
+                        .HasDatabaseName("ix_outbox_messages_unpublished")
+                        .HasFilter("published_at IS NULL");
+
+                    b.ToTable("outbox_messages", (string)null);
+                });
+
             modelBuilder.Entity("NewStore.Inventory.Copy", b =>
                 {
                     b.HasOne("NewStore.Inventory.Edition", null)
@@ -182,6 +274,16 @@ namespace NewStore.Inventory.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_copies_reservations_reservation_id");
+                });
+
+            modelBuilder.Entity("NewStore.Inventory.EditionSnapshotRow", b =>
+                {
+                    b.HasOne("NewStore.Inventory.Edition", null)
+                        .WithMany()
+                        .HasForeignKey("EditionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_edition_snapshots_editions_edition_id");
                 });
 
             modelBuilder.Entity("NewStore.Inventory.Reservation", b =>
