@@ -1,6 +1,3 @@
-// The scaffolder emits constant arrays inline; a migration runs once, so CA1861 does not apply.
-#pragma warning disable CA1861
-
 using System;
 
 using Microsoft.EntityFrameworkCore.Migrations;
