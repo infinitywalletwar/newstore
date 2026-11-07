@@ -40,7 +40,7 @@ Services learn about each other's data through Kafka events (README, architectur
 
 ## Retention
 
-`MessagingCleanup<TContext>`, a `BackgroundService` registered by `AddMessaging`, deletes old rows every `Messaging:CleanupInterval` (5 minutes; the first pass runs after the first interval). Each pass is two `DELETE` statements, one per table, run with `ExecuteDeleteAsync` ([EF Core, "ExecuteUpdate and ExecuteDelete"](https://learn.microsoft.com/en-us/ef/core/saving/execute-insert-update-delete)).
+`MessagingCleanupService<TContext>`, a `BackgroundService` registered by `AddMessaging`, deletes old rows every `Messaging:CleanupInterval` (5 minutes; the first pass runs after the first interval). Each pass is two `DELETE` statements, one per table, run with `ExecuteDeleteAsync` ([EF Core, "ExecuteUpdate and ExecuteDelete"](https://learn.microsoft.com/en-us/ef/core/saving/execute-insert-update-delete)).
 
 - **Outbox: 1 day** (`Messaging:OutboxRetention`). Only rows with `published_at` set are deleted. A published row is an audit trail, and one day leaves time to look at what was sent. A row that was never published stays, however old: it is still waiting for Kafka.
 - **Inbox: 7 days** (`Messaging:InboxRetention`). This equals Kafka's default topic retention: `log.retention.hours` has the default 168 ([broker configs](https://kafka.apache.org/42/configuration/broker-configs/#brokerconfigs_log.retention.hours)), and its description is "The number of hours to keep a log file before deleting it". After the topic dropped a message, the topic cannot deliver it again, so the inbox row has nothing left to guard against.

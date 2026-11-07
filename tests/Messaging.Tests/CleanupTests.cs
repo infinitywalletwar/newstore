@@ -35,7 +35,7 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
         }
 
         await using var context = scenario.OpenContext();
-        var result = await MessagingCleanup<ThingsDbContext>.CleanAsync(context, s_defaults, now, ct);
+        var result = await MessagingCleanup.CleanAsync(context, s_defaults, now, ct);
 
         Assert.Equal(new CleanupResult(1, 1), result);
         var outbox = await context.Set<OutboxMessage>().AsNoTracking().Select(m => m.Id).ToListAsync(ct);
@@ -53,7 +53,7 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
         var scenario = await Scenario.CreateAsync(postgres, kafka, createTopic: false);
         await using var context = scenario.OpenContext();
 
-        var result = await MessagingCleanup<ThingsDbContext>.CleanAsync(context, s_defaults, DateTimeOffset.UtcNow, ct);
+        var result = await MessagingCleanup.CleanAsync(context, s_defaults, DateTimeOffset.UtcNow, ct);
 
         Assert.Equal(new CleanupResult(0, 0), result);
     }
@@ -75,11 +75,11 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
         var services = new ServiceCollection();
         services.AddScoped(_ => scenario.OpenContext());
         await using var provider = services.BuildServiceProvider();
-        using var cleanup = new MessagingCleanup<ThingsDbContext>(
+        using var cleanup = new MessagingCleanupService<ThingsDbContext>(
             provider.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(s_defaults),
             time,
-            NullLogger<MessagingCleanup<ThingsDbContext>>.Instance);
+            NullLogger<MessagingCleanupService<ThingsDbContext>>.Instance);
 
         // StartAsync runs ExecuteAsync up to its first await, so the timer exists when it returns.
         await cleanup.StartAsync(ct);

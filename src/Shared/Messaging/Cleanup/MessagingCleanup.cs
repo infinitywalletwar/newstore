@@ -18,11 +18,11 @@ public readonly record struct CleanupResult(int OutboxDeleted, int InboxDeleted)
 /// <see cref="MessagingOptions.OutboxRetention"/> and inbox rows older than <see cref="MessagingOptions.InboxRetention"/>.
 /// An unpublished outbox row is never deleted, however old: it is still waiting for Kafka.
 /// </summary>
-public sealed class MessagingCleanup<TContext>(
+public sealed class MessagingCleanupService<TContext>(
     IServiceScopeFactory scopeFactory,
     IOptions<MessagingOptions> options,
     TimeProvider timeProvider,
-    ILogger<MessagingCleanup<TContext>> logger) : BackgroundService
+    ILogger<MessagingCleanupService<TContext>> logger) : BackgroundService
     where TContext : DbContext
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,7 +39,7 @@ public sealed class MessagingCleanup<TContext>(
                 {
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var context = scope.ServiceProvider.GetRequiredService<TContext>();
-                    var result = await CleanAsync(context, settings, timeProvider.GetUtcNow(), stoppingToken);
+                    var result = await MessagingCleanup.CleanAsync(context, settings, timeProvider.GetUtcNow(), stoppingToken);
 
                     if (result.OutboxDeleted + result.InboxDeleted > 0)
                     {
@@ -66,12 +66,14 @@ public sealed class MessagingCleanup<TContext>(
             // Shutdown while waiting for the next tick.
         }
     }
+}
 
+/// <summary>The cleanup pass itself, on a non-generic type so a test can call it without the hosted service.</summary>
+public static class MessagingCleanup
+{
     /// <summary>One pass: two <c>DELETE</c> statements, one per table. Takes <paramref name="now"/> so a test needs no timer.</summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1000:Do not declare static members on generic types",
-        Justification = "The pass needs TContext and is called from tests without constructing the service.")]
     public static async Task<CleanupResult> CleanAsync(
-        TContext db, MessagingOptions options, DateTimeOffset now, CancellationToken ct)
+        DbContext db, MessagingOptions options, DateTimeOffset now, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(options);

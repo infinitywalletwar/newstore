@@ -53,7 +53,7 @@ public static class MessagingExtensions
         // Hosted services start in registration order: topics first.
         services.AddHostedService<TopicCreator>();
         services.AddHostedService<OutboxRelay<TContext>>();
-        services.AddHostedService<MessagingCleanup<TContext>>();
+        services.AddHostedService<MessagingCleanupService<TContext>>();
         services.AddSingleton<IdempotentDispatcher<TContext>>();
         services.AddHostedService<KafkaConsumerService<TContext>>();
 
