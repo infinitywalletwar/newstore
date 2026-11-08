@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 using NewStore.Contracts.Inventory;
@@ -10,7 +11,11 @@ using NewStore.ServiceDefaults.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddPostgresDatabase<InventoryDbContext>("Inventory");
+
+// EF logs an Error for the unique violation the reserve strategies answer with a 409. Its logger factory hides that one.
+builder.Services.AddSingleton(services => new HandledConflictLoggerFactory(services.GetRequiredService<ILoggerFactory>()));
+builder.AddPostgresDatabase<InventoryDbContext>("Inventory", (services, options) =>
+    options.UseLoggerFactory(services.GetRequiredService<HandledConflictLoggerFactory>()));
 
 builder.Services.AddOptions<InventoryOptions>().BindConfiguration("Inventory");
 

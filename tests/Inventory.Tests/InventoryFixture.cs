@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace NewStore.Inventory.Tests;
@@ -15,6 +16,9 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
 {
     /// <summary>Every "now" of the service, including the sweeper's timer.</summary>
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
+
+    /// <summary>Every log record the app writes, whatever the configured log levels.</summary>
+    public LogCapture Logs { get; } = new();
 
     public async ValueTask InitializeAsync()
     {
@@ -33,6 +37,7 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.AddLogging(logging => logging.AddProvider(Logs));
         });
     }
 }

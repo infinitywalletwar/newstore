@@ -24,10 +24,12 @@ public static class PostgresExtensions
     /// connections unless the connection string sets its own), the "postgres" readiness check on its own
     /// 2-connection pool, and <typeparamref name="TContext"/> on that data source with snake_case names.
     /// Throws when ConnectionStrings:<paramref name="connectionName"/> is missing or empty, so a service
-    /// without its database fails at startup, not on every request.
+    /// without its database fails at startup, not on every request. <paramref name="configure"/> adds
+    /// service-specific options to the context, such as a logger factory.
     /// </summary>
     public static IHostApplicationBuilder AddPostgresDatabase<TContext>(
-        this IHostApplicationBuilder builder, string connectionName)
+        this IHostApplicationBuilder builder, string connectionName,
+        Action<IServiceProvider, DbContextOptionsBuilder>? configure = null)
         where TContext : DbContext
     {
         var connectionString = builder.Configuration.GetConnectionString(connectionName);
@@ -45,9 +47,13 @@ public static class PostgresExtensions
 
         builder.Services.AddNpgsqlDataSource(requestPool.ConnectionString);
         builder.Services.AddHealthChecks().AddPostgres(connectionString);
-        builder.Services.AddDbContext<TContext>((services, options) => options
-            .UseNpgsql(services.GetRequiredService<NpgsqlDataSource>())
-            .UseSnakeCaseNamingConvention());
+        builder.Services.AddDbContext<TContext>((services, options) =>
+        {
+            options
+                .UseNpgsql(services.GetRequiredService<NpgsqlDataSource>())
+                .UseSnakeCaseNamingConvention();
+            configure?.Invoke(services, options);
+        });
 
         return builder;
     }

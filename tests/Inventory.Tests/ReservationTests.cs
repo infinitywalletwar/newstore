@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace NewStore.Inventory.Tests;
 
@@ -67,6 +68,51 @@ public abstract class ReservationTests(InventoryFixture fixture)
         // The 49 losers rolled their decrement back with the failed insert.
         Assert.Equal(99, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
     }
+
+    [Fact]
+    public async Task Already_holding_logs_no_EF_error()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var buyerId = Guid.NewGuid();
+        await client.ReserveOkAsync(edition.Id, buyerId);
+        var logged = fixture.Logs.Snapshot().Count;
+
+        var response = await client.ReserveAsync(edition.Id, buyerId);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:already-holding", (await response.ReadProblemAsync()).Type);
+        Assert.Empty(EfErrors(logged));
+    }
+
+    [Fact]
+    public async Task Another_failed_save_still_logs_an_EF_error()
+    {
+        var logged = fixture.Logs.Snapshot().Count;
+
+        // A reservation of an edition that does not exist breaks the foreign key (23503), not the unique index.
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        db.Reservations.Add(new Reservation
+        {
+            Id = Guid.CreateVersion7(),
+            EditionId = Guid.NewGuid(),
+            BuyerId = Guid.NewGuid(),
+            Status = ReservationStatus.Pending,
+            ReservedAt = now,
+            ExpiresAt = now.AddMinutes(10),
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Ct));
+
+        Assert.Contains(EfErrors(logged), r => r.Category == "Microsoft.EntityFrameworkCore.Update");
+    }
+
+    /// <summary>EF Core records at Error or above written after the first <paramref name="skip"/> records.</summary>
+    private List<CapturedLog> EfErrors(int skip) =>
+        [.. fixture.Logs.Snapshot().Skip(skip).Where(r =>
+            r.Level >= LogLevel.Error && r.Category.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal))];
 
     [Fact]
     public async Task A_hundred_buyers_for_ten_copies_get_exactly_ten()
