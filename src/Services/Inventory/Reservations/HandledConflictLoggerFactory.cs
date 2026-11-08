@@ -7,7 +7,7 @@ namespace NewStore.Inventory;
 /// <summary>
 /// The logger factory EF Core writes to. It hides the two Error records that EF logs for the unique violation
 /// the reserve strategies handle (<see cref="ReserveSupport.IsAlreadyHolding"/>, answered as a 409) and passes
-/// every other record on unchanged. Register it as a singleton: EF caches its internal services per logger factory.
+/// every other record on unchanged. Register it as a singleton: EF Core asks for one factory used by every context.
 /// </summary>
 /// <remarks>
 /// The two records come from different categories, and only one of them carries the exception:
