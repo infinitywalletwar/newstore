@@ -151,7 +151,8 @@ internal sealed class KafkaConsumerService<TContext>(
             return;
         }
 
-        // One span for all attempts, so a retried message shows as one slow span with the failures inside.
+        // One span per delivery of the message. A transient failure ends it and the next poll starts a new one,
+        // so the retries show as separate spans of the same message id. Retries of other failures stay inside one span.
         using var activity = MessagingTelemetry.StartProcess(result.Topic, messageId, headers.GetString(MessageHeaders.TraceParent));
         for (var attempt = 1; ; attempt++)
         {
@@ -208,7 +209,7 @@ internal sealed class KafkaConsumerService<TContext>(
     {
         var attempt = _transientAttempts.GetValueOrDefault(result.TopicPartitionOffset) + 1;
         _transientAttempts[result.TopicPartitionOffset] = attempt;
-        var pause = TransientPause(settings, attempt);
+        var pause = settings.TransientPauseFor(attempt);
 
         MessagingLog.HandlerFailedTransiently(logger, exception, result.Topic, result.Partition.Value, result.Offset.Value, attempt, pause);
         MessagingTelemetry.TransientRetries.Add(1, new KeyValuePair<string, object?>("messaging.destination.name", result.Topic));
@@ -216,14 +217,6 @@ internal sealed class KafkaConsumerService<TContext>(
 
         consumer.Seek(result.TopicPartitionOffset);
         Pause(pause, stoppingToken);
-    }
-
-    /// <summary><c>min(TransientRetryPause × 2^(attempt−1), MaxTransientRetryPause)</c>, computed so it cannot overflow.</summary>
-    private static TimeSpan TransientPause(MessagingOptions settings, int attempt)
-    {
-        var factor = Math.Pow(2, Math.Min(attempt - 1, 30));
-        var milliseconds = Math.Min(settings.TransientRetryPause.TotalMilliseconds * factor, settings.MaxTransientRetryPause.TotalMilliseconds);
-        return TimeSpan.FromMilliseconds(milliseconds);
     }
 
     private void ForgetAttempts(IEnumerable<TopicPartition> partitions)

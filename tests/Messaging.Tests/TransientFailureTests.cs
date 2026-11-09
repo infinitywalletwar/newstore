@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Data.Common;
+using System.Net;
 using System.Text.Json;
 
 using Microsoft.EntityFrameworkCore;
@@ -71,7 +73,7 @@ public class TransientFailureTests(PostgresServer postgres, KafkaServer kafka)
         var scenario = await Scenario.CreateAsync(postgres, kafka);
         var stuckProbe = new HandlerProbe();
         var stuckPlan = new FlakyPlan(failuresPerMessage: int.MaxValue);
-        var host = await scenario.StartHostAsync(
+        using var host = await scenario.StartHostAsync(
             scenario.ClientId,
             b => b.AddHandler<ThingCreated, FlakyHandler>(scenario.Topic),
             FastRetries,
@@ -81,7 +83,6 @@ public class TransientFailureTests(PostgresServer postgres, KafkaServer kafka)
 
         await Scenario.EventuallyAsync(() => Task.FromResult(stuckProbe.Calls(created.EventId) >= 2), s_wait, "two attempts");
         await host.StopAsync(TestContext.Current.CancellationToken);
-        host.Dispose();
 
         var probe = new HandlerProbe();
         using var next = await scenario.StartHostAsync(
@@ -110,7 +111,35 @@ public class TransientFailureTests(PostgresServer postgres, KafkaServer kafka)
         { new InvalidOperationException("wrapped", new HttpRequestException("refused")), true },
         { new InvalidOperationException("broken"), false },
         { new JsonException("bad json"), false },
+        { new HttpRequestException("not found", null, HttpStatusCode.NotFound), false },
+        { new HttpRequestException("conflict", null, HttpStatusCode.Conflict), false },
+        { new HttpRequestException("unavailable", null, HttpStatusCode.ServiceUnavailable), true },
+        { new HttpRequestException("slow", null, HttpStatusCode.RequestTimeout), true },
+        { new HttpRequestException("throttled", null, HttpStatusCode.TooManyRequests), true },
+        { new TaskCanceledException("timed out", new TimeoutException()), true },
+        { new FakeDbException(isTransient: true), true },
+        { new FakeDbException(isTransient: false), false },
+        { new AggregateException(new TimeoutException(), new HttpRequestException("refused")), true },
+        { new AggregateException(new TimeoutException(), new InvalidOperationException("broken")), false },
     };
+
+    [Theory]
+    [InlineData(1, 1000)]
+    [InlineData(2, 2000)]
+    [InlineData(3, 4000)]
+    [InlineData(10, 30000)]
+    [InlineData(1000, 30000)]
+    public void Pause_doubles_up_to_the_cap(int attempt, int expectedMilliseconds)
+    {
+        var options = new MessagingOptions { BootstrapServers = "unused" };
+
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMilliseconds), options.TransientPauseFor(attempt));
+    }
+
+    private sealed class FakeDbException(bool isTransient) : DbException
+    {
+        public override bool IsTransient => isTransient;
+    }
 }
 
 /// <summary>What <see cref="FlakyHandler"/> does: how often a message fails, and the order the handler saw names.</summary>
