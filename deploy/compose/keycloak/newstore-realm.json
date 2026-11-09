@@ -1,0 +1,235 @@
+{
+  "realm": "newstore",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "gateway",
+      "name": "gateway",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "gateway",
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "standardFlowEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-orders",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "orders",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-inventory",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "inventory",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-catalog",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "catalog",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
+      "redirectUris": [
+        "http://localhost:8100/signin-oidc",
+        "http://localhost:5100/signin-oidc",
+        "http://localhost:4200/signin-oidc"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8100/##http://localhost:5100/##http://localhost:4200/"
+      }
+    },
+    {
+      "clientId": "orders",
+      "name": "orders",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "orders",
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience-inventory",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "inventory",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-payments",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "payments",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "inventory",
+      "name": "inventory",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "inventory",
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience-catalog",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "catalog",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-7000-8000-000000000001",
+      "username": "orbital-kitchen",
+      "email": "orbital-kitchen@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Orbital",
+      "lastName": "Kitchen",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "orbital-kitchen",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000002",
+      "username": "trail-notes",
+      "email": "trail-notes@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Trail",
+      "lastName": "Notes",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "trail-notes",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000003",
+      "username": "pixel-forge",
+      "email": "pixel-forge@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Pixel",
+      "lastName": "Forge",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pixel-forge",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000004",
+      "username": "quiet-workshop",
+      "email": "quiet-workshop@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Quiet",
+      "lastName": "Workshop",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "quiet-workshop",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000005",
+      "username": "deep-current",
+      "email": "deep-current@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Deep",
+      "lastName": "Current",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "deep-current",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000006",
+      "username": "night-garden",
+      "email": "night-garden@newstore.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Night",
+      "lastName": "Garden",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "night-garden",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

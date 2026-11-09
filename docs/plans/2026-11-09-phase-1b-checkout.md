@@ -360,7 +360,7 @@ Branch `phase-1/sign-in`. Issue #69. Owns the Compose stack in wave A. Read: top
 
   A caller also gets `Auth__ClientId`, `Auth__ClientSecret` and `Auth__TokenEndpoint: http://keycloak:8080/realms/newstore/protocol/openid-connect/token`. Each service's own task adds these lines. `appsettings.Development.json` uses `localhost:8180` for all three URLs.
 
-- [ ] **Step 1: The realm and Compose**
+- [x] **Step 1: The realm and Compose**
 
 Write the realm, change the keycloak service, then run `docker compose up -d --wait keycloak`. Check:
 - `curl -s http://localhost:8180/realms/newstore/.well-known/openid-configuration | jq -r .issuer` prints `http://localhost:8180/realms/newstore`.
