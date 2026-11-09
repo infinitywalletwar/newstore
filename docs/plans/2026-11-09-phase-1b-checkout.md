@@ -86,12 +86,11 @@ All paths below are relative to the newstore repository root, `example/newstore/
 
 | Wave | Tasks, at the same time | Owns the Compose stack on the Mac | Issue |
 |---|---|---|---|
-| A | 1 Messaging: transient failures ‖ 2 Sign-in groundwork | Task 2 | — |
-| B | 3 Inventory for checkout ‖ 4 Payments and FakePay ‖ 5 The gateway as BFF | Task 3 | — |
-| C | 6 Creators and channels ‖ 7 Orders, the checkout saga ‖ 8 The web app | Task 6 | — |
-| D | 9 Phase 1b done | Task 9 | — |
+| A | 1 Messaging: transient failures ‖ 2 Sign-in groundwork | Task 2 | #68, #69 |
+| B | 3 Inventory for checkout ‖ 4 Payments and FakePay ‖ 5 The gateway as BFF | Task 3 | #70, #71, #72 |
+| C | 6 Creators and channels ‖ 7 Orders, the checkout saga ‖ 8 The web app | Task 6 | #73, #74, #75 |
+| D | 9 Phase 1b done | Task 9 | #76 |
 
-The Issue column is filled in when the task issues are created, before this pull request opens.
 
 - A wave starts when every task of the previous wave has merged. Each task starts from that `main`, in its own worktree, on branch `phase-1/<slug>`. The slugs are `messaging-transient`, `sign-in`, `inventory-checkout`, `payments`, `gateway`, `creators`, `orders`, `web` and `done-1b`.
 - **Shared files.** Tasks add lines to these and change nothing else in them:
@@ -156,7 +155,7 @@ newstore/
 
 ### Task 1: Messaging tells "not now" from "never"
 
-Branch `phase-1/messaging-transient`. Read: roadmap Stage 1 topics 10 (async/await) and 13 (resilience).
+Branch `phase-1/messaging-transient`. Issue #68. Read: roadmap Stage 1 topics 10 (async/await) and 13 (resilience).
 
 Today a handler that fails three times sends its message to `<topic>.dlt`, which nothing reads. Orders' handlers call Inventory. If Inventory were down for two minutes, a `PaymentSucceeded` would be dead-lettered, and the buyer would be charged with no copy and no refund. After this task, a transient failure is retried until it succeeds. Only a message that can never succeed goes to the dead-letter topic.
 
@@ -236,7 +235,7 @@ Expected: all Messaging tests pass. Commit: `feat(messaging): retry transient ha
 
 ### Task 2: Sign-in groundwork
 
-Branch `phase-1/sign-in`. Owns the Compose stack in wave A. Read: topics 09 (OAuth 2.0, OIDC and JWT) and 11 (authorization policies).
+Branch `phase-1/sign-in`. Issue #69. Owns the Compose stack in wave A. Read: topics 09 (OAuth 2.0, OIDC and JWT) and 11 (authorization policies).
 
 **Files:**
 - **Create:**
@@ -423,7 +422,7 @@ Commit: `feat(security): token validation, client policies and service clients f
 
 ### Task 3: Inventory for checkout
 
-Branch `phase-1/inventory-checkout`. Owns the Compose stack in wave B. Read: topic 08 (sagas). The hard part "reservations and copy numbers" grows here: walk through the hold and the caller-supplied id step by step.
+Branch `phase-1/inventory-checkout`. Issue #70. Owns the Compose stack in wave B. Read: topic 08 (sagas). The hard part "reservations and copy numbers" grows here: walk through the hold and the caller-supplied id step by step.
 
 **Files:**
 - **Modify in Inventory:**
@@ -526,7 +525,7 @@ Generate the migration with the AGENTS.md command, and check that it changes the
 
 ### Task 4: Payments and FakePay
 
-Branch `phase-1/payments`. Read: topic 08 (sagas: compensation). The hard part "idempotent consumers" gets a second example here, the webhook. Walk through it step by step.
+Branch `phase-1/payments`. Issue #71. Read: topic 08 (sagas: compensation). The hard part "idempotent consumers" gets a second example here, the webhook. Walk through it step by step.
 
 **Files:**
 - **Create:**
@@ -684,7 +683,7 @@ Expected: Payments.Tests and FakePay.Tests pass, and `docker compose build payme
 
 ### Task 5: The gateway as BFF
 
-Branch `phase-1/gateway`. Read: topics 09 (OAuth 2.0 and OIDC: browser-based apps) and 12 (YARP). The browser sign-in path gets the deep walkthrough (owner's decision 6).
+Branch `phase-1/gateway`. Issue #72. Read: topics 09 (OAuth 2.0 and OIDC: browser-based apps) and 12 (YARP). The browser sign-in path gets the deep walkthrough (owner's decision 6).
 
 **Files:**
 - **Create:**
@@ -802,7 +801,7 @@ Expected: Gateway.Tests pass, and `docker compose build gateway` succeeds. Commi
 
 ### Task 6: Creators and channels
 
-Branch `phase-1/creators`. Owns the Compose stack in wave C. Read: topic 11 (authorization: resource-based handlers). Advances A-1 (#1): a viewer becomes a creator by opening a channel.
+Branch `phase-1/creators`. Issue #73. Owns the Compose stack in wave C. Read: topic 11 (authorization: resource-based handlers). Advances A-1 (#1): a viewer becomes a creator by opening a channel.
 
 **Files:**
 - **Catalog:**
@@ -924,7 +923,7 @@ Commit: `test(load): creators make the test editions with their own token`.
 
 ### Task 7: Orders, the checkout saga
 
-Branch `phase-1/orders`. Read: topics 08 (sagas), 10 (async/await) and 13 (resilience). This is the hard part "the checkout saga": the deepest walkthrough of the phase. Advances C-2 (#7) and L-1 (#10).
+Branch `phase-1/orders`. Issue #74. Read: topics 08 (sagas), 10 (async/await) and 13 (resilience). This is the hard part "the checkout saga": the deepest walkthrough of the phase. Advances C-2 (#7) and L-1 (#10).
 
 **Files:**
 - **Create:**
@@ -1056,7 +1055,7 @@ Expected: they pass after the handlers are written. Commit: `feat(orders): the c
 
 ### Task 8: The web app
 
-Branch `phase-1/web`. Middle depth (owner's decision 6): short walkthroughs, except for how the app calls the gateway, which is the sign-in path.
+Branch `phase-1/web`. Issue #75. Middle depth (owner's decision 6): short walkthroughs, except for how the app calls the gateway, which is the sign-in path.
 
 **Files:**
 - **Create:** `web/`, a new Angular 22.2 workspace (standalone components, plain CSS, no SSR):
@@ -1155,7 +1154,7 @@ Expected: they pass. Commit: `feat(web): browse, video, order and my copies page
 
 ### Task 9: Phase 1b done
 
-Branch `phase-1/done-1b`. Owns the Compose stack. Closes A-1 (#1), C-2 (#7) and L-1 (#10).
+Branch `phase-1/done-1b`. Issue #76. Owns the Compose stack. Closes A-1 (#1), C-2 (#7) and L-1 (#10).
 
 **Files:**
 - **Create:**
@@ -1222,7 +1221,7 @@ Commit: `test(load): the last-copy test buys through the gateway`.
 1. The CI jobs from Interfaces.
 2. **README:** the status line says 1b is done, waiting for the owner's checks. Add `tests/e2e/` to the layout.
 3. **AGENTS.md, Commands:** how to run e2e.
-4. **Walkthrough:** what each test proves, and the numbers. `Closes #1`, `Closes #7`, `Closes #10`, and this task's issue.
+4. **Walkthrough:** what each test proves, and the numbers. `Closes #1`, `Closes #7`, `Closes #10` and `Closes #76`.
 
 ---
 

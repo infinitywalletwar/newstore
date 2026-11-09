@@ -12,15 +12,15 @@ The tasks of [the Phase 1b plan](../plans/2026-11-09-phase-1b-checkout.md), in f
 
 | Wave | Issue | Task |
 |---|---|---|
-| A | – | 1 Messaging tells "not now" from "never" |
-| A | – | 2 Sign-in groundwork |
-| B | – | 3 Inventory for checkout |
-| B | – | 4 Payments and FakePay |
-| B | – | 5 The gateway as BFF |
-| C | – | 6 Creators and channels |
-| C | – | 7 Orders, the checkout saga |
-| C | – | 8 The web app |
-| D | – | 9 Phase 1b done |
+| A | #68 | 1 Messaging tells "not now" from "never" |
+| A | #69 | 2 Sign-in groundwork |
+| B | #70 | 3 Inventory for checkout |
+| B | #71 | 4 Payments and FakePay |
+| B | #72 | 5 The gateway as BFF |
+| C | #73 | 6 Creators and channels |
+| C | #74 | 7 Orders, the checkout saga |
+| C | #75 | 8 The web app |
+| D | #76 | 9 Phase 1b done |
 
 ## Review
 
