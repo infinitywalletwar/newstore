@@ -197,7 +197,7 @@ Today a handler that fails three times sends its message to `<topic>.dlt`, which
   The consumer keeps polling instead of sleeping in the handler loop, because librdkafka evicts a consumer that doesn't poll for `max.poll.interval.ms`. The default is 300000; [CONFIGURATION.md](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) says: "If this interval is exceeded the consumer is considered failed and the group will rebalance". Any other exception keeps today's path: `MaxHandlerAttempts` tries, then `<topic>.dlt`.
 - Counter `messaging.handler.transient_retries`, tagged with `messaging.destination.name`, on the library's `Meter("NewStore.Messaging")`. Create the meter if the library has none yet.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 `TransientFailureTests`, using the existing `Scenario` and `MessagingHost` helpers, with `TransientRetryPause` 50 ms and `MaxTransientRetryPause` 200 ms:
 - `Transient_failure_is_retried_until_it_succeeds_and_never_dead_lettered`: the handler throws `TransientFailureException` 5 times (more than `MaxHandlerAttempts`), then succeeds. Assert: one inbox row, one side effect, and `<topic>.dlt` stays empty for 2 s.
@@ -218,11 +218,11 @@ Today a handler that fails three times sends its message to `<topic>.dlt`, which
 
 Run `dotnet test --project tests/Messaging.Tests`. Expected: the new tests fail.
 
-- [ ] **Step 2: Implement, then run the tests**
+- [x] **Step 2: Implement, then run the tests**
 
 Expected: all Messaging tests pass. Commit: `feat(messaging): retry transient handler failures without a limit`.
 
-- [ ] **Step 3: ADR 0008 amendment, AGENTS.md, pull request**
+- [x] **Step 3: ADR 0008 amendment, AGENTS.md, pull request**
 
 1. **ADR 0008 amendment:**
    - The rule: transient retries forever with a capped pause, permanent goes to the DLT.
