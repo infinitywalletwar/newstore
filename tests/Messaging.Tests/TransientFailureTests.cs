@@ -34,12 +34,11 @@ public class TransientFailureTests(PostgresServer postgres, KafkaServer kafka)
         var created = ThingCreated.New("flaky");
 
         await scenario.ProduceAsync(scenario.Topic, created);
-        await Scenario.EventuallyAsync(() => Task.FromResult(probe.Completed(created.EventId)), s_wait, "the message is handled");
+        await WaitForInboxRowAsync(scenario, created.EventId, "the message is committed");
 
         Assert.Equal(6, probe.Calls(created.EventId));
         var ct = TestContext.Current.CancellationToken;
         await using var context = scenario.OpenContext();
-        Assert.Equal(1, await context.Set<InboxMessage>().CountAsync(m => m.MessageId == created.EventId, ct));
         Assert.Equal(1, await context.Things.CountAsync(t => t.Id == created.ThingId, ct));
         Assert.Empty(await scenario.ReadAsync(scenario.Topic + ".dlt", 1, TimeSpan.FromSeconds(2)));
     }
@@ -90,13 +89,23 @@ public class TransientFailureTests(PostgresServer postgres, KafkaServer kafka)
             b => b.AddHandler<ThingCreated, CreateThingHandler>(scenario.Topic),
             FastRetries,
             s => s.AddSingleton(probe));
-        await Scenario.EventuallyAsync(() => Task.FromResult(probe.Completed(created.EventId)), s_wait, "the new host handles it");
+        await WaitForInboxRowAsync(scenario, created.EventId, "the new host commits it");
 
         Assert.Equal(1, probe.Calls(created.EventId));
-        var ct = TestContext.Current.CancellationToken;
-        await using var context = scenario.OpenContext();
-        Assert.Equal(1, await context.Set<InboxMessage>().CountAsync(m => m.MessageId == created.EventId, ct));
     }
+
+    // Waits for the message's inbox row, not the probe: the handler marks the probe before the dispatcher commits,
+    // so a check right after the probe could still see no row.
+    private static Task WaitForInboxRowAsync(Scenario scenario, Guid eventId, string what) =>
+        Scenario.EventuallyAsync(
+            async () =>
+            {
+                await using var context = scenario.OpenContext();
+                var ct = TestContext.Current.CancellationToken;
+                return await context.Set<InboxMessage>().CountAsync(m => m.MessageId == eventId, ct) == 1;
+            },
+            s_wait,
+            what);
 
     [Theory]
     [MemberData(nameof(Failures))]
