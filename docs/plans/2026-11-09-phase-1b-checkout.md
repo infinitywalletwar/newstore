@@ -222,7 +222,7 @@ Run `dotnet test --project tests/Messaging.Tests`. Expected: the new tests fail.
 
 Expected: all Messaging tests pass. Commit: `feat(messaging): retry transient handler failures without a limit`.
 
-- [ ] **Step 3: ADR 0008 amendment, AGENTS.md, pull request**
+- [x] **Step 3: ADR 0008 amendment, AGENTS.md, pull request**
 
 1. **ADR 0008 amendment:**
    - The rule: transient retries forever with a capped pause, permanent goes to the DLT.
