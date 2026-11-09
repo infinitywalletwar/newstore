@@ -1,9 +1,10 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 
 namespace NewStore.Messaging.Telemetry;
 
 /// <summary>
-/// The library's <see cref="ActivitySource"/> and the two spans it starts. The name starts with
+/// The library's <see cref="ActivitySource"/>, its <see cref="Meter"/> and the two spans it starts. The name starts with
 /// <c>NewStore.</c>, so <c>AddServiceDefaults</c> collects it. Both methods return null when nothing listens.
 /// </summary>
 internal static class MessagingTelemetry
@@ -11,6 +12,12 @@ internal static class MessagingTelemetry
     public const string SourceName = "NewStore.Messaging";
 
     public static readonly ActivitySource Source = new(SourceName);
+
+    private static readonly Meter s_meter = new(SourceName);
+
+    /// <summary>Handler failures that will be tried again without a limit, per topic. A rising count means a dependency is down.</summary>
+    public static readonly Counter<long> TransientRetries = s_meter.CreateCounter<long>(
+        "messaging.handler.transient_retries", description: "Handler attempts that failed transiently and will be retried.");
 
     /// <summary>
     /// <c>publish &lt;topic&gt;</c>, a child of the request that enqueued the event. The relay runs long after
