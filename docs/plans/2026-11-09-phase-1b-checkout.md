@@ -360,7 +360,7 @@ Branch `phase-1/sign-in`. Issue #69. Owns the Compose stack in wave A. Read: top
 
   A caller also gets `Auth__ClientId`, `Auth__ClientSecret` and `Auth__TokenEndpoint: http://keycloak:8080/realms/newstore/protocol/openid-connect/token`. Each service's own task adds these lines. `appsettings.Development.json` uses `localhost:8180` for all three URLs.
 
-- [ ] **Step 1: The realm and Compose**
+- [x] **Step 1: The realm and Compose**
 
 Write the realm, change the keycloak service, then run `docker compose up -d --wait keycloak`. Check:
 - `curl -s http://localhost:8180/realms/newstore/.well-known/openid-configuration | jq -r .issuer` prints `http://localhost:8180/realms/newstore`.
@@ -368,7 +368,7 @@ Write the realm, change the keycloak service, then run `docker compose up -d --w
 
 Commit: `feat(keycloak): import the newstore realm with its clients and sample creators`.
 
-- [ ] **Step 2: Failing tests in `tests/Security.Tests`**
+- [x] **Step 2: Failing tests in `tests/Security.Tests`**
 
 These tests run against Keycloak in Testcontainers, with the realm imported and the public hostname set to `http://public.newstore.test:8180`:
 - `Token_from_the_internal_url_carries_the_public_issuer`: get an `orders` client-credentials token from the container's mapped URL. Assert:
@@ -389,7 +389,7 @@ These use `TestTokens` and the same minimal app:
 
 Tests read client secrets from `deploy/compose/keycloak/newstore-realm.json`. Expected: they fail to compile, because `AddNewStoreAuth` doesn't exist yet.
 
-- [ ] **Step 3: Implement ServiceDefaults security and TestSupport, then run the tests**
+- [x] **Step 3: Implement ServiceDefaults security and TestSupport, then run the tests**
 
 Also add `ServiceClientTests` in Security.Tests:
 - `Service_client_sends_a_token_on_every_retry`: a `StubHttpHandler` answers 503 and then 200. Both requests carry `Authorization: Bearer`.
@@ -399,7 +399,7 @@ Before building the order of handlers, check how `AddStandardResilienceHandler` 
 
 Commit: `feat(security): token validation, client policies and service clients for every service`.
 
-- [ ] **Step 4: ADR 0012, CI, AGENTS.md, pull request**
+- [x] **Step 4: ADR 0012, CI, AGENTS.md, pull request**
 
 1. **ADR 0012, service identity and the issuer.**
    - The decision: client credentials per calling service, and the callee names the clients it accepts.

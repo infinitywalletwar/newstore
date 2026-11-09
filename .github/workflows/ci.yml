@@ -37,6 +37,13 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
       - name: Inventory is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8102/health/ready
+      - name: Keycloak issues a service token
+        # The secret comes from the realm file Keycloak imported, so the file and the running server cannot disagree unnoticed.
+        run: |
+          secret=$(jq -r '.clients[] | select(.clientId == "orders") | .secret' deploy/compose/keycloak/newstore-realm.json)
+          curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors \
+            --data grant_type=client_credentials --data client_id=orders --data-urlencode "client_secret=$secret" \
+            http://localhost:8180/realms/newstore/protocol/openid-connect/token | jq -e '.access_token | length > 0'
       - name: Run the last-copy load test
         # The runner is slower than the Mac, so the latency threshold is looser (tests/load/README.md).
         run: docker compose -f compose.yaml -f compose.load.yaml run --rm k6
