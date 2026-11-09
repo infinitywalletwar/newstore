@@ -368,7 +368,7 @@ Write the realm, change the keycloak service, then run `docker compose up -d --w
 
 Commit: `feat(keycloak): import the newstore realm with its clients and sample creators`.
 
-- [ ] **Step 2: Failing tests in `tests/Security.Tests`**
+- [x] **Step 2: Failing tests in `tests/Security.Tests`**
 
 These tests run against Keycloak in Testcontainers, with the realm imported and the public hostname set to `http://public.newstore.test:8180`:
 - `Token_from_the_internal_url_carries_the_public_issuer`: get an `orders` client-credentials token from the container's mapped URL. Assert:
@@ -389,7 +389,7 @@ These use `TestTokens` and the same minimal app:
 
 Tests read client secrets from `deploy/compose/keycloak/newstore-realm.json`. Expected: they fail to compile, because `AddNewStoreAuth` doesn't exist yet.
 
-- [ ] **Step 3: Implement ServiceDefaults security and TestSupport, then run the tests**
+- [x] **Step 3: Implement ServiceDefaults security and TestSupport, then run the tests**
 
 Also add `ServiceClientTests` in Security.Tests:
 - `Service_client_sends_a_token_on_every_retry`: a `StubHttpHandler` answers 503 and then 200. Both requests carry `Authorization: Bearer`.
