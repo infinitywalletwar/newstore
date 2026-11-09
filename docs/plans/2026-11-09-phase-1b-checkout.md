@@ -399,7 +399,7 @@ Before building the order of handlers, check how `AddStandardResilienceHandler` 
 
 Commit: `feat(security): token validation, client policies and service clients for every service`.
 
-- [ ] **Step 4: ADR 0012, CI, AGENTS.md, pull request**
+- [x] **Step 4: ADR 0012, CI, AGENTS.md, pull request**
 
 1. **ADR 0012, service identity and the issuer.**
    - The decision: client credentials per calling service, and the callee names the clients it accepts.
