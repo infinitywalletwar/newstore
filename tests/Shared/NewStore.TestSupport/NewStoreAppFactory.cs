@@ -22,7 +22,16 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
 {
     private static readonly TimeSpan DefaultSpanTimeout = TimeSpan.FromSeconds(5);
 
-    public Dictionary<string, string?> Settings { get; } = [];
+    /// <summary>
+    /// Overrides configuration. It starts with test values for the token settings: <c>Auth:Issuer</c> is the test issuer and
+    /// <c>Auth:UserClients:0</c> is <c>gateway</c>. <c>Auth:Audience</c> is not set here: each service names itself in its own
+    /// <c>appsettings.json</c>, so a test with the wrong audience fails as it would in production.
+    /// </summary>
+    public Dictionary<string, string?> Settings { get; } = new()
+    {
+        ["Auth:Issuer"] = TestTokens.Issuer,
+        ["Auth:UserClients:0"] = "gateway",
+    };
 
     /// <summary>8 random hex characters; 4 random bytes are enough to keep two factories in one process apart.</summary>
     public string TraceIdPrefix { get; } = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(4));
@@ -82,7 +91,14 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
         }
 
         builder.ConfigureTestServices(services =>
-            services.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(ExportedSpans)));
+        {
+            services.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(ExportedSpans));
+
+            // Tokens are checked against the test key, and calls to other services carry a test token.
+            // Both are no-ops for a service that has not called AddNewStoreAuth or AddServiceClient.
+            services.UseTestSigningKey();
+            services.UseTestServiceTokens();
+        });
     }
 
     protected override void ConfigureClient(HttpClient client)

@@ -57,11 +57,17 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.2
-    command: start-dev
+    command: ["start-dev", "--import-realm"]
     environment:
+      # Browsers get front-channel URLs on localhost:8180, containers get back-channel URLs on keycloak:8080,
+      # and every token carries the one public issuer (ADR 0012).
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./deploy/compose/keycloak:/opt/keycloak/data/import:ro
     ports: ["127.0.0.1:8180:8080"]
     healthcheck:
       # The image has no curl, so the check speaks HTTP to the management port through bash.

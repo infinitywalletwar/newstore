@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="NewStore.TestSupport" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Testcontainers.Keycloak" />
+    <ProjectReference Include="..\..\src\Shared\ServiceDefaults\NewStore.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Shared\NewStore.TestSupport\NewStore.TestSupport.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The tests read client secrets from the file Keycloak imports, so the two cannot drift apart. -->
+    <Content Include="..\..\deploy\compose\keycloak\newstore-realm.json" Link="newstore-realm.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
