@@ -6,6 +6,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 |---|---|---|
 | 0 Foundation (done 2026-11-05) | [`2026-11-03-phase-0-foundation.md`](plans/2026-11-03-phase-0-foundation.md) | [`sprint-01.md`](sprints/sprint-01.md) |
 | 1a Buy the last copy (done 2026-11-07; the mock interview is still to come) | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
+| 1b Checkout (in progress) | [`2026-11-09-phase-1b-checkout.md`](plans/2026-11-09-phase-1b-checkout.md) | [`sprint-03.md`](sprints/sprint-03.md) |
 
 ## Already decided
 
@@ -21,6 +22,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 | Docker is running, on arm64 | `docker version --format '{{.Server.Arch}}'` | `arm64` (Docker runs on OrbStack) |
 | gh account and scopes | `gh auth status` | account `infinitywalletwar`, with `project`, `repo` and `workflow` among the scopes |
 | Tools | `command -v jq curl nc` | three paths |
+| Node, for the Angular app (from Phase 1b) | `node --version` | `v26.` followed by any version; Angular 22.2 supports `>=26.0.0` |
 
 If gh is missing a scope, Claude runs `gh auth refresh -h github.com -s <scope>` in the background and passes on the one-time code it prints. Approve the code at https://github.com/login/device while the browser is signed in as `infinitywalletwar`. Typing `! gh auth refresh` in the prompt fails, because the command needs an interactive terminal.
 
