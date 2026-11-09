@@ -20,6 +20,15 @@ public sealed class MessagingOptions
 
     public int MaxHandlerAttempts { get; set; } = 3;
 
+    /// <summary>
+    /// The pause before the first retry of a transient handler failure. It doubles with each attempt up to
+    /// <see cref="MaxTransientRetryPause"/>. Transient failures are retried without a limit.
+    /// </summary>
+    public TimeSpan TransientRetryPause { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest pause between two attempts at a message that fails transiently.</summary>
+    public TimeSpan MaxTransientRetryPause { get; set; } = TimeSpan.FromSeconds(30);
+
     public string DeadLetterSuffix { get; set; } = ".dlt";
 
     /// <summary>

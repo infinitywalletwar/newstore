@@ -82,14 +82,14 @@ internal sealed class Scenario
     }
 
     /// <summary>Sends an event the way the relay would, without the outbox: the consumer tests start from the topic.</summary>
-    public async Task ProduceAsync(string topic, ThingCreated created, int times = 1)
+    public async Task ProduceAsync(string topic, ThingCreated created, int times = 1, string? key = null)
     {
         using var producer = new ProducerBuilder<string, string>(new ProducerConfig { BootstrapServers = BootstrapServers }).Build();
         for (var i = 0; i < times; i++)
         {
             var message = new Message<string, string>
             {
-                Key = created.ThingId.ToString(),
+                Key = key ?? created.ThingId.ToString(),
                 Value = System.Text.Json.JsonSerializer.Serialize(created),
                 Headers =
                 [

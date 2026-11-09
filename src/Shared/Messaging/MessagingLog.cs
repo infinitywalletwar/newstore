@@ -29,6 +29,9 @@ internal static partial class MessagingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "The handler failed for {Topic}[{Partition}]@{Offset} (attempt {Attempt} of {Max}).")]
     public static partial void HandlerFailed(ILogger logger, Exception exception, string topic, int partition, long offset, int attempt, int max);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The handler failed transiently for {Topic}[{Partition}]@{Offset} (attempt {Attempt}); trying again in {Pause}.")]
+    public static partial void HandlerFailedTransiently(ILogger logger, Exception exception, string topic, int partition, long offset, int attempt, TimeSpan pause);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Message {Topic}[{Partition}]@{Offset} moved to {DeadLetterTopic}: {Reason}")]
     public static partial void DeadLettered(ILogger logger, string topic, int partition, long offset, string deadLetterTopic, string reason);
 
