@@ -15,8 +15,6 @@ public sealed class KeycloakServer : IAsyncLifetime
     public const string PublicIssuer = PublicUrl + "/realms/newstore";
 
     private readonly KeycloakContainer _container = new KeycloakBuilder("quay.io/keycloak/keycloak:26.8.2")
-        .WithUsername("admin")
-        .WithPassword("admin")
         .WithResourceMapping(new FileInfo(RealmFile.Path), "/opt/keycloak/data/import/")
         .WithCommand("--import-realm")
         .WithEnvironment("KC_HOSTNAME", PublicUrl)
@@ -31,6 +29,23 @@ public sealed class KeycloakServer : IAsyncLifetime
     public ValueTask InitializeAsync() => new(_container.StartAsync());
 
     public ValueTask DisposeAsync() => _container.DisposeAsync();
+
+    /// <summary>A token from the master realm, for the admin API. The container's own default admin account signs in.</summary>
+    public async Task<string> AdminTokenAsync()
+    {
+        using var http = new HttpClient();
+        var response = await http.PostAsync($"{InternalUrl}/realms/master/protocol/openid-connect/token",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "password",
+                ["client_id"] = "admin-cli",
+                ["username"] = KeycloakBuilder.DefaultUsername,
+                ["password"] = KeycloakBuilder.DefaultPassword,
+            }), TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        return body.GetProperty("access_token").GetString()!;
+    }
 
     public async Task<HttpResponseMessage> RequestTokenAsync(string grantType, string clientId, string? secret, params (string Key, string Value)[] more)
     {

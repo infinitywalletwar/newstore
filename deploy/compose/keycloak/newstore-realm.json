@@ -1,7 +1,6 @@
 {
   "realm": "newstore",
   "enabled": true,
-  "sslRequired": "none",
   "registrationAllowed": true,
   "verifyEmail": false,
   "loginWithEmailAllowed": true,

@@ -16,10 +16,8 @@ public static class AuthExtensions
     /// </summary>
     public static AuthorizationBuilder AddNewStoreAuth(this IHostApplicationBuilder builder)
     {
-        builder.Services.AddOptions<AuthOptions>()
-            .BindConfiguration(AuthOptions.SectionName)
-            .Validate(o => !string.IsNullOrWhiteSpace(o.Issuer) && !string.IsNullOrWhiteSpace(o.Audience), "Auth:Issuer and Auth:Audience are required.")
-            .ValidateOnStart();
+        AuthOptionsRegistration.Bind(builder.Services);
+        AuthOptionsRegistration.RequireTokenSettings(builder.Services);
 
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         // Configured from AuthOptions in DI, so the values are read when the first request needs them.

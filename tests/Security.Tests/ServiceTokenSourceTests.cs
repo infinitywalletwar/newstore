@@ -8,22 +8,35 @@ namespace NewStore.Security.Tests;
 
 public class ServiceTokenSourceTests(KeycloakServer keycloak)
 {
-    [Fact]
-    public async Task Default_source_gets_a_client_credentials_token_and_reuses_it()
+    private IServiceTokenSource CreateSource(string secret, out IHost host)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Services:Inventory"] = "http://inventory.test",
-            ["Auth:Issuer"] = KeycloakServer.PublicIssuer,
-            ["Auth:Audience"] = "orders",
             ["Auth:ClientId"] = "orders",
-            ["Auth:ClientSecret"] = RealmFile.Secret("orders"),
+            ["Auth:ClientSecret"] = secret,
             ["Auth:TokenEndpoint"] = keycloak.InternalIssuer + "/protocol/openid-connect/token",
         });
         builder.AddServiceClient<InventoryClient>("Services:Inventory");
-        using var host = builder.Build();
-        var source = host.Services.GetRequiredService<IServiceTokenSource>();
+        host = builder.Build();
+        return host.Services.GetRequiredService<IServiceTokenSource>();
+    }
+
+    [Fact]
+    public async Task A_failed_token_request_throws_HttpRequestException()
+    {
+        var source = CreateSource("not-the-secret", out var host);
+        using var _ = host;
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => source.GetTokenAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Default_source_gets_a_client_credentials_token_and_reuses_it()
+    {
+        var source = CreateSource(RealmFile.Secret("orders"), out var host);
+        using var _ = host;
 
         var first = await source.GetTokenAsync(TestContext.Current.CancellationToken);
         var second = await source.GetTokenAsync(TestContext.Current.CancellationToken);

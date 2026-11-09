@@ -29,7 +29,8 @@ public static class TestAuthExtensions
 
     /// <summary>
     /// Makes <paramref name="stub"/> the primary handler of <typeparamref name="TClient"/>, below the resilience and token
-    /// handlers, so a test sees exactly what would go on the wire. Call it inside <c>ConfigureTestServices</c>.
+    /// handlers, so a test sees exactly what would go on the wire. Call it inside <c>ConfigureTestServices</c>. It relies on a
+    /// typed client's name being <c>typeof(TClient).Name</c>.
     /// </summary>
     public static IHttpClientBuilder UseStubHandler<TClient>(this IServiceCollection services, StubHttpHandler stub)
         where TClient : class =>

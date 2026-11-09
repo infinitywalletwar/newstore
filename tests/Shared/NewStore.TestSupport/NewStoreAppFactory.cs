@@ -23,16 +23,14 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
     private static readonly TimeSpan DefaultSpanTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Overrides configuration. It starts with test values for <c>Auth:*</c>: the test issuer, <c>gateway</c> as the one
-    /// user client, and plain-http metadata allowed. A test that needs more sets its own keys.
+    /// Overrides configuration. It starts with test values for the token settings: <c>Auth:Issuer</c> is the test issuer and
+    /// <c>Auth:UserClients:0</c> is <c>gateway</c>. <c>Auth:Audience</c> is not set here: each service names itself in its own
+    /// <c>appsettings.json</c>, so a test with the wrong audience fails as it would in production.
     /// </summary>
     public Dictionary<string, string?> Settings { get; } = new()
     {
         ["Auth:Issuer"] = TestTokens.Issuer,
-        ["Auth:Audience"] = "test-service",
         ["Auth:UserClients:0"] = "gateway",
-        // The test issuer is plain http, and JwtBearer insists on https for the metadata address unless told otherwise.
-        ["Auth:RequireHttpsMetadata"] = "false",
     };
 
     /// <summary>8 random hex characters; 4 random bytes are enough to keep two factories in one process apart.</summary>

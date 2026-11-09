@@ -29,5 +29,5 @@ From Phase 1b, services call each other (Orders calls Inventory, Inventory calls
 
 - A caller needs `Auth:ClientId`, `Auth:ClientSecret` and `Auth:TokenEndpoint`, and a callee needs one `AddClientPolicy` per accepted caller. Adding a caller to the realm is a config change in two places.
 - Client secrets in the realm file equal the client id. They are local-only credentials (AGENTS.md); a real deployment sets them from a secret store.
-- A service token is valid until it expires (`expires_in` was 300 seconds from the local Keycloak). `Duende.AccessTokenManagement` caches it and requests a new one shortly before.
-- JwtBearer's default clock skew is five minutes, so an expired token still passes for that long. We did not change it.
+- A service token is valid until it expires (`expires_in` was 300 seconds from the local Keycloak). `Duende.AccessTokenManagement` caches it, and its `CacheLifetimeBuffer` is subtracted from the token's lifetime: "if a token is valid for one hour, it will be cached for 59 minutes only" ([Duende docs, Caching](https://docs.duendesoftware.com/accesstokenmanagement/advanced/client-credentials/)).
+- JwtBearer's clock skew is the `TokenValidationParameters` default, which the [API reference](https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew) gives as "300 seconds (5 minutes)", so an expired token still passes for that long. We did not change it.

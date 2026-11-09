@@ -19,14 +19,16 @@ public static class ServiceClientExtensions
         where TClient : class
     {
         var services = builder.Services;
-        services.AddOptions<AuthOptions>().BindConfiguration(AuthOptions.SectionName);
+        AuthOptionsRegistration.Bind(services);
+        AuthOptionsRegistration.RequireCallerSettings(services);
         services.AddClientCredentialsTokenManagement();
         services.AddOptions<ClientCredentialsClient>(DuendeServiceTokenSource.ClientName)
             .Configure<IOptions<AuthOptions>>((client, auth) =>
             {
-                client.TokenEndpoint = new Uri(auth.Value.TokenEndpoint ?? throw new InvalidOperationException("Auth:TokenEndpoint is not set."));
-                client.ClientId = ClientId.Parse(auth.Value.ClientId ?? throw new InvalidOperationException("Auth:ClientId is not set."));
-                client.ClientSecret = ClientSecret.Parse(auth.Value.ClientSecret ?? throw new InvalidOperationException("Auth:ClientSecret is not set."));
+                // Present and non-empty: AuthOptionsRegistration.RequireCallerSettings checks it at startup.
+                client.TokenEndpoint = new Uri(auth.Value.TokenEndpoint!);
+                client.ClientId = ClientId.Parse(auth.Value.ClientId!);
+                client.ClientSecret = ClientSecret.Parse(auth.Value.ClientSecret!);
             });
         services.TryAddSingleton<IServiceTokenSource, DuendeServiceTokenSource>();
         services.TryAddTransient<ServiceTokenHandler>();
