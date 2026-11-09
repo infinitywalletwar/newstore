@@ -4,7 +4,7 @@ newstore is a video platform with a store built in. Creators upload videos, and 
 
 It's a home practice project, not a business. Its purpose is hands-on practice with the skills a senior ASP.NET Core backend developer is expected to have, and a chance to learn new ones.
 
-> **Status:** Phase 0 (Foundation) and Phase 1a (Buy the last copy) done; Phase 1b (Checkout) next. To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
+> **Status:** Phase 0 (Foundation) and Phase 1a (Buy the last copy) done; Phase 1b (Checkout) in progress, following [its plan](docs/plans/2026-11-09-phase-1b-checkout.md). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Goals
 
@@ -48,7 +48,8 @@ The project fails, even if every feature works, if any of these happen:
 
 - **Edition:** one format of one video that a creator sells, with a format (DVD, USB or Digital), a price and a fixed number of copies. One video can have several editions.
 - **Copy:** one sold item of an edition. It has a number, for example "copy 37 of 100", and an owner.
-- **Reservation:** a hold on one copy while the buyer pays. It expires after 10 minutes.
+- **Reservation:** a hold on one copy for one buyer. The buyer has 10 minutes to start paying. Once payment starts, the copy stays held until the payment finishes, for at most 45 minutes.
+- **Order:** one buyer's purchase of one copy, from the reservation to a copy number, a failed payment or a refund.
 - **Shipment:** the delivery of one physical copy from the warehouse to the buyer.
 - **Courier:** the simulated driver who carries a shipment and reports its position.
 
@@ -89,15 +90,21 @@ Requirements are written as user stories with acceptance criteria. They are the 
 - **E-3** As a viewer, I can see each edition's price and how many copies are left.
   - The number left may lag behind real sales by a few seconds.
 - **E-4** As a creator, I can see each edition's sales: copies sold, copies left and test revenue.
+  - Copies sold and copies left come from Inventory.
+  - Test revenue is the sum of the prices of the edition's completed orders.
+  - The figures may lag behind real sales by a few seconds.
 
 ### Checkout
 
-- **C-1** As a buyer, I can reserve a copy, and I have 10 minutes to pay for it.
-  - If I don't pay in time, the reservation expires and the copy goes back on sale.
+- **C-1** As a buyer, I can reserve a copy, and I have 10 minutes to start paying for it.
+  - If I don't start paying in time, the reservation expires and the copy goes back on sale.
+  - Once I start paying, the copy stays mine until the payment finishes, for at most 45 minutes.
+  - A payment that succeeds after that is refunded, and the copy goes back on sale.
   - I can own at most one copy of each edition.
 - **C-2** As a buyer, I can pay for my reservation.
   - Payment uses a fake provider first and Stripe test mode later.
   - Paying twice, or a payment provider retrying its callback, never charges twice or assigns two copies.
+  - A declined card leaves the payment open, so I can try again until the payment session ends after 30 minutes.
 - **C-3** As a buyer, I receive a copy number when my payment succeeds.
   - Numbers are assigned in payment order, from 1 with no gaps, so an expired reservation never uses up a number.
 - **C-4** As the system, I never sell more copies than an edition has, even with 1,000 buyers at once.
@@ -126,10 +133,13 @@ Requirements are written as user stories with acceptance criteria. They are the 
 ```mermaid
 flowchart LR
     Browser[Angular app] --> Nginx[Nginx reverse proxy]
-    Nginx --> Gateway[YARP API gateway]
+    Nginx --> Gateway[YARP gateway, the BFF]
     Gateway --> Catalog & Media & Inventory & Orders & Delivery
-    Orders --> Payments
-    Browser -. sign in .-> Keycloak
+    Orders --> Inventory & Payments
+    Inventory --> Catalog
+    Payments --> Provider[Payment provider: FakePay, Stripe in Phase 7]
+    Browser -. sign-in page .-> Keycloak
+    Gateway -. tokens .-> Keycloak
     Catalog & Media & Inventory & Orders & Payments & Delivery <--> Kafka[(Kafka)]
     Courier[Courier simulator] --> Kafka
     Media --> S3[(S3)]
@@ -141,7 +151,7 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 
 | Service | Owns | Job |
 |---------|------|-----|
-| Gateway (YARP) | nothing | Routes requests, checks sign-in tokens, limits request rates and adds correlation IDs. |
+| Gateway (YARP) | user sessions, in Redis | The backend-for-frontend: signs the browser in, keeps its tokens on the server and forwards API calls with the user's access token. From Phase 4 it also limits request rates and adds correlation IDs. |
 | Catalog | channels, video details, a read copy of editions | Browsing, search and channel pages. |
 | Media | uploads, processing jobs, files in S3 | Upload links, FFmpeg conversion to HLS, download links. |
 | Inventory | editions, stock, reservations, copies | Reservations and copy numbers. This is where the last copy is decided. |
@@ -149,25 +159,26 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 | Payments | payment attempts | Talks to the payment provider and handles its callbacks idempotently. |
 | Delivery | shipments, position history | Shipments, tracking and the SignalR hub for live maps. |
 | Courier simulator | nothing | A worker that drives simulated couriers and publishes their positions. |
-| Keycloak | users, roles | Sign-in. It's off-the-shelf software, not our code. |
+| Keycloak | users, service clients | Sign-in, and tokens for calls between services. It's off-the-shelf software, not our code. |
+| FakePay | payment sessions, in memory | A stand-in for a hosted payment page until Stripe test mode in Phase 7. A test double, not part of the store. |
 
 ### The checkout flow
 
 1. The buyer clicks Buy. Orders asks Inventory to reserve a copy and waits for the answer, so the buyer knows at once whether they got one.
-2. Orders asks Payments for a payment. The buyer pays.
-3. Payments publishes "payment succeeded" or "payment failed".
-4. On success, Orders asks Inventory to confirm the reservation. Inventory assigns the copy number and publishes "copy assigned".
-5. On failure, or when 10 minutes pass, Inventory releases the reservation.
+2. The buyer clicks Pay. Orders asks Inventory to hold the reservation, then asks Payments for a payment, and sends the buyer to the provider's page.
+3. The provider calls Payments back. Payments publishes "payment succeeded" or "payment failed", once per payment however often the callback comes.
+4. On success, Orders asks Inventory to confirm the reservation. Inventory assigns the copy number and publishes "copy assigned". If the hold ran out first, Orders publishes "refund requested" instead, and Payments refunds.
+5. On failure, Orders asks Inventory to release the reservation. A reservation nobody starts paying for expires after 10 minutes, and a held one after 45.
 6. "Copy assigned" leads Delivery to create a shipment for a physical copy, or makes a digital copy downloadable.
 
-Every event is published through a transactional outbox, and every consumer ignores messages it has already handled.
+Every event is published through a transactional outbox, and every consumer ignores messages it has already handled. Orders' calls to Inventory and Payments are commands that are safe to repeat: each carries an id Orders chose, so a retry after a lost reply still takes effect only once. A consumer retries a call that failed because the other service was down, without a limit, so a payment is never dropped while Inventory restarts.
 
 ### Cross-cutting
 
-- **Sign-in and permissions:** the Angular app signs in to Keycloak with the authorization code flow and PKCE. The gateway checks the token. Each service enforces its own permissions with ASP.NET Core authorization policies, for example "a creator can change only their own editions".
+- **Sign-in and permissions:** the gateway is a backend-for-frontend (BFF). It signs the browser in to Keycloak with the authorization code flow and PKCE, keeps the tokens on the server, and gives the browser only an HttpOnly session cookie. It adds the user's access token to each API call it forwards. Each service checks the token itself and enforces its own permissions with ASP.NET Core authorization policies, for example "a creator can change only their own editions". A service that calls another sends its own token, from the client credentials grant, and the callee names the callers it accepts.
 - **Caching:** Redis, through HybridCache, for catalog reads. Redis is also the SignalR backplane when Delivery runs as several instances.
 - **Monitoring:** every service sends metrics, logs and traces with OpenTelemetry to an OpenTelemetry Collector. The collector forwards them to Prometheus, Loki and Tempo, and Grafana shows all three. A single purchase appears as one trace across every service.
-- **Front door:** Nginx handles HTTPS and serves the Angular app, then passes `/api` and WebSocket traffic to the YARP gateway.
+- **Front door:** Nginx handles HTTPS and serves the Angular app, then passes `/api` and WebSocket traffic to the YARP gateway. Until Nginx arrives in Phase 4, the gateway serves the Angular app itself.
 
 ## Stack
 
@@ -181,7 +192,7 @@ Every event is published through a transactional outbox, and every consumer igno
 | Storage | S3: LocalStack on the Mac, real S3 and CloudFront in AWS |
 | Cache | Redis |
 | Monitoring | OpenTelemetry, Prometheus, Loki, Tempo, Grafana |
-| Testing | xUnit, Testcontainers, PactNet contract tests, k6 load tests |
+| Testing | xUnit, Testcontainers, PactNet contract tests, k6 load tests, Playwright browser tests |
 | Containers | Docker, Docker Compose on the Mac, Kubernetes with Helm (kind on the Mac, EKS in AWS) |
 | Infrastructure | Terraform |
 | CI/CD | GitHub Actions |
@@ -191,7 +202,7 @@ Every event is published through a transactional outbox, and every consumer igno
 - **Cost:** everything runs free on the Mac, using Docker Compose for daily work and kind for Kubernetes practice. Real AWS is used only in short sessions. Each session runs `terraform apply`, deploys, tries things out, then runs `terraform destroy`. An AWS Budgets alert warns at $20 a month. To keep sessions cheap, Kafka runs inside the EKS cluster instead of on Amazon MSK.
 - **Machine:** an Apple Silicon Mac with 32 GB of RAM. Every container image must run on arm64, and the full stack should fit in about 12 GB of Docker memory. Locally, one PostgreSQL server holds a separate database for each service.
 - **SDK:** a .NET 11 preview SDK is also installed and `dotnet` uses it by default, so the repository pins .NET 10 with `global.json`.
-- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it.
+- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it. Node 26 is installed, for the Angular app. Playwright downloads its browser in Phase 1b, with the owner's go-ahead.
 - **Repository:** newstore is its own git repository on GitHub, with its own CI, issues and board.
 
 ## Phases
@@ -280,6 +291,15 @@ newstore/
   - Agile ways of working.
 - Running costs: everything runs free on the Mac, and AWS is used only in short sessions that are torn down afterwards.
 - Claude writes the code and presents it to the owner.
+- Phase 1b, decided 2026-11-08:
+  - Payments is its own service.
+  - A reservation is held while the buyer pays, up to a hard limit of 45 minutes owned by Inventory. The provider's payment session lasts 30 minutes, and a payment that succeeds after the hold ran out is refunded.
+  - Services call each other with client-credentials tokens, and each callee names the clients it accepts.
+  - Creator is not a role: a creator is a user with a channel, and permissions compare the token's `sub` with the resource's `CreatorId`.
+  - The browser sign-in path gets the deep walkthrough; the rest of the Angular app gets short ones.
+  - The gateway is the BFF, following RFC 10017 (BCP 212).
+  - One plan for the whole of 1b.
+  - A message consumer retries a failure caused by a service being down without a limit, and dead-letters only a message that can never succeed.
 
 **Proposed by Claude and open to change:**
 
@@ -287,7 +307,6 @@ newstore/
 
 - The services:
   - The split into services.
-  - Separate Orders and Payments services.
   - Inventory owns editions, and Catalog keeps a read copy.
 - Purchases:
   - Keycloak handles sign-in.
@@ -295,12 +314,20 @@ newstore/
   - Each buyer can own one copy per edition.
   - Copy numbers follow payment order.
   - Editions lock once their first copy is reserved.
+  - Orders chooses the reservation id, so a retried reserve after a lost reply takes no second copy.
+  - Orders' saga handlers call Inventory synchronously, and a refund is requested by an event, so it can't be lost between services.
+  - FakePay is a separate small app, and its Decline button leaves the payment open.
+  - The sample creators are Keycloak users with their catalog ids, and the sample videos have fixed ids.
+  - L-1 shows no delivery status until Phase 3.
 - Video and delivery:
   - Video limits: 2 GB, plus HLS at 360p and 720p.
   - Delivery uses a pin on a map instead of address lookup, one warehouse and sped-up couriers.
 - Tools:
   - newstore gets its own GitHub repository.
   - Docker Compose for daily work.
+  - The gateway serves the Angular app until Nginx arrives in Phase 4.
+  - Playwright runs on the host, against the Compose stack, in its own CI job.
+  - k6 gets user tokens through the password grant, which RFC 9700 forbids for real clients, so the load test creates that client itself and no other client allows the grant.
   - Helm for Kubernetes.
   - Kafka inside EKS instead of MSK.
   - A $20 budget alert.
