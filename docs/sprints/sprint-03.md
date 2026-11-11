@@ -4,7 +4,7 @@
 
 **Goal:** Phase 1b: a signed-in buyer buys a copy in the browser, and the last-copy k6 test passes through the gateway, both in CI.
 
-Sprint 2 ended early, on 2026-11-09, because its goal was reached and the follow-ups were merged. Its review and retro, and the Phase 1a mock interview, are still to come.
+Sprint 2 ended early, on 2026-11-09, because its goal was reached and the follow-ups were merged. Its review and retro, and the Phase 1a mock interview, followed on 2026-11-11 (see [`sprint-02.md`](sprint-02.md)).
 
 ## Plan
 
