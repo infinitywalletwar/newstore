@@ -10,7 +10,7 @@ COPY src/Shared/ src/Shared/
 COPY src/Services/Catalog/ src/Services/Catalog/
 RUN dotnet publish src/Services/Catalog/NewStore.Catalog.csproj -c Release --no-restore -o /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.14
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0
 WORKDIR /app
 USER $APP_UID
 COPY --from=build /app .
