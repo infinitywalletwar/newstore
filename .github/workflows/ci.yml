@@ -37,6 +37,8 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
       - name: Inventory is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8102/health/ready
+      - name: Gateway is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8100/health/ready
       - name: Keycloak issues a service token
         # The secret comes from the realm file Keycloak imported, so the file and the running server cannot disagree unnoticed.
         run: |
@@ -51,6 +53,8 @@ jobs:
           P99_MS: "2000"
       - name: Catalog finds the seeded video
         run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
+      - name: Gateway forwards a search to Catalog
+        run: curl --fail --silent --show-error 'http://localhost:8100/api/videos?q=sourdough' | grep -q '"total":1'
       - name: Show logs
         if: failure()
         run: docker compose -f compose.yaml -f compose.load.yaml logs
