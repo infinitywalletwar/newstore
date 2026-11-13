@@ -6,6 +6,7 @@ using NewStore.Messaging;
 using NewStore.Orders;
 using NewStore.Orders.Clients;
 using NewStore.Orders.Orders;
+using NewStore.Orders.Saga;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
 using NewStore.ServiceDefaults.Security;
@@ -30,7 +31,10 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 // The checkout saga's inputs: Payments' three events. Its one output, RefundRequested, goes through the outbox.
 builder.AddMessaging<OrdersDbContext>(m => m
     .AddTopic(OrderEvents.Topic, OrderEvents.Partitions)
-    .AddTopic(PaymentEvents.Topic, PaymentEvents.Partitions));
+    .AddTopic(PaymentEvents.Topic, PaymentEvents.Partitions)
+    .AddHandler<PaymentSucceeded, PaymentSucceededHandler>(PaymentEvents.Topic)
+    .AddHandler<PaymentFailed, PaymentFailedHandler>(PaymentEvents.Topic)
+    .AddHandler<PaymentRefunded, PaymentRefundedHandler>(PaymentEvents.Topic));
 
 var app = builder.Build();
 
