@@ -18,7 +18,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 
 | Check | Command | Expected |
 |---|---|---|
-| .NET 10 SDK | `dotnet --list-sdks` | a line starting with `10.0.403` |
+| .NET 10 SDK | `dotnet --list-sdks` | a line starting with `10.0.404` |
 | Docker is running, on arm64 | `docker version --format '{{.Server.Arch}}'` | `arm64` (Docker runs on OrbStack) |
 | gh account and scopes | `gh auth status` | account `infinitywalletwar`, with `project`, `repo` and `workflow` among the scopes |
 | Tools | `command -v jq curl nc` | three paths |
