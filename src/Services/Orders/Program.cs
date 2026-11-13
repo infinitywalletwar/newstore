@@ -9,6 +9,7 @@ using NewStore.Orders.Orders;
 using NewStore.Orders.Saga;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
+using NewStore.ServiceDefaults.HealthChecks;
 using NewStore.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +21,14 @@ builder.AddPostgresDatabase<OrdersDbContext>("Orders");
 builder.AddNewStoreAuth();
 builder.AddServiceClient<InventoryClient>("Services:Inventory");
 builder.AddServiceClient<PaymentsClient>("Services:Payments");
+
+// The first buy used to wait for the OpenID metadata, the signing keys, Orders' own token and a connection to Inventory, and a burst of
+// buyers all waited with it. Readiness stays unhealthy until one warm-up has fetched them (it never becomes a permanent dependency).
+builder.AddReadinessWarmUp(async (services, ct) =>
+{
+    await WarmUpExtensions.WarmUpAuthAsync(services, ct);
+    await services.GetRequiredService<InventoryClient>().WarmUpAsync(ct);
+});
 
 builder.Services.AddOptions<OrdersOptions>()
     .BindConfiguration(OrdersOptions.SectionName)

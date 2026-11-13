@@ -40,6 +40,9 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
         // One attempt for a failure that is not transient. A transient failure ignores the limit, so a test that keeps Inventory down
         // for many handler runs shows that the failure is classified as transient: otherwise the message would be dead-lettered.
         Settings["Messaging:MaxHandlerAttempts"] = "1";
+        // The warm-up calls Keycloak and Inventory, which the tests replace with stubs and would count as extra calls (WarmUpTests in
+        // Security.Tests covers the warm-up itself).
+        Settings["WarmUp:Enabled"] = "false";
         Settings["Auth:ClientId"] = "orders";
         Settings["Auth:ClientSecret"] = "orders";
         Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
