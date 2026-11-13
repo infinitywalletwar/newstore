@@ -29,6 +29,9 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
 
     public KafkaServer Kafka => kafka;
 
+    /// <summary>Runs Orders' startup warm-up (off by default, see <see cref="InitializeAsync"/>).</summary>
+    public bool WarmUp { get; init; }
+
     public async ValueTask InitializeAsync()
     {
         Settings["ConnectionStrings:Orders"] = await postgres.CreateDatabaseAsync("orders", TestContext.Current.CancellationToken);
@@ -40,6 +43,14 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
         // One attempt for a failure that is not transient. A transient failure ignores the limit, so a test that keeps Inventory down
         // for many handler runs shows that the failure is classified as transient: otherwise the message would be dead-lettered.
         Settings["Messaging:MaxHandlerAttempts"] = "1";
+        // The warm-up calls Inventory, which the stub would count as an extra call in every test. OrdersWarmUpTests turns it on in an app
+        // of its own, with its own consumer group so it does not take the shared app's Kafka messages.
+        Settings["WarmUp:Enabled"] = WarmUp ? "true" : "false";
+        if (WarmUp)
+        {
+            Settings["Messaging:ClientId"] = "orders-warm-up-test";
+        }
+
         Settings["Auth:ClientId"] = "orders";
         Settings["Auth:ClientSecret"] = "orders";
         Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
