@@ -6,8 +6,9 @@ namespace NewStore.Inventory;
 
 /// <summary>
 /// The logger factory EF Core writes to. It hides the two Error records that EF logs for the unique violation
-/// the reserve strategies handle (<see cref="ReserveSupport.IsAlreadyHolding"/>, answered as a 409) and passes
-/// every other record on unchanged. Register it as a singleton: EF Core asks for one factory used by every context.
+/// the reserve strategies handle (<see cref="ReserveSupport.IsReservationConflict"/>: answered as a 409, or as the 200 of
+/// a parallel request with the same id) and
+/// passes every other record on unchanged. Register it as a singleton: EF Core asks for one factory used by every context.
 /// </summary>
 /// <remarks>
 /// The two records come from different categories, and only one of them carries the exception:
@@ -57,7 +58,7 @@ internal sealed class HandledConflictLoggerFactory(ILoggerFactory inner) : ILogg
         private static bool IsHandled<TState>(
             EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
             eventId.Id == CoreEventId.SaveChangesFailed.Id
-                ? exception is DbUpdateException ex && ReserveSupport.IsAlreadyHolding(ex)
+                ? exception is DbUpdateException ex && ReserveSupport.IsReservationConflict(ex)
                 : eventId.Id == RelationalEventId.CommandError.Id
                     && formatter(state, exception).Contains(ReservationInsert, StringComparison.Ordinal);
     }

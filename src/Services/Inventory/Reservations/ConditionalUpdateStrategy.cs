@@ -13,15 +13,22 @@ public sealed class ConditionalUpdateStrategy(
     InventoryDbContext db, TimeProvider time, IOptions<InventoryOptions> options, InventoryMetrics metrics)
     : IReserveStrategy
 {
-    public async Task<ReserveOutcome> ReserveAsync(Guid editionId, Guid buyerId, CancellationToken cancellationToken)
+    public async Task<ReserveOutcome> ReserveAsync(
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken cancellationToken)
     {
-        var outcome = await TryReserveAsync(editionId, buyerId, cancellationToken);
+        var outcome = await TryReserveAsync(reservationId, editionId, buyerId, cancellationToken);
         metrics.RecordReserve(outcome, attempts: 1);
         return outcome;
     }
 
-    private async Task<ReserveOutcome> TryReserveAsync(Guid editionId, Guid buyerId, CancellationToken ct)
+    private async Task<ReserveOutcome> TryReserveAsync(Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
     {
+        // A request with this id may have been answered already, or lost on its way back: answer it again, take no copy.
+        if (await ReserveSupport.FindByIdAsync(db, reservationId, editionId, buyerId, ct) is { } known)
+        {
+            return known;
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var now = time.GetUtcNow();
@@ -41,16 +48,18 @@ public sealed class ConditionalUpdateStrategy(
             };
         }
 
-        var reservation = ReserveSupport.NewPending(editionId, buyerId, time, options.Value);
+        var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
         db.Reservations.Add(reservation);
         try
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (ReserveSupport.IsAlreadyHolding(ex))
+        catch (DbUpdateException ex) when (ReserveSupport.IsReservationConflict(ex))
         {
-            // Leaving without a commit rolls the transaction back, and the decrement with it.
-            return new ReserveOutcome.AlreadyHolding();
+            // The failed INSERT aborted the transaction: roll it back (the decrement goes with it) before the lookup,
+            // which PostgreSQL would refuse inside an aborted transaction.
+            await transaction.RollbackAsync(ct);
+            return await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct);
         }
 
         await transaction.CommitAsync(ct);

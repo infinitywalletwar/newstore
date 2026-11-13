@@ -7,10 +7,14 @@ using NewStore.Messaging;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
 using NewStore.ServiceDefaults.HealthChecks;
+using NewStore.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+// Tokens come from Keycloak. Only the client "orders" may use the reservation endpoints.
+builder.AddNewStoreAuth().AddClientPolicy("orders");
 
 // EF logs an Error for the unique violation the reserve strategies answer with a 409. Its logger factory hides that one.
 builder.Services.AddSingleton(services => new HandledConflictLoggerFactory(services.GetRequiredService<ILoggerFactory>()));
@@ -28,7 +32,9 @@ builder.Services.AddSingleton<SweeperHeartbeat>();
 builder.Services.AddHostedService<ReservationExpiryService>();
 builder.Services.AddHealthChecks()
     .AddCheck<SweeperHealthCheck>("reservation-sweeper", tags: [HealthCheckExtensions.LiveTag]);
-builder.AddMessaging<InventoryDbContext>(m => m.AddTopic(EditionSnapshot.Topic, EditionSnapshot.Partitions));
+builder.AddMessaging<InventoryDbContext>(m => m
+    .AddTopic(EditionSnapshot.Topic, EditionSnapshot.Partitions)
+    .AddTopic(CopyAssigned.Topic, CopyAssigned.Partitions));
 builder.Services.AddSingleton<EditionSnapshotHeartbeat>();
 builder.Services.AddHostedService<EditionSnapshotPublisher>();
 builder.Services.AddHealthChecks()
@@ -52,6 +58,8 @@ if (await app.RunDatabaseCommandsAsync<InventoryDbContext>(args) is { } exitCode
 }
 
 app.MapDefaultEndpoints();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapEditionEndpoints();
 app.MapReservationEndpoints();
 

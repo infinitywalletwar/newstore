@@ -13,16 +13,23 @@ public sealed class ConcurrencyTokenStrategy(
     InventoryDbContext db, TimeProvider time, IOptions<InventoryOptions> options, InventoryMetrics metrics)
     : IReserveStrategy
 {
-    public async Task<ReserveOutcome> ReserveAsync(Guid editionId, Guid buyerId, CancellationToken cancellationToken)
+    public async Task<ReserveOutcome> ReserveAsync(
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken cancellationToken)
     {
-        var (outcome, attempts) = await TryReserveAsync(editionId, buyerId, cancellationToken);
+        var (outcome, attempts) = await TryReserveAsync(reservationId, editionId, buyerId, cancellationToken);
         metrics.RecordReserve(outcome, attempts);
         return outcome;
     }
 
     private async Task<(ReserveOutcome Outcome, int Attempts)> TryReserveAsync(
-        Guid editionId, Guid buyerId, CancellationToken ct)
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
     {
+        // A request with this id may have been answered already, or lost on its way back: answer it again, take no copy.
+        if (await ReserveSupport.FindByIdAsync(db, reservationId, editionId, buyerId, ct) is { } known)
+        {
+            return (known, 1);
+        }
+
         var maxAttempts = options.Value.MaxReserveAttempts;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -47,7 +54,7 @@ public sealed class ConcurrencyTokenStrategy(
 
             edition.CopiesLeft--;
             edition.LockedAt ??= time.GetUtcNow();
-            var reservation = ReserveSupport.NewPending(editionId, buyerId, time, options.Value);
+            var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
             db.Reservations.Add(reservation);
             try
             {
@@ -59,9 +66,10 @@ public sealed class ConcurrencyTokenStrategy(
             {
                 // Someone else took a copy between our read and our write. Read again.
             }
-            catch (DbUpdateException ex) when (ReserveSupport.IsAlreadyHolding(ex))
+            catch (DbUpdateException ex) when (ReserveSupport.IsReservationConflict(ex))
             {
-                return (new ReserveOutcome.AlreadyHolding(), attempt);
+                // SaveChanges rolled its own transaction back. Which constraint broke tells the outcome.
+                return (await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct), attempt);
             }
         }
 

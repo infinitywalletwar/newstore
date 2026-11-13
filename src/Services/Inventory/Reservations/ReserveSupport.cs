@@ -4,26 +4,60 @@ using Npgsql;
 
 namespace NewStore.Inventory;
 
+/// <summary>
+/// What both reserve strategies share. The caller chooses the reservation id, so a reserve is safe to send again: the
+/// id is looked up before a copy is taken (<see cref="FindByIdAsync"/>), and once more after a unique violation
+/// (<see cref="ResolveConflictAsync"/>), because a parallel request with the same id may have won in between (ADR 0013).
+/// </summary>
 internal static class ReserveSupport
 {
     /// <summary>
-    /// True when the insert broke the partial unique index on (edition, buyer): the buyer already holds a copy.
-    /// Reservations has no other unique constraint a reserve can break.
+    /// True when the insert broke a unique constraint of <c>reservations</c>: the primary key (the id was taken) or the
+    /// partial unique index on (edition, buyer) (the buyer already holds a copy). A reserve can break no other unique constraint.
     /// </summary>
-    public static bool IsAlreadyHolding(DbUpdateException ex) =>
+    public static bool IsReservationConflict(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
-    public static Reservation NewPending(Guid editionId, Guid buyerId, TimeProvider time, InventoryOptions options)
+    public static Reservation NewPending(
+        Guid reservationId, Guid editionId, Guid buyerId, TimeProvider time, InventoryOptions options)
     {
         var now = time.GetUtcNow();
         return new Reservation
         {
-            Id = Guid.CreateVersion7(),
+            Id = reservationId,
             EditionId = editionId,
             BuyerId = buyerId,
             Status = ReservationStatus.Pending,
             ReservedAt = now,
             ExpiresAt = now + options.ReservationTtl,
         };
+    }
+
+    /// <summary>
+    /// Step 1, before a copy is taken. Null when nobody used the id; <see cref="ReserveOutcome.Existing"/> when it belongs
+    /// to a reservation of this edition and buyer; <see cref="ReserveOutcome.IdTaken"/> when it belongs to another.
+    /// </summary>
+    public static async Task<ReserveOutcome?> FindByIdAsync(
+        InventoryDbContext db, Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
+    {
+        var existing = await db.Reservations.AsNoTracking().FirstOrDefaultAsync(r => r.Id == reservationId, ct);
+        return existing switch
+        {
+            null => null,
+            _ when existing.EditionId == editionId && existing.BuyerId == buyerId => new ReserveOutcome.Existing(existing),
+            _ => new ReserveOutcome.IdTaken(),
+        };
+    }
+
+    /// <summary>
+    /// Step 2, after a unique violation and the rollback: the same lookup. A reservation now exists under the id, so the
+    /// violation was the id's (the parallel request with this id won, or the id is taken). No reservation under the id
+    /// means the violation was the (edition, buyer) index: the buyer already holds a copy.
+    /// </summary>
+    public static async Task<ReserveOutcome> ResolveConflictAsync(
+        InventoryDbContext db, Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        return await FindByIdAsync(db, reservationId, editionId, buyerId, ct) ?? new ReserveOutcome.AlreadyHolding();
     }
 }

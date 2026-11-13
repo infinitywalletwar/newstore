@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace NewStore.Inventory;
 
 /// <summary>
-/// Every <see cref="InventoryOptions.ExpirySweepInterval"/>, expires the Pending reservations that ran out of
+/// Every <see cref="InventoryOptions.ExpirySweepInterval"/>, expires the Pending and Held reservations that ran out of
 /// time and returns their copies. The timer runs on the <see cref="TimeProvider"/>, so tests move it with the clock.
 /// </summary>
 public sealed partial class ReservationExpiryService(
