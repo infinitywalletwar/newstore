@@ -10,6 +10,9 @@
   <Folder Name="/src/Fakes/FakePay/">
     <Project Path="src/Fakes/FakePay/NewStore.FakePay.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Payments/">
+    <Project Path="src/Services/Payments/NewStore.Payments.csproj" />
+  </Folder>
   <Folder Name="/src/Shared/" />
   <Folder Name="/src/Shared/ServiceDefaults/">
     <Project Path="src/Shared/ServiceDefaults/NewStore.ServiceDefaults.csproj" />
@@ -39,5 +42,8 @@
   </Folder>
   <Folder Name="/tests/FakePay.Tests/">
     <Project Path="tests/FakePay.Tests/NewStore.FakePay.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Payments.Tests/">
+    <Project Path="tests/Payments.Tests/NewStore.Payments.Tests.csproj" />
   </Folder>
 </Solution>
