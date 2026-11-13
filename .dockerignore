@@ -4,7 +4,9 @@
 .github/
 docs/
 tests/
-web/
+web/node_modules
+web/dist
+web/.angular
 deploy/
 .superpowers/
 **/*.md
