@@ -42,7 +42,12 @@ public static class ServiceClientExtensions
 
         // Handlers run in the order they are added, outermost first. The resilience handler is first, so the token handler sits
         // inside it and runs again on every retry.
-        http.AddStandardResilienceHandler();
+        // The standard pipeline's concurrency limiter allows 1,000 calls at once and, by default, a queue of 0: the 1,001st call is
+        // rejected on the spot ("Rate limiter ... Queue: 0, Permit: 1_000",
+        // https://learn.microsoft.com/dotnet/core/resilience/http-resilience#standard-resilience-handler-defaults). A burst of
+        // buyers (the last-copy load test sends 1,010 buys in 0.3 s) made Orders answer 503 to the ten over the limit. A queue
+        // makes them wait their turn; it stays bounded, so a real overload still sheds load instead of piling up without end.
+        http.AddStandardResilienceHandler(options => options.RateLimiter.DefaultRateLimiterOptions.QueueLimit = 1000);
         http.AddHttpMessageHandler<ServiceTokenHandler>();
         return http;
     }
