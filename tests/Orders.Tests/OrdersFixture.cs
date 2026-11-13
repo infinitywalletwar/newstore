@@ -70,6 +70,11 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
                     o.Retry.MaxRetryAttempts = 1;
                     o.Retry.Delay = TimeSpan.Zero;
                     o.Retry.UseJitter = false;
+
+                    // The circuit breaker opens after 100 calls in 30 s with 10% failures (the defaults). The 10-second outage test sends
+                    // about that many, and an open circuit would fail the next test's calls for 5 s. The breaker's effect on a handler (a
+                    // BrokenCircuitException becomes a transient failure) is covered by ClientTests.
+                    o.CircuitBreaker.MinimumThroughput = int.MaxValue;
                 });
             }
 
