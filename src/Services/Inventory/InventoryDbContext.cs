@@ -35,7 +35,7 @@ public class InventoryDbContext(DbContextOptions<InventoryDbContext> options) : 
             // requests of one buyer cannot all pass an application-level check.
             reservation.HasIndex(r => new { r.EditionId, r.BuyerId })
                 .IsUnique()
-                .HasFilter("status IN ('Pending', 'Confirmed')");
+                .HasFilter("status IN ('Pending', 'Held', 'Confirmed')");
 
             // The sweeper's lookup.
             reservation.HasIndex(r => new { r.Status, r.ExpiresAt });

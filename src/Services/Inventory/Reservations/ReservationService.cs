@@ -1,4 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+using NewStore.Contracts.Inventory;
+using NewStore.Messaging;
 
 namespace NewStore.Inventory;
 
@@ -11,6 +15,15 @@ public abstract record ConfirmOutcome
     public sealed record Released : ConfirmOutcome;
 }
 
+public abstract record HoldOutcome
+{
+    /// <summary>Held now, or already Held or Confirmed: the reservation unchanged.</summary>
+    public sealed record Ok(Reservation Reservation) : HoldOutcome;
+    public sealed record NotFound : HoldOutcome;
+    public sealed record Expired : HoldOutcome;
+    public sealed record Released : HoldOutcome;
+}
+
 public abstract record ReleaseOutcome
 {
     /// <summary>Released now, or earlier (releasing is idempotent).</summary>
@@ -19,9 +32,53 @@ public abstract record ReleaseOutcome
     public sealed record AlreadyConfirmed : ReleaseOutcome;
 }
 
-/// <summary>Confirm, release and sweep: everything that happens to a reservation after it was made.</summary>
-public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
+/// <summary>Hold, confirm, release and sweep: everything that happens to a reservation after it was made.</summary>
+public sealed class ReservationService(
+    InventoryDbContext db, TimeProvider time, IOutbox outbox, IOptions<InventoryOptions> options)
 {
+    /// <summary>
+    /// The buyer is paying: a Pending reservation that is still in time becomes Held, and keeps its copy for
+    /// <see cref="InventoryOptions.HoldTtl"/> from now. The deadline moves once: holding again changes nothing, so a retried
+    /// hold cannot stretch it. A Pending reservation past its ten minutes is expired here, as confirm does it.
+    /// </summary>
+    public async Task<HoldOutcome> HoldAsync(Guid reservationId, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        var reservation = await LockAsync(reservationId, ct);
+        if (reservation is null)
+        {
+            return new HoldOutcome.NotFound();
+        }
+
+        switch (reservation.Status)
+        {
+            case ReservationStatus.Held or ReservationStatus.Confirmed:
+                return new HoldOutcome.Ok(reservation);
+            case ReservationStatus.Released:
+                return new HoldOutcome.Released();
+            case ReservationStatus.Expired:
+                return new HoldOutcome.Expired();
+        }
+
+        var now = time.GetUtcNowToMicrosecond();
+        if (reservation.ExpiresAt <= now)
+        {
+            reservation.Status = ReservationStatus.Expired;
+            await ReturnCopyAsync(reservation.EditionId, ct);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return new HoldOutcome.Expired();
+        }
+
+        reservation.Status = ReservationStatus.Held;
+        reservation.HeldAt = now;
+        reservation.ExpiresAt = now + options.Value.HoldTtl;
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new HoldOutcome.Ok(reservation);
+    }
+
     public async Task<ConfirmOutcome> ConfirmAsync(Guid reservationId, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -47,7 +104,7 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
                 return new ConfirmOutcome.Expired();
         }
 
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         if (reservation.ExpiresAt <= now)
         {
             // Too late, and the sweeper has not got here yet: do its work for this one reservation.
@@ -85,6 +142,27 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
             AssignedAt = now,
         });
         reservation.Status = ReservationStatus.Confirmed;
+
+        // In this transaction, so the event exists if and only if the copy was assigned. A repeated confirm returned above
+        // (Confirmed) and publishes nothing.
+        var edition = await db.Editions.AsNoTracking()
+            .Where(e => e.Id == reservation.EditionId)
+            .Select(e => new { e.VideoId, e.Format })
+            .SingleAsync(ct);
+        outbox.Enqueue(
+            new CopyAssigned
+            {
+                EventId = Guid.CreateVersion7(now),
+                OccurredAt = now,
+                ReservationId = reservation.Id,
+                EditionId = reservation.EditionId,
+                VideoId = edition.VideoId,
+                Format = edition.Format.ToString(),
+                OwnerId = reservation.BuyerId,
+                CopyNumber = assigned.Single(),
+            },
+            CopyAssigned.Topic,
+            reservation.EditionId.ToString());
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new ConfirmOutcome.Confirmed(reservation, assigned.Single());
@@ -104,7 +182,7 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
         {
             case ReservationStatus.Confirmed:
                 return new ReleaseOutcome.AlreadyConfirmed();
-            case ReservationStatus.Pending:
+            case ReservationStatus.Pending or ReservationStatus.Held:
                 reservation.Status = ReservationStatus.Released;
                 await ReturnCopyAsync(reservation.EditionId, ct);
                 await db.SaveChangesAsync(ct);
@@ -116,8 +194,8 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
     }
 
     // Lock order, for every path that touches both tables: the reservation row first, the edition row second.
-    // - ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
-    //   ReturnCopyAsync or the counter UPDATE on the edition.
+    // - HoldAsync, ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
+    //   ReturnCopyAsync (the expiry branches of hold and confirm, and release) or the counter UPDATE on the edition.
     // - SweepAsync: the data-modifying WITH updates the reservations, and the outer UPDATE editions reads
     //   `expired` through a GROUP BY, planned as a HashAggregate. For that node the executor fills the hash
     //   table from all of `expired` before it retrieves the first group: ExecAgg calls agg_fill_hash_table, then
@@ -130,7 +208,7 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
     // That sentence is why this comment exists. That is the executor's behaviour for the plan chosen, not a documented SQL guarantee;
     // LockOrderTests (50 expired confirms against 5 sweeps, 20 rounds) is the evidence, and shows no deadlock.
     /// <summary>
-    /// Expires every Pending reservation due at <paramref name="now"/> and gives the copies back, in one
+    /// Expires every Pending or Held reservation due at <paramref name="now"/> and gives the copies back, in one
     /// statement: atomic, and safe with several instances sweeping (the second finds nothing left to update).
     /// Editions whose sale has ended get nothing back (<c>ended_at IS NULL</c> in the CASE); the returned count is
     /// still the number of reservations that expired. Returns how many reservations expired.
@@ -142,7 +220,7 @@ public sealed class ReservationService(InventoryDbContext db, TimeProvider time)
             .SqlQuery<int>($"""
                 WITH expired AS (
                     UPDATE reservations SET status = 'Expired'
-                    WHERE status = 'Pending' AND expires_at <= {now}
+                    WHERE status IN ('Pending', 'Held') AND expires_at <= {now}
                     RETURNING edition_id)
                 UPDATE editions e SET copies_left = e.copies_left + CASE WHEN e.ended_at IS NULL THEN x.n ELSE 0 END
                 FROM (SELECT edition_id, count(*) AS n FROM expired GROUP BY edition_id) x
