@@ -193,7 +193,9 @@ public sealed class ReservationService(
         return new ReleaseOutcome.Done();
     }
 
-    // Lock order, for every path that touches both tables: the reservation row first, the edition row second.
+    // Lock order, for every path in this class that touches both tables: the reservation row first, the edition row second.
+    // Reserve is the exception: it takes the edition row, then the reservation indexes (ADR 0013, "Amendment, 2026-11",
+    // has the one case in which it can deadlock with the sweep).
     // - HoldAsync, ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
     //   ReturnCopyAsync (the expiry branches of hold and confirm, and release) or the counter UPDATE on the edition.
     // - SweepAsync: the data-modifying WITH updates the reservations, and the outer UPDATE editions reads

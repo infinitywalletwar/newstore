@@ -87,3 +87,7 @@ If a deadlock ever appears, PostgreSQL aborts one of the transactions with SQLST
 - The edition row is the hot spot: every reserve and every confirm of one edition queues on it. One very popular edition is limited by how fast one row can be updated, whatever the number of Inventory instances. Splitting the counter over several rows would lift that, at the price of a more complex model; nothing in the measurements calls for it yet.
 - ConcurrencyToken's retries grow with contention: here the average was 9.3 attempts and the worst 11, close to the default limit of 20. At higher contention it would start answering 503 `contended`.
 - The 1000-buyer test is part of CI (`compose-smoke`), with a looser latency threshold for the slower runner.
+
+## Amendment, 2026-11: ConditionalUpdate reserves in one statement
+
+ConditionalUpdate no longer opens a transaction for the `UPDATE` and the `INSERT`. One statement does both: `WITH taken AS (UPDATE editions SET copies_left = copies_left - 1 … WHERE id = … AND copies_left > 0 AND ended_at IS NULL RETURNING id) INSERT INTO reservations … SELECT … FROM taken`. The conditional `UPDATE` and the queue on the edition row are unchanged; the row lock is now held for one statement instead of across the `INSERT`, `RELEASE SAVEPOINT` and `COMMIT` round trips. Reserve takes the edition row first and the reservation indexes second, the opposite order to the sweep above; ADR 0013, "Amendment, 2026-11", has the statements, the lock order and the one case in which reserve and the sweep can deadlock.
