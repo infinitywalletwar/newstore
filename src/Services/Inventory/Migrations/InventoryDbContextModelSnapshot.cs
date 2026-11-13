@@ -179,6 +179,10 @@ namespace NewStore.Inventory.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<DateTimeOffset?>("HeldAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("held_at");
+
                     b.Property<DateTimeOffset>("ReservedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("reserved_at");
@@ -195,7 +199,7 @@ namespace NewStore.Inventory.Migrations
                     b.HasIndex("EditionId", "BuyerId")
                         .IsUnique()
                         .HasDatabaseName("ix_reservations_edition_id_buyer_id")
-                        .HasFilter("status IN ('Pending', 'Confirmed')");
+                        .HasFilter("status IN ('Pending', 'Held', 'Confirmed')");
 
                     b.HasIndex("Status", "ExpiresAt")
                         .HasDatabaseName("ix_reservations_status_expires_at");

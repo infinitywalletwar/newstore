@@ -485,7 +485,7 @@ Branch `phase-1/inventory-checkout`. Issue #70. Owns the Compose stack in wave B
   - The reservation endpoints (reserve, get, hold, confirm, release) require `Policies.Client("orders")`. `Auth:Audience` is `inventory`.
   - The edition endpoints stay open until Task 6.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 In `ReservationTests` and a new `HoldTests`:
 - `Reserve_twice_with_the_same_id_returns_the_same_reservation`: the first call is 201, the second 200 with the same id, and `copiesLeft` drops by one.
@@ -504,11 +504,11 @@ In `ReservationTests` and a new `HoldTests`:
 
 Run `dotnet test --project tests/Inventory.Tests`. Expected: the new tests fail, and the old tests fail on the changed request shape until Step 2.
 
-- [ ] **Step 2: Implement, migrate, run the tests**
+- [x] **Step 2: Implement, migrate, run the tests**
 
 Generate the migration with the AGENTS.md command, and check that it changes the index filter and adds `held_at`. Expected: Inventory.Tests pass. Commit: `feat(inventory): hold a reservation while the buyer pays, with a caller-supplied id`.
 
-- [ ] **Step 3: k6 with a service token, ADR 0013, pull request**
+- [x] **Step 3: k6 with a service token, ADR 0013, pull request**
 
 1. **`last-copy.js`:** at setup, get an `orders` client-credentials token from `http://keycloak:8080/realms/newstore/protocol/openid-connect/token`. The client secret comes from `compose.load.yaml`'s k6 env (`ORDERS_CLIENT_SECRET: orders`). Each reserve body gets `reservationId: uuidv4()`.
 2. **Run it:** `docker compose -f compose.yaml -f compose.load.yaml up -d --wait`, then `… run --rm k6`. Expected: green, with p99 under 1 s. Record the numbers in `tests/load/README.md`.

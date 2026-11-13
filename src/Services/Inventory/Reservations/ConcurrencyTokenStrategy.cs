@@ -13,16 +13,27 @@ public sealed class ConcurrencyTokenStrategy(
     InventoryDbContext db, TimeProvider time, IOptions<InventoryOptions> options, InventoryMetrics metrics)
     : IReserveStrategy
 {
-    public async Task<ReserveOutcome> ReserveAsync(Guid editionId, Guid buyerId, CancellationToken cancellationToken)
+    public async Task<ReserveOutcome> ReserveAsync(
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken cancellationToken)
     {
-        var (outcome, attempts) = await TryReserveAsync(editionId, buyerId, cancellationToken);
+        var (outcome, attempts) = await TryReserveAsync(reservationId, editionId, buyerId, cancellationToken);
         metrics.RecordReserve(outcome, attempts);
         return outcome;
     }
 
     private async Task<(ReserveOutcome Outcome, int Attempts)> TryReserveAsync(
-        Guid editionId, Guid buyerId, CancellationToken ct)
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
     {
+        // A request with this id may have been answered already, or lost on its way back: answer it again, take no copy.
+        if (await ReserveSupport.FindByIdAsync(db, reservationId, editionId, buyerId, ct) is { } known)
+        {
+            return (known, 1);
+        }
+
+        // The failures below may be the result of a request with this same id that took the last copy since the lookup above.
+        Task<ReserveOutcome> ExistingOrAsync(ReserveOutcome failure) =>
+            ReserveSupport.ExistingOrAsync(db, reservationId, editionId, buyerId, failure, ct);
+
         var maxAttempts = options.Value.MaxReserveAttempts;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -32,22 +43,22 @@ public sealed class ConcurrencyTokenStrategy(
             var edition = await db.Editions.FirstOrDefaultAsync(e => e.Id == editionId, ct);
             if (edition is null)
             {
-                return (new ReserveOutcome.NotFound(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.NotFound()), attempt);
             }
 
             if (edition.EndedAt is not null)
             {
-                return (new ReserveOutcome.SaleEnded(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.SaleEnded()), attempt);
             }
 
             if (edition.CopiesLeft == 0)
             {
-                return (new ReserveOutcome.SoldOut(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.SoldOut()), attempt);
             }
 
             edition.CopiesLeft--;
-            edition.LockedAt ??= time.GetUtcNow();
-            var reservation = ReserveSupport.NewPending(editionId, buyerId, time, options.Value);
+            edition.LockedAt ??= time.GetUtcNowToMicrosecond();
+            var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
             db.Reservations.Add(reservation);
             try
             {
@@ -59,9 +70,10 @@ public sealed class ConcurrencyTokenStrategy(
             {
                 // Someone else took a copy between our read and our write. Read again.
             }
-            catch (DbUpdateException ex) when (ReserveSupport.IsAlreadyHolding(ex))
+            catch (DbUpdateException ex) when (ReserveSupport.IsReservationConflict(ex))
             {
-                return (new ReserveOutcome.AlreadyHolding(), attempt);
+                // SaveChanges rolled its own transaction back. Which constraint broke tells the outcome.
+                return (await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct), attempt);
             }
         }
 

@@ -13,18 +13,25 @@ public sealed class ConditionalUpdateStrategy(
     InventoryDbContext db, TimeProvider time, IOptions<InventoryOptions> options, InventoryMetrics metrics)
     : IReserveStrategy
 {
-    public async Task<ReserveOutcome> ReserveAsync(Guid editionId, Guid buyerId, CancellationToken cancellationToken)
+    public async Task<ReserveOutcome> ReserveAsync(
+        Guid reservationId, Guid editionId, Guid buyerId, CancellationToken cancellationToken)
     {
-        var outcome = await TryReserveAsync(editionId, buyerId, cancellationToken);
+        var outcome = await TryReserveAsync(reservationId, editionId, buyerId, cancellationToken);
         metrics.RecordReserve(outcome, attempts: 1);
         return outcome;
     }
 
-    private async Task<ReserveOutcome> TryReserveAsync(Guid editionId, Guid buyerId, CancellationToken ct)
+    private async Task<ReserveOutcome> TryReserveAsync(Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
     {
+        // A request with this id may have been answered already, or lost on its way back: answer it again, take no copy.
+        if (await ReserveSupport.FindByIdAsync(db, reservationId, editionId, buyerId, ct) is { } known)
+        {
+            return known;
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         var decremented = await db.Editions
             .Where(e => e.Id == editionId && e.CopiesLeft > 0 && e.EndedAt == null)
             .ExecuteUpdateAsync(set => set
@@ -33,24 +40,31 @@ public sealed class ConditionalUpdateStrategy(
         if (decremented == 0)
         {
             var edition = await db.Editions.AsNoTracking().FirstOrDefaultAsync(e => e.Id == editionId, ct);
-            return edition switch
+            ReserveOutcome failure = edition switch
             {
                 null => new ReserveOutcome.NotFound(),
                 { EndedAt: not null } => new ReserveOutcome.SaleEnded(),
                 _ => new ReserveOutcome.SoldOut(),
             };
+
+            // The UPDATE may have waited for a request with this same id and then found no copy left: look the id up again.
+            return await ReserveSupport.ExistingOrAsync(db, reservationId, editionId, buyerId, failure, ct);
         }
 
-        var reservation = ReserveSupport.NewPending(editionId, buyerId, time, options.Value);
+        var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
         db.Reservations.Add(reservation);
         try
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (ReserveSupport.IsAlreadyHolding(ex))
+        catch (DbUpdateException ex) when (ReserveSupport.IsReservationConflict(ex))
         {
-            // Leaving without a commit rolls the transaction back, and the decrement with it.
-            return new ReserveOutcome.AlreadyHolding();
+            // EF rolls a failed SaveChanges back to a savepoint, which undoes the INSERT only
+            // (https://learn.microsoft.com/ef/core/saving/transactions). The decrement is still in the transaction, together with
+            // the lock on the edition row. Disposing the transaction would also undo the decrement; rolling back now frees the
+            // row lock before the lookup instead of after it.
+            await transaction.RollbackAsync(ct);
+            return await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct);
         }
 
         await transaction.CommitAsync(ct);

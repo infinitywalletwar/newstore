@@ -34,7 +34,7 @@ public static class EditionEndpoints
             Price = request.Price,
             CopiesTotal = request.Copies,
             CopiesLeft = request.Copies,
-            CreatedAt = time.GetUtcNow(),
+            CreatedAt = time.GetUtcNowToMicrosecond(),
         };
         db.Editions.Add(edition);
         await db.SaveChangesAsync(ct);
@@ -99,7 +99,7 @@ public static class EditionEndpoints
 
     private static async Task<IResult> EndSaleAsync(Guid id, InventoryDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
 
         // Once: the second call matches nothing and changes nothing, and still answers 200.
         // Pending reservations made earlier stay valid; confirm does not look at ended_at.
