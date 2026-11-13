@@ -107,4 +107,4 @@ Confirm, release and the expiry branch of hold do not meet reserve this way: the
 | this amendment (d956d3a) | 3 | 0.44 to 0.73 s | 376 to 580 ms |
 | before Task 3 (c63e6c0) | 3 | 0.30 to 0.66 s | 218 to 502 ms |
 
-CI's threshold is back at `P99_MS=2000`.
+CI's threshold stays at `P99_MS=3500`, by the owner's decision. Three CI runs of one head (49cba7a, run 43358510750) gave a reserve p99 of 1.95 s (pass), 1.62 s (pass) and 2.75 s (fail at 2000): the runner is slower and noisier than the Mac, so CI guards against gross regressions, and the rule that p99 stays under 1 s is checked on the Mac (Task 9).
