@@ -155,6 +155,6 @@ public sealed class HoldTests(NoSweepFixture fixture) : IClassFixture<NoSweepFix
     private async Task SweepAsync()
     {
         await using var scope = fixture.Services.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<ReservationService>().SweepAsync(fixture.Clock.GetUtcNow(), Ct);
+        await scope.ServiceProvider.GetRequiredService<ReservationService>().SweepAsync(fixture.Clock.GetUtcNowToMicrosecond(), Ct);
     }
 }
