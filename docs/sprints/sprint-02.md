@@ -33,13 +33,38 @@ The goal was reached on 2026-11-06. The rest of the sprint went to follow-ups fr
 
 ## Review
 
+The goal was reached on 2026-11-06: in CI, the k6 test with 1,000 buyers and 10 copies sells exactly 10. The follow-ups and E-2/E-3 merged by 2026-11-09, so the sprint ended early.
+
+The Phase 1a mock interview ran on 2026-11-11: the five planned questions, then five more on database concurrency at the owner's request.
+
+| Question | Result |
+|---|---|
+| 1. Concurrent updates of one resource | Named locks and transactions, but took the outbox for a concurrency tool. Retold optimistic and pessimistic locking after the explanation. |
+| 2. Isolation levels | Didn't know them at first. Named all four by the end. |
+| 3. Save, then publish to Kafka | The best answer: found the dual write problem and reached the core of the outbox. |
+| 4. Idempotent consumer | The right idea ("skip a message id seen before"), but too short. |
+| 5. Retrying a POST after a timeout | Didn't know. |
+| Extra: optimistic or pessimistic, ACID, `NOLOCK`, deadlocks, write skew | Right intuition each time; missing the terms, the exact mechanisms and when to use which. |
+
+The pattern across all ten: the owner reasons well about what breaks, but lacks the names, the exact mechanisms and the trade-offs. The answers to every question are already in newstore's code. The gaps per topic are tracked in the roadmap's `what-to-study.md`.
+
 ## Retro
 
 ### What I learned
 
+So far, only from the mock interview.
+
 ### What was hard
 
+I haven't looked at the code yet. The process is becoming more or less clear.
+
 ### Open questions
+
+Basically everything is still open. I need to put more weight on interview preparation.
+
+### What to change in Sprint 3
+
+More short topics with short examples and questions, reviews, and mock interviews. Focus on interviews and what they can ask.
 
 ### Changes to the agent after Phase 1a (Claude)
 

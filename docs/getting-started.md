@@ -5,7 +5,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 | Phase | Plan | Sprint note |
 |---|---|---|
 | 0 Foundation (done 2026-11-05) | [`2026-11-03-phase-0-foundation.md`](plans/2026-11-03-phase-0-foundation.md) | [`sprint-01.md`](sprints/sprint-01.md) |
-| 1a Buy the last copy (done 2026-11-07; the mock interview is still to come) | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
+| 1a Buy the last copy (done 2026-11-07; mock interview 2026-11-11) | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
 | 1b Checkout (in progress) | [`2026-11-09-phase-1b-checkout.md`](plans/2026-11-09-phase-1b-checkout.md) | [`sprint-03.md`](sprints/sprint-03.md) |
 
 ## Already decided
