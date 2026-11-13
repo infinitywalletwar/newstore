@@ -194,8 +194,8 @@ public sealed class ReservationService(
     }
 
     // Lock order, for every path that touches both tables: the reservation row first, the edition row second.
-    // - ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
-    //   ReturnCopyAsync or the counter UPDATE on the edition.
+    // - HoldAsync, ConfirmAsync and ReleaseAsync: LockAsync (SELECT ... FOR UPDATE on the reservation), then
+    //   ReturnCopyAsync (the expiry branches of hold and confirm, and release) or the counter UPDATE on the edition.
     // - SweepAsync: the data-modifying WITH updates the reservations, and the outer UPDATE editions reads
     //   `expired` through a GROUP BY, planned as a HashAggregate. For that node the executor fills the hash
     //   table from all of `expired` before it retrieves the first group: ExecAgg calls agg_fill_hash_table, then

@@ -156,6 +156,27 @@ public abstract class ReservationTests(InventoryFixture fixture)
     }
 
     [Fact]
+    public async Task Parallel_reserves_with_the_same_id_for_the_last_copy()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 1);
+        var (reservationId, buyerId) = (Guid.NewGuid(), Guid.NewGuid());
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => client.ReserveAsync(edition.Id, buyerId, reservationId)));
+
+        // A retry that overlaps the original must get the original's reservation, not "sold out".
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Equal(19, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+        foreach (var response in responses)
+        {
+            Assert.Equal(reservationId, (await response.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Id);
+        }
+
+        Assert.Equal(0, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
     public async Task Reusing_an_id_for_another_edition_is_409()
     {
         using var client = fixture.CreateClient();

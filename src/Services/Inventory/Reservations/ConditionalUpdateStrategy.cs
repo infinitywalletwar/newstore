@@ -40,12 +40,15 @@ public sealed class ConditionalUpdateStrategy(
         if (decremented == 0)
         {
             var edition = await db.Editions.AsNoTracking().FirstOrDefaultAsync(e => e.Id == editionId, ct);
-            return edition switch
+            ReserveOutcome failure = edition switch
             {
                 null => new ReserveOutcome.NotFound(),
                 { EndedAt: not null } => new ReserveOutcome.SaleEnded(),
                 _ => new ReserveOutcome.SoldOut(),
             };
+
+            // The UPDATE may have waited for a request with this same id and then found no copy left: look the id up again.
+            return await ReserveSupport.ExistingOrAsync(db, reservationId, editionId, buyerId, failure, ct);
         }
 
         var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
@@ -58,7 +61,8 @@ public sealed class ConditionalUpdateStrategy(
         {
             // EF rolls a failed SaveChanges back to a savepoint, which undoes the INSERT only
             // (https://learn.microsoft.com/ef/core/saving/transactions). The decrement is still in the transaction, together with
-            // the lock on the edition row. Roll everything back first, so the lookup runs outside it and the copy is not taken.
+            // the lock on the edition row. Disposing the transaction would also undo the decrement; rolling back now frees the
+            // row lock before the lookup instead of after it.
             await transaction.RollbackAsync(ct);
             return await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct);
         }

@@ -17,6 +17,7 @@ services:
     environment:
       # The secret of the realm's `orders` client, which equals its id (local-only, AGENTS.md). k6 trades it for a token.
       ORDERS_CLIENT_SECRET: orders
+      TOKEN_URL: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
     depends_on:
       inventory: { condition: service_healthy }
       keycloak: { condition: service_healthy }

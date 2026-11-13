@@ -30,6 +30,10 @@ public sealed class ConcurrencyTokenStrategy(
             return (known, 1);
         }
 
+        // The failures below may be the result of a request with this same id that took the last copy since the lookup above.
+        Task<ReserveOutcome> ExistingOrAsync(ReserveOutcome failure) =>
+            ReserveSupport.ExistingOrAsync(db, reservationId, editionId, buyerId, failure, ct);
+
         var maxAttempts = options.Value.MaxReserveAttempts;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -39,17 +43,17 @@ public sealed class ConcurrencyTokenStrategy(
             var edition = await db.Editions.FirstOrDefaultAsync(e => e.Id == editionId, ct);
             if (edition is null)
             {
-                return (new ReserveOutcome.NotFound(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.NotFound()), attempt);
             }
 
             if (edition.EndedAt is not null)
             {
-                return (new ReserveOutcome.SaleEnded(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.SaleEnded()), attempt);
             }
 
             if (edition.CopiesLeft == 0)
             {
-                return (new ReserveOutcome.SoldOut(), attempt);
+                return (await ExistingOrAsync(new ReserveOutcome.SoldOut()), attempt);
             }
 
             edition.CopiesLeft--;
