@@ -1113,7 +1113,7 @@ Branch `phase-1/web`. Issue #75. Middle depth (owner's decision 6): short walkth
   - My copies: `copy-row`.
 - **`proxy.conf.json`** sends `/api`, `/auth`, `/signin-oidc` and `/signout-callback-oidc` to `http://localhost:8100` and keeps the Host header (`changeOrigin: false`). The OIDC redirect then comes back through `ng serve`, which the realm allows on port 4200.
 
-- [ ] **Step 1: Create the workspace and check the toolchain**
+- [x] **Step 1: Create the workspace and check the toolchain**
 
 Run `npx @angular/cli@22.2.6 new web --style=css --ssr=false --skip-git`. Then pin `@angular/*` exactly in `package.json`.
 
@@ -1121,7 +1121,7 @@ Check that Angular 22.2 supports Node 26.12.1: `npm view @angular/core@22.2.5 en
 
 Record which test runner `ng new` set up, Vitest or another. Commit: `chore(web): a new Angular workspace`.
 
-- [ ] **Step 2: Failing tests, then the auth service and interceptor**
+- [x] **Step 2: Failing tests, then the auth service and interceptor**
 
 Tests:
 - `Adds_the_csrf_header_to_api_and_auth_calls_only`
@@ -1130,7 +1130,7 @@ Tests:
 
 Expected: `npm test -- --watch=false` passes. Commit: `feat(web): sign-in state and the CSRF header`.
 
-- [ ] **Step 3: Failing tests, then the pages**
+- [x] **Step 3: Failing tests, then the pages**
 
 Tests:
 - `Video_page_shows_sign_in_to_buy_when_signed_out`
@@ -1140,7 +1140,7 @@ Tests:
 
 Expected: they pass. Commit: `feat(web): browse, video, order and my copies pages`.
 
-- [ ] **Step 4: The image, CI, pull request**
+- [x] **Step 4: The image, CI, pull request**
 
 1. Add the gateway Dockerfile stage, then run `docker compose build gateway`. Expected: the image serves the app. Check with `docker run` on a spare port, or in CI.
 2. **CI job `web`:**

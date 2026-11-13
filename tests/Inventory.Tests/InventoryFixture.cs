@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
@@ -29,6 +30,12 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
 
     /// <summary>Every log record the app writes, whatever the configured log levels.</summary>
     public LogCapture Logs { get; } = new();
+
+    /// <summary>Every statement the app's <see cref="InventoryDbContext"/> sends, with the trace of the request that sent it.</summary>
+    public StatementCapture Statements { get; } = new();
+
+    /// <summary>Fails the next reserve statements with a deadlock, so a test can check the resend.</summary>
+    public DeadlockInjector Deadlocks { get; } = new();
 
     /// <summary>How often the background sweeper ticks on <see cref="Clock"/>. A subclass sets a long one to keep the sweeper out.</summary>
     protected virtual string SweepInterval => "00:00:01";
@@ -63,6 +70,9 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
                 o.Retry.Delay = TimeSpan.Zero;
                 o.Retry.UseJitter = false;
             });
+
+            // Composed with the app's own AddDbContext configuration (EF Core 9 and later).
+            services.ConfigureDbContext<InventoryDbContext>(options => options.AddInterceptors(Statements, Deadlocks));
         });
     }
 }
