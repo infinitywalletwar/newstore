@@ -43,7 +43,7 @@ internal static class FakePaySignature
 
         var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{timestamp}.{body}"));
 
-        // The header may carry several v1 values (a sender that rotates its secret signs with both), and one match is enough.
+        // The header may carry several v1 values, and one match is enough.
         // Every value is compared, with no early exit, and each comparison is constant-time: the time it takes must not
         // tell an attacker how many leading bytes were right.
         var matched = false;

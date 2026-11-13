@@ -174,7 +174,7 @@ public class WebhookTests(PaymentsFixture fixture)
         var (payment, sessionId) = await NewPaymentAsync();
         using var client = fixture.CreateClient();
         var body = TestWebhooks.Body($"evt_{Guid.NewGuid():N}", TestWebhooks.Completed, sessionId);
-        // "t=<unix>,v1=<hex>" from the test signer; the header then carries two v1 values, as it does while a secret is rotated.
+        // "t=<unix>,v1=<hex>" from the test signer; the header then carries two v1 values.
         var signed = TestWebhooks.Sign(body, DateTimeOffset.UtcNow).Split(',');
         var right = signed[1];
         var wrong = "v1=" + new string('0', 64);
