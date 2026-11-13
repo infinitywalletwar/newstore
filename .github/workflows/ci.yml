@@ -25,6 +25,23 @@ jobs:
       - run: dotnet build NewStore.slnx -c Release --no-restore
       - run: dotnet test --solution NewStore.slnx -c Release --no-build
 
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.1
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test -- --watch=false
+      - run: npm run build
+
   compose-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

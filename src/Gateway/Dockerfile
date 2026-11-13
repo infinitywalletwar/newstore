@@ -1,3 +1,10 @@
+FROM node:26.12.1-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
@@ -12,4 +19,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.14
 WORKDIR /app
 USER $APP_UID
 COPY --from=build /app .
+# The Angular build replaces the placeholder page in the image; the repo's wwwroot/index.html stays a placeholder.
+COPY --from=web /web/dist/web/browser ./wwwroot
 ENTRYPOINT ["dotnet", "NewStore.Gateway.dll"]

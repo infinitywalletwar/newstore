@@ -139,4 +139,5 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Apply migrations in the stack: `docker compose up -d --wait` runs the one-shot `catalog-migrate` job before `catalog` starts, and `--wait` succeeds although that job exits.
 - Run the last-copy load test (1000 buyers, 10 copies; see `tests/load/README.md`): `docker compose -f compose.yaml -f compose.load.yaml up -d --wait`, then `docker compose -f compose.yaml -f compose.load.yaml run --rm k6`. The overlay shortens Inventory's reservation TTL, so use it for this test only.
 - Seed a database: `docker compose up -d --wait` also runs `seed` in the `catalog-migrate` job (the command is `migrate seed`). Against a local database: `dotnet run --project src/Services/Catalog -- seed`.
+- The web app, in `web/` (Node 26.12.1): `npm ci`, `npm test -- --watch=false` (Vitest in jsdom, no browser needed) and `npm start` (`ng serve` on http://localhost:4200, proxying `/api` and `/auth` to the gateway on 8100).
 - Run a service from the IDE against the stack: `dotnet run --project src/Services/Catalog` (http://localhost:5101)
