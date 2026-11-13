@@ -8,8 +8,9 @@ using Polly.Timeout;
 namespace NewStore.Orders.Tests;
 
 /// <summary>
-/// The clients turn every "no answer" into <see cref="TransientFailureException"/>. Polly throws <see cref="BrokenCircuitException"/> and
-/// <see cref="TimeoutRejectedException"/> when its pipeline gives up, and Messaging does not know them. These tests put the exception
+/// The clients turn every "no answer" into <see cref="TransientFailureException"/>. Polly throws a subclass of
+/// <see cref="Polly.ExecutionRejectedException"/> when its pipeline gives up (<see cref="BrokenCircuitException"/>,
+/// <see cref="TimeoutRejectedException"/> or <see cref="RateLimiterRejectedException"/>), and Messaging does not know them. These tests put the exception
 /// where the pipeline would throw it: below the client, in its message handler.
 /// </summary>
 public class ClientTests

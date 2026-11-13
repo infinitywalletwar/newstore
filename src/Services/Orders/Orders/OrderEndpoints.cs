@@ -123,7 +123,7 @@ public static class OrderEndpoints
 
             // The hold's deadline is saved before Payments is called: if Payments is down, a buyer who comes back after the
             // reservation's own 10 minutes still finds the order open.
-            if (!await SaveAsync(db, order, o => o.ReservedUntil = held.ExpiresAt, time, ct))
+            if (!await SaveAsync(db, order, o => o.ReservedUntil = held.ExpiresAt, time, ct, o => o.ReservedUntil == held.ExpiresAt))
             {
                 return Answer(order);
             }
@@ -154,12 +154,19 @@ public static class OrderEndpoints
 
     /// <summary>
     /// Applies <paramref name="change"/> and saves. If another writer changed the order first (<c>xmin</c> moved), the order is
-    /// reloaded. When the reloaded order is still <c>Reserved</c> the other writer was a parallel pay that only saved the hold's
-    /// deadline, so the change is applied again and saved. Otherwise the order has moved on, and the method returns false with the
-    /// order as the other writer left it: the caller answers from that.
+    /// reloaded and one of three things follows:
+    /// <list type="bullet">
+    /// <item>The order is still <c>Reserved</c> (the other writer was a parallel pay that only saved the hold's deadline) and
+    /// <paramref name="alreadyDone"/> says the change is already stored: return true without writing.</item>
+    /// <item>The order is still <c>Reserved</c> and the change is not stored: apply it again and save, at most three tries in all.</item>
+    /// <item>The order moved on, or the third try lost as well: return false with the order as the winner left it, and the caller
+    /// answers from that.</item>
+    /// </list>
     /// </summary>
-    private static async Task<bool> SaveAsync(OrdersDbContext db, Order order, Action<Order> change, TimeProvider time, CancellationToken ct)
+    private static async Task<bool> SaveAsync(
+        OrdersDbContext db, Order order, Action<Order> change, TimeProvider time, CancellationToken ct, Func<Order, bool>? alreadyDone = null)
     {
+        const int MaxTries = 3;
         for (var attempt = 1; ; attempt++)
         {
             change(order);
@@ -169,12 +176,17 @@ public static class OrderEndpoints
                 await db.SaveChangesAsync(ct);
                 return true;
             }
-            catch (DbUpdateConcurrencyException) when (attempt < 3)
+            catch (DbUpdateConcurrencyException)
             {
                 await db.Entry(order).ReloadAsync(ct);
-                if (order.Status != OrderStatus.Reserved)
+                if (order.Status != OrderStatus.Reserved || attempt == MaxTries)
                 {
                     return false;
+                }
+
+                if (alreadyDone?.Invoke(order) == true)
+                {
+                    return true;
                 }
             }
         }
@@ -184,8 +196,8 @@ public static class OrderEndpoints
     {
         OrderStatus.Paying => Results.Ok(new PayResponse(order.CheckoutUrl!)),
         OrderStatus.Expired => Problems.Conflict("order-expired", "The reservation ran out of time. The copy went back on sale."),
-        // SaveAsync retries while the order is Reserved, so a Reserved order here means three lost races in a row.
-        OrderStatus.Reserved => throw new InvalidOperationException($"Order {order.Id} is still Reserved after a save conflict."),
+        // After three lost saves in a row SaveAsync gives up with the order still Reserved: nothing was recorded, so ask the buyer to retry.
+        OrderStatus.Reserved => Problems.Conflict("order-busy", "The order is being changed by another request. Try again."),
         _ => Problems.Conflict("order-closed", $"The order is {order.Status}."),
     };
 

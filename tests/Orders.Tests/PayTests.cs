@@ -112,6 +112,27 @@ public class PayTests
     }
 
     [Fact]
+    public async Task Pay_saves_again_when_a_parallel_pay_only_moved_the_deadline()
+    {
+        var buyer = Guid.NewGuid();
+        var order = await _fixture.BuyAsync(buyer);
+        var original = _fixture.Payments.Create;
+        // While Orders waits for Payments, another writer touches the row without moving the order on (as a parallel pay does when it
+        // saves the hold's deadline): this pay's save loses once, reloads a Reserved order and saves again.
+        _fixture.Payments.Create = r =>
+        {
+            _fixture.QueryAsync(db => db.Orders.Where(o => o.Id == order.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.UpdatedAt, DateTimeOffset.UtcNow), Ct)).GetAwaiter().GetResult();
+            return original(r);
+        };
+
+        var response = await PayAsync(buyer, order.Id);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(OrderStatus.Paying, (await _fixture.GetOrderAsync(order.Id)).Status);
+    }
+
+    [Fact]
     public async Task Payments_down_on_pay_keeps_the_holds_deadline()
     {
         var buyer = Guid.NewGuid();

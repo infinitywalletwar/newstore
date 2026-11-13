@@ -147,13 +147,15 @@ public class SagaTests
         await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Failed);
 
         // The payment succeeded after the provider's session had already expired.
-        await PublishAsync(paying, Succeeded(paying));
+        var succeeded = Succeeded(paying, paymentId: Guid.NewGuid());
+        await PublishAsync(paying, succeeded);
         await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunding);
 
         Assert.Equal(0, Calls(paying, "confirm"));
-        // The event asks for the money of the payment that succeeded, not only "a" refund.
+        // The refund names the payment in the event, not the one the order recorded when the buyer paid.
         var request = Assert.Single(await _fixture.RefundRequestsAsync(paying.Id));
-        Assert.Equal(paying.PaymentId, request.PaymentId);
+        Assert.NotEqual(paying.PaymentId, succeeded.PaymentId);
+        Assert.Equal(succeeded.PaymentId, request.PaymentId);
         Assert.Equal(paying.Id, request.OrderId);
     }
 
