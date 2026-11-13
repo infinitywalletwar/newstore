@@ -4,6 +4,8 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 
+import { ensureK6Client, passwordToken } from './keycloak.js';
+
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8102';
 const P99_MS = __ENV.P99_MS || '1000';
 // Reservations are Orders' to make: the script is the client `orders` and gets a client-credentials token from Keycloak.
@@ -12,6 +14,10 @@ const P99_MS = __ENV.P99_MS || '1000';
 const TOKEN_URL = __ENV.TOKEN_URL || 'http://localhost:8180/realms/newstore/protocol/openid-connect/token';
 const ORDERS_CLIENT_SECRET = __ENV.ORDERS_CLIENT_SECRET;
 const COPIES = 10;
+// Editions are a creator's to make (C-1): the script signs in as the sample creator who owns this sample video, "Sourdough in Zero
+// Gravity". Inventory asks Catalog who owns it, so the stack must be seeded. A sample user's password equals the username (AGENTS.md).
+const VIDEO_ID = '00000000-0000-7000-8001-000000000011';
+const CREATOR = 'orbital-kitchen';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 // Version-4 UUID shape; Math.random is fine for test IDs, and the script needs no network import.
@@ -63,7 +69,7 @@ function post(path, body, name, token) {
   return http.post(`${BASE_URL}${path}`, body === null ? null : JSON.stringify(body), { headers, tags: { name } });
 }
 
-// One token for the whole run (Keycloak's lasts 300 s, and the run takes about a minute).
+// One token for the whole run (Keycloak's lasts 300 s, and the run takes about a minute). The creator's token lasts 30 minutes (keycloak.js).
 function ordersToken() {
   const res = http.post(TOKEN_URL, {
     grant_type: 'client_credentials',
@@ -74,14 +80,13 @@ function ordersToken() {
   return res.json('access_token');
 }
 
-function createEdition() {
+function createEdition(creatorToken) {
   const res = post('/editions', {
-    videoId: uuidv4(),
-    creatorId: uuidv4(),
+    videoId: VIDEO_ID,
     format: 'Digital',
     price: 9.99,
     copies: COPIES,
-  }, 'create-edition');
+  }, 'create-edition', creatorToken);
   check(res, { 'edition created': (r) => r.status === 201 });
   return res.json('id');
 }
@@ -90,7 +95,10 @@ export function setup() {
   if (!ORDERS_CLIENT_SECRET) {
     throw new Error('ORDERS_CLIENT_SECRET is not set: pass the orders client secret, for example -e ORDERS_CLIENT_SECRET=<secret>.');
   }
-  return { first: createEdition(), second: createEdition(), token: ordersToken() };
+  // The k6 client is created once; the creator's token comes from it. `token` is Orders' and is for reserve and confirm only.
+  ensureK6Client();
+  const creatorToken = passwordToken(CREATOR, CREATOR);
+  return { first: createEdition(creatorToken), second: createEdition(creatorToken), token: ordersToken(), creatorToken };
 }
 
 export function lastCopy(data) {
@@ -134,9 +142,12 @@ export function expiry(data) {
   }
 }
 
-function numbersAreOneToTen(editionId, label) {
+function numbersAreOneToTen(editionId, label, creatorToken) {
   const edition = http.get(`${BASE_URL}/editions/${editionId}`).json();
-  const copies = http.get(`${BASE_URL}/editions/${editionId}/copies`).json();
+  // The copies list is the creator's: it needs the creator's token, not Orders'.
+  const copies = http.get(`${BASE_URL}/editions/${editionId}/copies`, {
+    headers: { Authorization: `Bearer ${creatorToken}` },
+  }).json();
   const numbers = copies.map((c) => c.number).sort((a, b) => a - b);
   check(null, {
     [`${label}: copiesLeft is 0`]: () => edition.copiesLeft === 0,
@@ -147,6 +158,6 @@ function numbersAreOneToTen(editionId, label) {
 }
 
 export function teardown(data) {
-  numbersAreOneToTen(data.first, 'first edition');
-  numbersAreOneToTen(data.second, 'second edition');
+  numbersAreOneToTen(data.first, 'first edition', data.creatorToken);
+  numbersAreOneToTen(data.second, 'second edition', data.creatorToken);
 }

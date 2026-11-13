@@ -115,12 +115,17 @@ services:
       Messaging__BootstrapServers: kafka:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: catalog
+      # Tokens carry the public issuer; the keys come from the address a container can reach (ADR 0012).
+      Auth__Issuer: http://localhost:8180/realms/newstore
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
     ports: ["127.0.0.1:8101:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       catalog-migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
@@ -139,7 +144,7 @@ services:
       dockerfile: src/Services/Inventory/Dockerfile
     image: newstore/inventory:local
     pull_policy: build
-    command: ["migrate"]
+    command: ["migrate", "seed"]
     restart: "no"
     environment:
       ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=inventory;Password=inventory
@@ -164,12 +169,18 @@ services:
       Auth__Issuer: http://localhost:8180/realms/newstore
       Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
       Auth__RequireHttpsMetadata: "false"
+      # Inventory asks Catalog who owns a video, with its own client's token (ADR 0012, ADR 0016).
+      Auth__ClientId: inventory
+      Auth__ClientSecret: inventory
+      Auth__TokenEndpoint: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
+      Services__Catalog: http://catalog:8080
     ports: ["127.0.0.1:8102:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       inventory-migrate: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
       keycloak: { condition: service_healthy }
+      catalog: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
