@@ -10,7 +10,7 @@ services:
       Inventory__ReserveStrategy: ${RESERVE_STRATEGY:-ConditionalUpdate}
 
   k6:
-    image: grafana/k6:1.8.2
+    image: grafana/k6:2.3.0
     profiles: [load]
     volumes: ["./tests/load:/scripts:ro"]
     command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://inventory:8080", "-e", "P99_MS=${P99_MS:-1000}"]
