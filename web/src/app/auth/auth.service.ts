@@ -17,6 +17,8 @@ export class AuthService {
   readonly user = signal<SessionUser>({ isAuthenticated: false });
   /** Set when the gateway says the session ended on its own (not when the user signed out). */
   readonly notice = signal<string | null>(null);
+  /** False until `/auth/user` has answered, so a page does not flash "Sign in" at someone who is signed in. */
+  readonly ready = signal(false);
   readonly isSignedIn = computed(() => this.user().isAuthenticated);
 
   /** Loads `/auth/user` once; every later call returns the same promise. */
@@ -24,7 +26,7 @@ export class AuthService {
     this.loading ??= firstValueFrom(this.http.get<SessionUser>('/auth/user')).then(
       (user) => this.user.set(user),
       () => this.user.set({ isAuthenticated: false }),
-    );
+    ).then(() => this.ready.set(true));
     return this.loading;
   }
 
