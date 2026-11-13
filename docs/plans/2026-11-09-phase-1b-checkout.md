@@ -127,8 +127,9 @@ newstore/
 ├── src/Shared/Contracts/Orders/RefundRequested.cs                             (Task 4)
 ├── src/Gateway/                                                               (Task 5)
 │   NewStore.Gateway.csproj  Program.cs  Dockerfile  appsettings*.json  Properties/launchSettings.json
-│   Auth/   BffEndpoints.cs  CsrfMiddleware.cs  RedisTicketStore.cs  SessionExpiry.cs
-│   Proxy/  Routes.cs  AccessTokenTransform.cs
+│   Auth/   AuthEndpoints.cs  CsrfMiddleware.cs  GatewayAuthExtensions.cs  OidcOptions.cs  Problems.cs  RedisTicketStore.cs
+│   Proxy/  ProxyExtensions.cs  AccessTokenTransform.cs
+│   Redis/  RedisExtensions.cs                           the one connection and the readiness check
 │   wwwroot/index.html                                   placeholder until Task 8
 ├── src/Services/Orders/                                                       (Task 7)
 │   Orders/  Order.cs  OrderEndpoints.cs  OrderContracts.cs  OrderService.cs
@@ -706,7 +707,7 @@ Branch `phase-1/gateway`. Issue #72. Read: topics 09 (OAuth 2.0 and OIDC: browse
   - `ConnectionStrings:Redis`;
   - `Services:Catalog`, `Services:Inventory` and `Services:Orders`, the YARP destinations.
 - **Authentication:**
-  - **The cookie** `newstore-session` is HttpOnly and `SameSite=Lax`. It has no `Secure` flag and no `__Host-` prefix until Phase 4 brings HTTPS; the ADR says so.
+  - **The cookie** `newstore-session` is HttpOnly and `SameSite=Strict` (owner's decision, 2026-11-13, following RFC 10017's "SHOULD" for the BFF's cookie). It has no `Secure` flag and no `__Host-` prefix until Phase 4 brings HTTPS; the ADR says so.
   - **Ticket store.** The session ticket lives in Redis through `RedisTicketStore : ITicketStore`, so the cookie carries only a key. A Redis failure while reading a ticket is logged, and the request counts as anonymous.
   - **Data protection.** Keys are in Redis (`PersistKeysToStackExchangeRedis`) with `SetApplicationName("newstore-gateway")`, so a restart or a second instance reads the same cookies.
   - **OIDC:**
@@ -743,7 +744,7 @@ Branch `phase-1/gateway`. Issue #72. Read: topics 09 (OAuth 2.0 and OIDC: browse
 - **Static files.** The gateway serves `wwwroot` and calls `MapFallbackToFile("index.html")` for paths outside `/api`, `/auth`, `/signin-oidc`, `/signout-callback-oidc` and `/health`. An unknown `/api/*` path gets a 404 problem.
 - **Health.** The Redis check is tagged ready, with `failureStatus: Degraded`, as Catalog's is.
 
-- [ ] **Step 1: Failing tests in `tests/Gateway.Tests`**
+- [x] **Step 1: Failing tests in `tests/Gateway.Tests`**
 
 **Fixtures:**
 - Keycloak in Testcontainers with the realm imported and no hostname set, so the test and the gateway both reach it at the mapped URL and the issuer is that URL.
@@ -775,17 +776,17 @@ Branch `phase-1/gateway`. Issue #72. Read: topics 09 (OAuth 2.0 and OIDC: browse
 
 Expected: the tests fail.
 
-- [ ] **Step 2: Implement, then run the tests**
+- [x] **Step 2: Implement, then run the tests**
 
 Expected: Gateway.Tests pass, and `docker compose build gateway` succeeds. Commit: `feat(gateway): YARP as a backend-for-frontend with Keycloak sign-in`.
 
-- [ ] **Step 3: ADR 0015, Compose, CI, pull request**
+- [x] **Step 3: ADR 0015, Compose, CI, pull request**
 
 1. **ADR 0015, the gateway is the BFF.**
    - RFC 10017 (BCP 212) lists three browser patterns "in decreasing order of security" and says BFF is "strongly recommended for business applications". Quote it from the [datatracker](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/).
    - Alternatives: the SPA holding tokens with PKCE, which was the README's old design; a token-mediating backend.
    - Costs: a session store, CSRF, and sticky state in Redis.
-   - Why `SameSite=Lax` plus a custom header, and why the cookie isn't `Secure` until Phase 4.
+   - Why `SameSite=Strict` plus a custom header, and why the cookie isn't `Secure` until Phase 4.
 2. **Compose `gateway`:**
    - `127.0.0.1:8100:8080`, `512m`;
    - depends on keycloak, redis, catalog and inventory; orders is added by Task 7;

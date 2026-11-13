@@ -115,8 +115,12 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   | 5101 | Catalog with `dotnet run` |
   | 8102 | Inventory in Compose |
   | 5102 | Inventory with `dotnet run` |
+  | 8100 | Gateway in Compose: the browser's front door |
+  | 5100 | Gateway with `dotnet run` |
 
-  Each new service takes the next number: 81NN in Compose and 51NN with `dotnet run`.
+  Each new service takes the next number: 81NN in Compose and 51NN with `dotnet run`. The gateway's 8100 and 5100 are a deliberate exception: it is the front door, so it takes the number before Catalog's.
+
+  The gateway is the front door: a browser talks only to `http://localhost:8100` (the sign-in, the session cookie and `/api/*`), and the service ports are for debugging with a bearer token. Until Nginx arrives in Phase 4 the gateway also serves the app (ADR 0015).
 
 ## Commands
 
