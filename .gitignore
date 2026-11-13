@@ -490,3 +490,8 @@ $RECYCLE.BIN/
 kubeconfig*
 *.pem
 *.key
+
+# Playwright (tests/e2e)
+tests/e2e/node_modules/
+tests/e2e/test-results/
+tests/e2e/playwright-report/
