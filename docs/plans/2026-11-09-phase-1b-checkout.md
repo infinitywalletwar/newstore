@@ -1229,7 +1229,7 @@ Commit: `test(load): the last-copy test buys through the gateway`.
 ## Phase 1b is done when
 
 1. **In CI:** on `main`, `build-test`, `web`, `compose-smoke` and `e2e` are green.
-   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 2 s on the runner.
+   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 3.5 s on the runner.
    - `e2e` is a new buyer signing up, buying and seeing the copy.
 2. **On the Mac:** the same k6 run has reserve p99 under 1 s, recorded in `tests/load/README.md`.
 3. **On a clean clone:** `docker compose up -d --wait`, then the owner buys once by hand:

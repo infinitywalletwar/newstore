@@ -4,7 +4,7 @@ newstore is a video platform with a store built in. Creators upload videos, and 
 
 It's a home practice project, not a business. Its purpose is hands-on practice with the skills a senior ASP.NET Core backend developer is expected to have, and a chance to learn new ones.
 
-> **Status:** Phase 0 (Foundation) and Phase 1a (Buy the last copy) done; Phase 1b (Checkout) in progress, following [its plan](docs/plans/2026-11-09-phase-1b-checkout.md). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
+> **Status:** Phase 0 (Foundation) and Phase 1a (Buy the last copy) done; Phase 1b (Checkout) built, waiting for the owner's checks (see its [done-when list](docs/plans/2026-11-09-phase-1b-checkout.md)). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Goals
 
@@ -202,7 +202,7 @@ Every event is published through a transactional outbox, and every consumer igno
 - **Cost:** everything runs free on the Mac, using Docker Compose for daily work and kind for Kubernetes practice. Real AWS is used only in short sessions. Each session runs `terraform apply`, deploys, tries things out, then runs `terraform destroy`. An AWS Budgets alert warns at $20 a month. To keep sessions cheap, Kafka runs inside the EKS cluster instead of on Amazon MSK.
 - **Machine:** an Apple Silicon Mac with 32 GB of RAM. Every container image must run on arm64, and the full stack should fit in about 12 GB of Docker memory. Locally, one PostgreSQL server holds a separate database for each service.
 - **SDK:** a .NET 11 preview SDK is also installed and `dotnet` uses it by default, so the repository pins .NET 10 with `global.json`.
-- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it. Node 26 is installed, for the Angular app. Playwright downloads its browser in Phase 1b, with the owner's go-ahead.
+- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it. Node 26 is installed, for the Angular app. Playwright's browser is installed only in CI (the owner chose not to download Chromium on the Mac).
 - **Repository:** newstore is its own git repository on GitHub, with its own CI, issues and board.
 
 ## Phases
@@ -265,9 +265,10 @@ newstore/
 │       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
 ├── web/              the Angular app
 │   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it
-├── compose.load.yaml overlay for the k6 load test: a short reservation TTL and the k6 service
+├── compose.load.yaml overlay for the k6 load test: a short reservation TTL, FakePay's test endpoints and the k6 service
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
+│   ├── e2e/          Playwright: a new buyer signs up and buys a copy in the browser (CI only)
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
 │   ├── Orders.Tests/     buy, pay and the checkout saga against real PostgreSQL and Kafka, with stubs for Inventory and Payments
 │   ├── Gateway.Tests/    sign-in, sessions and routing against real Keycloak and Redis
