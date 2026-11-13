@@ -18,7 +18,7 @@ namespace NewStore.Catalog.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -56,6 +56,10 @@ namespace NewStore.Catalog.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_channels");
+
+                    b.HasIndex("CreatorId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_channels_creator_id");
 
                     b.HasIndex("Slug")
                         .IsUnique()
