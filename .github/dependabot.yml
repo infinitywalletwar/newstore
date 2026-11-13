@@ -12,10 +12,24 @@ updates:
       nuget-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # .NET 11 is one deliberate move (#92); until then no semver-major bump of the .NET packages.
+    ignore:
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.EntityFrameworkCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet-ef"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directories: ["/src/Services/*"]
     schedule:
       interval: "weekly"
+    # Same rule for the .NET images: the move to .NET 11 is #92.
+    ignore:
+      - dependency-name: "mcr.microsoft.com/dotnet/*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "dotnet-sdk"
     directory: "/"
     schedule:
