@@ -6,7 +6,13 @@ public abstract record ReserveOutcome
     public sealed record Reserved(Reservation Reservation) : ReserveOutcome;
     public sealed record SoldOut : ReserveOutcome;
 
-    /// <summary>A Pending or Confirmed reservation exists for this buyer.</summary>
+    /// <summary>The id was already used by a reserve of the same edition and buyer: this is its reservation again. Answered 200.</summary>
+    public sealed record Existing(Reservation Reservation) : ReserveOutcome;
+
+    /// <summary>The id belongs to a reservation of another edition or buyer. A caller bug; answered 409.</summary>
+    public sealed record IdTaken : ReserveOutcome;
+
+    /// <summary>A Pending, Held or Confirmed reservation exists for this buyer.</summary>
     public sealed record AlreadyHolding : ReserveOutcome;
 
     public sealed record NotFound : ReserveOutcome;

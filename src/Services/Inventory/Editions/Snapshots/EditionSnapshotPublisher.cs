@@ -44,7 +44,7 @@ public sealed partial class EditionSnapshotPublisher(
                 sent = await EditionSnapshots.PublishAsync(
                     scope.ServiceProvider.GetRequiredService<InventoryDbContext>(),
                     scope.ServiceProvider.GetRequiredService<IOutbox>(),
-                    time.GetUtcNow(),
+                    time.GetUtcNowToMicrosecond(),
                     batchSize,
                     ct);
                 if (sent > 0)

@@ -6,6 +6,12 @@ public enum ReserveStrategy { ConditionalUpdate, ConcurrencyToken }
 public sealed class InventoryOptions
 {
     public TimeSpan ReservationTtl { get; set; } = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// How long a Held reservation keeps its copy, counted from the hold. Stripe's Checkout Session may live up to 24 hours
+    /// and at least 30 minutes; 45 minutes leaves room for a slow payment (ADR 0013).
+    /// </summary>
+    public TimeSpan HoldTtl { get; set; } = TimeSpan.FromMinutes(45);
+
     public TimeSpan ExpirySweepInterval { get; set; } = TimeSpan.FromSeconds(5);
     public ReserveStrategy ReserveStrategy { get; set; } = ReserveStrategy.ConditionalUpdate;
 

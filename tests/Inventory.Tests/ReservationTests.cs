@@ -1,8 +1,12 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+
+using NewStore.Contracts.Inventory;
+using NewStore.Messaging.Outbox;
 
 namespace NewStore.Inventory.Tests;
 
@@ -107,6 +111,177 @@ public abstract class ReservationTests(InventoryFixture fixture)
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(Ct));
 
         Assert.Contains(EfErrors(logged), r => r.Category == "Microsoft.EntityFrameworkCore.Update");
+    }
+
+    [Fact]
+    public async Task Reserve_twice_with_the_same_id_returns_the_same_reservation()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var (reservationId, buyerId) = (Guid.NewGuid(), Guid.NewGuid());
+
+        var first = await client.ReserveAsync(edition.Id, buyerId, reservationId);
+        var second = await client.ReserveAsync(edition.Id, buyerId, reservationId);
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(reservationId, (await first.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Id);
+        Assert.Equal(reservationId, (await second.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Id);
+        Assert.Equal(9, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Parallel_reserves_with_the_same_id_take_one_copy()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var (reservationId, buyerId) = (Guid.NewGuid(), Guid.NewGuid());
+        var logged = fixture.Logs.Snapshot().Count;
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => client.ReserveAsync(edition.Id, buyerId, reservationId)));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Equal(19, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+        foreach (var response in responses)
+        {
+            Assert.Equal(reservationId, (await response.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Id);
+        }
+
+        Assert.Equal(9, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Assert.Equal(1, await db.Reservations.CountAsync(r => r.EditionId == edition.Id, Ct));
+        Assert.Empty(EfErrors(logged));
+    }
+
+    [Fact]
+    public async Task Parallel_reserves_with_the_same_id_for_the_last_copy()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 1);
+        var (reservationId, buyerId) = (Guid.NewGuid(), Guid.NewGuid());
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => client.ReserveAsync(edition.Id, buyerId, reservationId)));
+
+        // A retry that overlaps the original must get the original's reservation, not "sold out".
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Equal(19, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+        foreach (var response in responses)
+        {
+            Assert.Equal(reservationId, (await response.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Id);
+        }
+
+        Assert.Equal(0, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Reusing_an_id_for_another_edition_is_409()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 10);
+        var other = await client.CreateEditionAsync(copies: 10);
+        var (reservationId, buyerId) = (Guid.NewGuid(), Guid.NewGuid());
+        await client.ReserveAsync(edition.Id, buyerId, reservationId);
+
+        var otherEdition = await client.ReserveAsync(other.Id, buyerId, reservationId);
+        var otherBuyer = await client.ReserveAsync(edition.Id, Guid.NewGuid(), reservationId);
+
+        foreach (var response in new[] { otherEdition, otherBuyer })
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("urn:newstore:problem:reservation-id-taken", (await response.ReadProblemAsync()).Type);
+        }
+
+        Assert.Equal(10, (await client.GetEditionAsync(other.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Reserve_response_carries_the_price_format_and_video()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync();
+
+        var reservation = await client.ReserveOkAsync(edition.Id);
+
+        Assert.Equal(edition.VideoId, reservation.VideoId);
+        Assert.Equal("Digital", reservation.Format);
+        Assert.Equal(edition.Price, reservation.Price);
+    }
+
+    [Fact]
+    public async Task Confirm_publishes_CopyAssigned_once()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync();
+        var reservation = await client.ReserveOkAsync(edition.Id);
+
+        Assert.Equal(HttpStatusCode.OK, (await client.ConfirmAsync(reservation.Id)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.ConfirmAsync(reservation.Id)).StatusCode);
+
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var row = await db.Set<OutboxMessage>()
+            .Where(m => m.Type == typeof(CopyAssigned).FullName && m.Key == edition.Id.ToString())
+            .SingleAsync(Ct);
+        Assert.Equal(CopyAssigned.Topic, row.Topic);
+        var assigned = JsonSerializer.Deserialize<CopyAssigned>(row.Payload)!;
+        Assert.Equal(1, assigned.CopyNumber);
+        Assert.Equal(reservation.Id, assigned.ReservationId);
+        Assert.Equal(reservation.BuyerId, assigned.OwnerId);
+        Assert.Equal(edition.VideoId, assigned.VideoId);
+        Assert.Equal("Digital", assigned.Format);
+    }
+
+    [Fact]
+    public async Task Buyer_with_a_held_reservation_cannot_reserve_again()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync();
+        var reservation = await client.ReserveOkAsync(edition.Id);
+        await client.HoldOkAsync(reservation.Id);
+
+        var response = await client.ReserveAsync(edition.Id, reservation.BuyerId);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:already-holding", (await response.ReadProblemAsync()).Type);
+    }
+
+    [Fact]
+    public async Task Reservation_endpoints_accept_only_the_orders_client()
+    {
+        using var client = fixture.CreateClient();
+        var id = Guid.NewGuid();
+        var calls = new (HttpMethod Method, string Url)[]
+        {
+            (HttpMethod.Post, $"/editions/{id}/reservations"),
+            (HttpMethod.Get, $"/reservations/{id}"),
+            (HttpMethod.Post, $"/reservations/{id}/hold"),
+            (HttpMethod.Post, $"/reservations/{id}/confirm"),
+            (HttpMethod.Post, $"/reservations/{id}/release"),
+        };
+        var tokens = new (string? Token, HttpStatusCode Expected)[]
+        {
+            (null, HttpStatusCode.Unauthorized),
+            (TestTokens.Client("inventory", "inventory"), HttpStatusCode.Forbidden),
+            (TestTokens.User(Guid.NewGuid(), "inventory"), HttpStatusCode.Forbidden),
+        };
+
+        foreach (var (method, url) in calls)
+        {
+            foreach (var (token, expected) in tokens)
+            {
+                using var request = new HttpRequestMessage(method, url);
+                if (token is not null)
+                {
+                    request.Headers.Authorization = new("Bearer", token);
+                }
+
+                var response = await client.SendAsync(request, Ct);
+                Assert.True(expected == response.StatusCode, $"{method} {url}: expected {expected}, got {response.StatusCode}");
+            }
+        }
     }
 
     /// <summary>EF Core records at Error or above written after the first <paramref name="skip"/> records.</summary>

@@ -160,11 +160,16 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: inventory
       Messaging__BootstrapServers: kafka:9092
+      # Tokens carry the public issuer; the keys come from the address a container can reach (ADR 0012).
+      Auth__Issuer: http://localhost:8180/realms/newstore
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
     ports: ["127.0.0.1:8102:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       inventory-migrate: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.

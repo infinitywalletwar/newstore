@@ -6,6 +6,11 @@ import { Counter } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8102';
 const P99_MS = __ENV.P99_MS || '1000';
+// Reservations are Orders' to make: the script is the client `orders` and gets a client-credentials token from Keycloak.
+// Both defaults are the Mac's published ports (Inventory 8102, Keycloak 8180); Compose passes the container URLs instead
+// (compose.load.yaml). The client secret has no default: it is a credential, and setup() fails without it.
+const TOKEN_URL = __ENV.TOKEN_URL || 'http://localhost:8180/realms/newstore/protocol/openid-connect/token';
+const ORDERS_CLIENT_SECRET = __ENV.ORDERS_CLIENT_SECRET;
 const COPIES = 10;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -53,11 +58,20 @@ export const options = {
   },
 };
 
-function post(path, body, name) {
-  return http.post(`${BASE_URL}${path}`, body === null ? null : JSON.stringify(body), {
-    headers: JSON_HEADERS,
-    tags: { name },
-  });
+function post(path, body, name, token) {
+  const headers = token ? { ...JSON_HEADERS, Authorization: `Bearer ${token}` } : JSON_HEADERS;
+  return http.post(`${BASE_URL}${path}`, body === null ? null : JSON.stringify(body), { headers, tags: { name } });
+}
+
+// One token for the whole run (Keycloak's lasts 300 s, and the run takes about a minute).
+function ordersToken() {
+  const res = http.post(TOKEN_URL, {
+    grant_type: 'client_credentials',
+    client_id: 'orders',
+    client_secret: ORDERS_CLIENT_SECRET,
+  }, { tags: { name: 'token' } });
+  check(res, { 'token issued': (r) => r.status === 200 });
+  return res.json('access_token');
 }
 
 function createEdition() {
@@ -73,17 +87,21 @@ function createEdition() {
 }
 
 export function setup() {
-  return { first: createEdition(), second: createEdition() };
+  if (!ORDERS_CLIENT_SECRET) {
+    throw new Error('ORDERS_CLIENT_SECRET is not set: pass the orders client secret, for example -e ORDERS_CLIENT_SECRET=<secret>.');
+  }
+  return { first: createEdition(), second: createEdition(), token: ordersToken() };
 }
 
 export function lastCopy(data) {
-  const reserve = post(`/editions/${data.first}/reservations`, { buyerId: uuidv4() }, 'reserve');
+  const reserve = post(
+    `/editions/${data.first}/reservations`, { reservationId: uuidv4(), buyerId: uuidv4() }, 'reserve', data.token);
 
   if (reserve.status === 201) {
     const id = reserve.json('id');
     // Confirming twice must give the same number: confirm is idempotent.
-    const one = post(`/reservations/${id}/confirm`, null, 'confirm');
-    const two = post(`/reservations/${id}/confirm`, null, 'confirm');
+    const one = post(`/reservations/${id}/confirm`, null, 'confirm', data.token);
+    const two = post(`/reservations/${id}/confirm`, null, 'confirm', data.token);
     check(null, {
       'both confirms are 200': () => one.status === 200 && two.status === 200,
       'both confirms carry the same copy number': () =>
@@ -98,16 +116,18 @@ export function lastCopy(data) {
 }
 
 export function expiry(data) {
-  const first = post(`/editions/${data.second}/reservations`, { buyerId: uuidv4() }, 'reserve');
+  const first = post(
+    `/editions/${data.second}/reservations`, { reservationId: uuidv4(), buyerId: uuidv4() }, 'reserve', data.token);
   check(first, { 'expiry: first reserve is 201': (r) => r.status === 201 });
 
   // TTL 3 s + sweep 1 s + margin.
   sleep(6);
 
-  const again = post(`/editions/${data.second}/reservations`, { buyerId: uuidv4() }, 'reserve');
+  const again = post(
+    `/editions/${data.second}/reservations`, { reservationId: uuidv4(), buyerId: uuidv4() }, 'reserve', data.token);
   check(again, { 'expiry: reserve after expiry is 201': (r) => r.status === 201 });
   if (again.status === 201) {
-    const confirm = post(`/reservations/${again.json('id')}/confirm`, null, 'confirm');
+    const confirm = post(`/reservations/${again.json('id')}/confirm`, null, 'confirm', data.token);
     check(confirm, {
       'expiry: confirm returns a number': (r) => r.status === 200 && r.json('copyNumber') >= 1,
     });

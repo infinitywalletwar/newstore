@@ -101,7 +101,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 
 - Every container image runs on arm64, because the owner's Mac is Apple Silicon. Pin exact image tags in `compose.yaml`.
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
-- Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
+- Local-only credentials appear only in `compose.yaml`, `compose.load.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - Host ports:
 
   | Port | What |
