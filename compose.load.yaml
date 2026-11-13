@@ -1,13 +1,19 @@
 # Overlay for the last-copy load test (tests/load/README.md):
 #   docker compose -f compose.yaml -f compose.load.yaml up -d --wait
 #   docker compose -f compose.yaml -f compose.load.yaml run --rm k6
-# It shortens Inventory's reservation TTL (so the expiry scenario runs in seconds), lets the k6 client in at the gateway, Orders
-# and Inventory, and switches on FakePay's test endpoints. Never use it as a base stack.
+# It shortens Inventory's reservation TTL to 30 s (so the expiry scenario runs in half a minute), lets the k6 client in at the
+# gateway, Orders and Inventory, and switches on FakePay's test endpoints. Never use it as a base stack.
+#
+# The TTL has one source, RESERVATION_TTL_SECONDS (default 30, below 60 because it is written as 00:00:SS). Inventory gets it as a
+# TimeSpan and k6 as a number of seconds, so the expiry scenario's wait and the steady scenario's start cannot drift from it.
+# Why 30 s: Orders reserves in Inventory first and saves its own order after, so a winner's 201 comes later than the hold. On a
+# slow CI runner the burst's reserve took up to 5.6 s, longer than the old 3 s TTL, and the winners' Pay found the hold swept
+# (#102). Passing runs still left the winners under a second of margin. 30 s is several times the slowest reserve seen.
 services:
   inventory:
     environment:
-      Inventory__ReservationTtl: "00:00:03"
-      Inventory__ExpirySweepInterval: "00:00:01"
+      Inventory__ReservationTtl: "00:00:${RESERVATION_TTL_SECONDS:-30}"
+      Inventory__ExpirySweepInterval: "00:00:01" # last-copy.js assumes 1 s (SWEEP_SECONDS)
       Inventory__ReserveStrategy: ${RESERVE_STRATEGY:-ConditionalUpdate}
       # The k6 client (tests/load/keycloak.js) signs users in like the gateway does, so every service that checks a user's
       # token takes it as a second user client.
@@ -30,7 +36,7 @@ services:
     image: grafana/k6:2.3.0
     profiles: [load]
     volumes: ["./tests/load:/scripts:ro"]
-    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "-e", "BURST_P99_MS=${BURST_P99_MS:-3000}", "--summary-trend-stats=med,p(95),p(99),max"]
+    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "-e", "BURST_P99_MS=${BURST_P99_MS:-3000}", "-e", "RESERVATION_TTL_SECONDS=${RESERVATION_TTL_SECONDS:-30}", "--summary-trend-stats=med,p(95),p(99),max"]
     environment:
       FAKEPAY_URL: http://fakepay:8080
       # setup() creates the client `k6` and the buyers through the admin API, with Keycloak's local admin (AGENTS.md).

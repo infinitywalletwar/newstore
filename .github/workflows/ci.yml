@@ -101,7 +101,7 @@ jobs:
         run: docker compose -f compose.yaml -f compose.load.yaml down --volumes
 
   # The browser test (tests/e2e). It runs on the base stack, with the real reservation TTL, so it cannot share compose-smoke's
-  # stack with the load overlay's 3-second TTL. The owner's rule is no browser on the Mac, so this job is the only place it runs.
+  # stack with the load overlay's 30-second TTL. The owner's rule is no browser on the Mac, so this job is the only place it runs.
   e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -16,6 +16,11 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:8100';
 const FAKEPAY_URL = __ENV.FAKEPAY_URL || 'http://localhost:8105';
 const P99_MS = __ENV.P99_MS || '1000';
 const BURST_P99_MS = __ENV.BURST_P99_MS || '3000';
+// The overlay's one source for the reservation TTL (compose.load.yaml gives the same number to Inventory). 30 s, not 3 s: a
+// winner's 201 arrives after Inventory committed the hold (Orders saves its order after reserving), and on a slow CI runner the
+// burst's reserve took up to 5.6 s (#102). The sweep interval is the overlay's 1 s.
+const RESERVATION_TTL_SECONDS = Number(__ENV.RESERVATION_TTL_SECONDS || '30');
+const SWEEP_SECONDS = 1;
 const COPIES = 10;
 const BUYERS = 1000;
 // 1,000 buyers, plus ten holders and ten new buyers in the expiry scenario.
@@ -36,15 +41,21 @@ const START_DELAY_MS = 20_000;
 // 1 s: tests/load/README.md). It ramps for 15 s so the processes and pools grow into it, then holds for 10 s.
 const STEADY_RATE = 300;
 // Buyers sign in once per VU and buy from many editions in turn, so a buyer is not handed its own open order back (a 200, not a
-// reservation) before the 3 s hold has expired: 100 editions keep a VU's repeat on the same edition 5 s or more apart.
+// reservation) while its hold is still open. With the 30 s TTL a VU must not come back to an edition at all during the run: the
+// scenario lasts 25 s, so the threshold steady_vu_turns (below) fails if any VU reaches its 101st edition.
 const STEADY_EDITIONS = 100;
-const STEADY_START = '40s';
+// The expiry scenario waits for the TTL, the sweep and a margin after the burst starts; the steady load starts after it has
+// finished, so the expiry scenario's pays and polls do not disturb the steady numbers.
+const EXPIRY_WAIT_SECONDS = RESERVATION_TTL_SECONDS + SWEEP_SECONDS + 2;
+const STEADY_START = `${Math.ceil(START_DELAY_MS / 1000 + EXPIRY_WAIT_SECONDS + 15)}s`;
 
 const copiesConfirmed = new Counter('copies_confirmed');
 const soldOut = new Counter('sold_out');
 const serverErrors = new Counter('server_errors');
 // How long after `startAt` a VU was ready (0 or less: it waited for the others). A positive p95 means the burst was spread out.
 const lateStart = new Trend('late_start_ms');
+// The turn number (1 for the first buy) of every steady iteration. Its max is the most editions one VU walked through.
+const steadyVuTurns = new Trend('steady_vu_turns');
 
 // VU-local state of the steady scenario: each VU signs in once.
 let steadyToken = null;
@@ -63,8 +74,8 @@ export const options = {
       iterations: 1,
       maxDuration: '3m',
     },
-    // Ten buyers hold the second edition's ten copies and never pay. The overlay's 3 s TTL and 1 s sweep give the copies
-    // back, and ten new buyers get them and pay.
+    // Ten buyers hold the second edition's ten copies and never pay. The overlay's TTL and 1 s sweep give the copies back,
+    // and ten new buyers get them and pay.
     expiry: {
       executor: 'per-vu-iterations',
       exec: 'expiry',
@@ -72,7 +83,7 @@ export const options = {
       iterations: 1,
       maxDuration: '3m',
     },
-    // Starts after the burst has finished (it ends about 30 s in).
+    // Starts after the burst and the expiry scenario have finished (STEADY_START).
     steady: {
       executor: 'ramping-arrival-rate',
       exec: 'steady',
@@ -100,6 +111,9 @@ export const options = {
     // At 300/s with maxVUs 600 this trips when the mean reserve latency passes about 2 s (600 VUs / 300 per s), which can be before
     // P99_MS does: if CI fails, check dropped_iterations first.
     dropped_iterations: ['count==0'],
+    // A guard that names its cause: it fails when a steady VU reaches its 101st edition, because the VU would meet its own open
+    // order (a 200, not a 201) and 'steady: the buy is 201' would fail for that reason. Raise STEADY_EDITIONS if it ever does.
+    steady_vu_turns: ['max<=' + STEADY_EDITIONS],
     // Not limits: with a threshold on the tag, the k6 summary printed that tag's own line in every run, which the README's table reads.
     'http_req_duration{name:login}': ['p(99)<60000'],
     'http_req_duration{name:pay}': ['p(99)<60000'],
@@ -227,8 +241,8 @@ export function expiry(data) {
   const held = buy(data.second, holderToken);
   check(held, { 'expiry: the hold is 201': (r) => r.status === 201 });
 
-  // TTL 3 s + sweep 1 s + margin.
-  sleep(6);
+  // TTL + sweep + margin.
+  sleep(EXPIRY_WAIT_SECONDS);
 
   const again = buy(data.second, buyerToken);
   check(again, { 'expiry: a new buyer after expiry gets 201': (r) => r.status === 201 });
@@ -244,6 +258,7 @@ export function steady(data) {
     steadyToken = passwordToken(data.users[exec.vu.idInTest % BUYERS], BUYER_PASSWORD);
   }
   const edition = data.steady[(exec.vu.idInTest + steadyTurn++) % STEADY_EDITIONS];
+  steadyVuTurns.add(steadyTurn);
   const order = call('POST', '/api/orders', { editionId: edition }, 'reserve-steady', steadyToken);
   check(order, { 'steady: the buy is 201': (r) => r.status === 201 });
 }
