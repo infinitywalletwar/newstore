@@ -50,11 +50,13 @@ describe('auth', () => {
     await loaded;
     expect(auth.isSignedIn()).toBe(true);
 
-    http.get('/api/me/copies').subscribe({ error: (e: HttpErrorResponse) => expect(e.status).toBe(401) });
+    let received: HttpErrorResponse | undefined;
+    http.get('/api/me/copies').subscribe({ error: (e: HttpErrorResponse) => (received = e) });
     backend
       .expectOne('/api/me/copies')
       .flush({ type: 'urn:newstore:problem:session-expired', title: 'Your session ended. Sign in again.' }, { status: 401, statusText: 'Unauthorized' });
 
+    expect(received?.status).toBe(401);
     expect(auth.isSignedIn()).toBe(false);
     expect(auth.notice()).toBe('Your session ended. Sign in again.');
   });

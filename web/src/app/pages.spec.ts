@@ -129,6 +129,43 @@ describe('pages', () => {
     backend.expectNone('/api/orders/o1');
   });
 
+  it('Order_page_keeps_polling_after_a_failed_poll', () => {
+    vi.useFakeTimers();
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Paying' }));
+
+    vi.advanceTimersByTime(1000);
+    backend.expectOne('/api/orders/o1').flush({ title: 'Down' }, { status: 503, statusText: 'Service Unavailable' });
+    f.detectChanges();
+    expect(q(f, 'refresh-failed')?.textContent).toContain("Couldn't refresh the status; trying again.");
+    expect(q(f, 'order-status')?.textContent).toContain('Paying');
+
+    vi.advanceTimersByTime(1000);
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Completed', copyNumber: 7 }));
+    f.detectChanges();
+    expect(q(f, 'refresh-failed')).toBeNull();
+    expect(q(f, 'copy-number')?.textContent).toContain('7');
+  });
+
+  it('Order_page_gives_up_at_the_limit_when_every_poll_fails', () => {
+    vi.useFakeTimers();
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Paying' }));
+    for (let i = 0; i < 120; i++) {
+      vi.advanceTimersByTime(1000);
+      backend.expectOne('/api/orders/o1').flush({}, { status: 503, statusText: 'Service Unavailable' });
+    }
+    f.detectChanges();
+
+    expect(q(f, 'poll-timeout')?.textContent).toContain('Still processing, refresh later');
+    vi.advanceTimersByTime(5000);
+    backend.expectNone('/api/orders/o1');
+  });
+
   it('Order_page_pay_sends_the_browser_to_the_checkout', () => {
     const { backend } = setup('o1');
     const f = TestBed.createComponent(OrderPageComponent);

@@ -8,7 +8,7 @@ import { PagedResult, VideoSummary } from '../api/models';
   imports: [RouterLink],
   template: `
     <h1>Videos</h1>
-    <input type="search" placeholder="Search videos" data-testid="search" [value]="query()" (input)="search($any($event.target).value)" />
+    <input type="search" placeholder="Search videos" aria-label="Search videos" data-testid="search" [value]="query()" (input)="search($any($event.target).value)" />
     @if (error()) {
       <p class="error">Could not load videos.</p>
     }

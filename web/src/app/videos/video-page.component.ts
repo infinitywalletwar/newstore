@@ -29,7 +29,7 @@ import { AuthService } from '../auth/auth.service';
       </div>
     }
     @if (buyError(); as message) {
-      <p class="error" data-testid="buy-error">{{ message }}</p>
+      <p class="error" role="alert" data-testid="buy-error">{{ message }}</p>
     }
   `,
 })

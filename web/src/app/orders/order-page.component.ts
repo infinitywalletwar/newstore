@@ -32,6 +32,9 @@ const POLL_LIMIT_MS = 2 * 60 * 1000;
           <p>The payment failed.</p>
         }
       }
+      @if (refreshFailed()) {
+        <p role="status" data-testid="refresh-failed">Couldn't refresh the status; trying again.</p>
+      }
       @if (timedOut()) {
         <p data-testid="poll-timeout">Still processing, refresh later.</p>
       }
@@ -39,7 +42,7 @@ const POLL_LIMIT_MS = 2 * 60 * 1000;
       <p class="error">{{ message }}</p>
     }
     @if (payError(); as message) {
-      <p class="error" data-testid="pay-error">{{ message }}</p>
+      <p class="error" role="alert" data-testid="pay-error">{{ message }}</p>
     }
   `,
 })
@@ -53,6 +56,7 @@ export class OrderPageComponent {
   protected readonly order = signal<Order | null>(null);
   protected readonly loadError = signal<string | null>(null);
   protected readonly payError = signal<string | null>(null);
+  protected readonly refreshFailed = signal(false);
   protected readonly paying = signal(false);
   protected readonly timedOut = signal(false);
 
@@ -66,9 +70,17 @@ export class OrderPageComponent {
     this.http.get<Order>(`/api/orders/${this.id}`).subscribe({
       next: (order) => {
         this.order.set(order);
+        this.refreshFailed.set(false);
         this.schedulePoll(order);
       },
       error: (error: unknown) => {
+        // A poll that fails after the first load is not the end: keep the last status and try again until the limit.
+        const last = this.order();
+        if (last) {
+          this.refreshFailed.set(true);
+          this.schedulePoll(last);
+          return;
+        }
         this.loadError.set(error instanceof HttpErrorResponse && error.status === 404 ? 'No such order.' : problemTitle(error));
       },
     });
