@@ -5,4 +5,8 @@
     <PackageReference Include="Npgsql.DependencyInjection" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The Web SDK already globs .json files in as Content; Update sets that item to be copied to the build output and the publish folder the image takes. -->
+    <Content Update="Seed\sample-editions.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

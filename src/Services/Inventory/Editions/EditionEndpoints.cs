@@ -1,35 +1,89 @@
+using System.Security.Claims;
+
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+
+using NewStore.Messaging;
+using NewStore.ServiceDefaults.Security;
 
 namespace NewStore.Inventory;
 
-public static class EditionEndpoints
+public static partial class EditionEndpoints
 {
     public const int MaxCopies = 10_000;
 
     public static IEndpointRouteBuilder MapEditionEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/editions");
-        group.MapPost("/", CreateAsync);
+        // Reading an edition is public. Everything else needs a signed-in user, and the ones on an existing
+        // edition also check that the user is its creator (AuthorizeCreatorAsync).
         group.MapGet("/{id:guid}", GetAsync);
-        group.MapGet("/{id:guid}/copies", GetCopiesAsync);
-        group.MapPatch("/{id:guid}", UpdateAsync);
-        group.MapPost("/{id:guid}/end-sale", EndSaleAsync);
+        group.MapPost("/", CreateAsync).RequireAuthorization(Policies.SignedIn);
+        group.MapGet("/{id:guid}/copies", GetCopiesAsync).RequireAuthorization(Policies.SignedIn);
+        group.MapPatch("/{id:guid}", UpdateAsync).RequireAuthorization(Policies.SignedIn);
+        group.MapPost("/{id:guid}/end-sale", EndSaleAsync).RequireAuthorization(Policies.SignedIn);
         return routes;
     }
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Catalog could not say who owns video {VideoId}.")]
+    private static partial void LogCatalogUnavailable(ILogger logger, Exception exception, Guid videoId);
+
+    /// <summary>
+    /// Loads the edition and asks <see cref="EditionOwnerHandler"/> whether the user is its creator. Returns the reply to send
+    /// when not: 404 for an unknown edition, 403 for someone else's. Null means go on.
+    /// </summary>
+    private static async Task<IResult?> AuthorizeCreatorAsync(
+        Guid id, ClaimsPrincipal user, IAuthorizationService authorization, InventoryDbContext db, CancellationToken ct)
+    {
+        var edition = await db.Editions.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (edition is null)
+        {
+            return Problems.NotFound("Edition");
+        }
+
+        // The edition may change before the write below, but its creator never does, so a stale read cannot let the wrong user in.
+        var result = await authorization.AuthorizeAsync(user, edition, new EditionOwnerRequirement());
+        return result.Succeeded
+            ? null
+            : Problems.Forbidden("not-your-edition", "This edition belongs to another creator.");
+    }
+
     private static async Task<IResult> CreateAsync(
-        CreateEditionRequest request, InventoryDbContext db, TimeProvider time, CancellationToken ct)
+        CreateEditionRequest request, ClaimsPrincipal user, InventoryDbContext db, CatalogClient catalog, TimeProvider time,
+        ILogger<CatalogClient> logger, CancellationToken ct)
     {
         if (Validate(request) is { Count: > 0 } errors)
         {
             return Problems.Validation(errors);
         }
 
+        Guid? videoOwner;
+        try
+        {
+            videoOwner = await catalog.GetVideoOwnerAsync(request.VideoId, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TransientFailureException)
+        {
+            LogCatalogUnavailable(logger, e, request.VideoId);
+            return Problems.Unavailable("dependency-unavailable", "The catalog is not reachable. Try again shortly.");
+        }
+
+        if (videoOwner is null)
+        {
+            return Problems.Validation(new() { ["videoId"] = ["videoId names no video."] });
+        }
+
+        var creatorId = user.UserId();
+        if (videoOwner != creatorId)
+        {
+            return Problems.Forbidden("not-your-video", "This video belongs to another creator.");
+        }
+
         var edition = new Edition
         {
             Id = Guid.CreateVersion7(),
             VideoId = request.VideoId,
-            CreatorId = request.CreatorId,
+            CreatorId = creatorId,
             Format = Enum.Parse<EditionFormat>(request.Format!, ignoreCase: true),
             Price = request.Price,
             CopiesTotal = request.Copies,
@@ -47,11 +101,12 @@ public static class EditionEndpoints
             ? Results.Ok(EditionResponse.From(edition))
             : Problems.NotFound("Edition");
 
-    private static async Task<IResult> GetCopiesAsync(Guid id, InventoryDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetCopiesAsync(
+        Guid id, ClaimsPrincipal user, IAuthorizationService authorization, InventoryDbContext db, CancellationToken ct)
     {
-        if (!await db.Editions.AnyAsync(e => e.Id == id, ct))
+        if (await AuthorizeCreatorAsync(id, user, authorization, db, ct) is { } refusal)
         {
-            return Problems.NotFound("Edition");
+            return refusal;
         }
 
         var copies = await db.Copies
@@ -63,8 +118,14 @@ public static class EditionEndpoints
     }
 
     private static async Task<IResult> UpdateAsync(
-        Guid id, UpdateEditionRequest request, InventoryDbContext db, CancellationToken ct)
+        Guid id, UpdateEditionRequest request, ClaimsPrincipal user, IAuthorizationService authorization,
+        InventoryDbContext db, CancellationToken ct)
     {
+        if (await AuthorizeCreatorAsync(id, user, authorization, db, ct) is { } refusal)
+        {
+            return refusal;
+        }
+
         if (Validate(request) is { Count: > 0 } errors)
         {
             return Problems.Validation(errors);
@@ -97,8 +158,15 @@ public static class EditionEndpoints
             : Problems.Conflict("edition-locked", "The price and the number of copies are fixed once a copy is reserved.");
     }
 
-    private static async Task<IResult> EndSaleAsync(Guid id, InventoryDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> EndSaleAsync(
+        Guid id, ClaimsPrincipal user, IAuthorizationService authorization, InventoryDbContext db, TimeProvider time,
+        CancellationToken ct)
     {
+        if (await AuthorizeCreatorAsync(id, user, authorization, db, ct) is { } refusal)
+        {
+            return refusal;
+        }
+
         var now = time.GetUtcNowToMicrosecond();
 
         // Once: the second call matches nothing and changes nothing, and still answers 200.
@@ -141,11 +209,6 @@ public static class EditionEndpoints
         if (request.VideoId == Guid.Empty)
         {
             errors["videoId"] = ["videoId is required."];
-        }
-
-        if (request.CreatorId == Guid.Empty)
-        {
-            errors["creatorId"] = ["creatorId is required."];
         }
 
         // TryParse also accepts numbers such as "7"; IsDefined rejects those that name no member.

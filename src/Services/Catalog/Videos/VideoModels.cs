@@ -6,3 +6,6 @@ public sealed record VideoSummary(Guid Id, string Title, int DurationSeconds, Da
 
 public sealed record VideoDetails(
     Guid Id, string Title, string Description, int DurationSeconds, DateTimeOffset PublishedAt, ChannelRef Channel);
+
+/// <summary>Who owns a video: the creator of its channel. Inventory asks for it before it lets a creator sell the video.</summary>
+public sealed record VideoOwner(Guid VideoId, Guid CreatorId);

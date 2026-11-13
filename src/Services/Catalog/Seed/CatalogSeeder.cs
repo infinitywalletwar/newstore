@@ -45,7 +45,7 @@ public sealed class CatalogSeeder(TimeProvider time) : IDatabaseSeeder<CatalogDb
             db.Channels.Add(channel);
             db.Videos.AddRange(sampleChannel.Videos.Select(v => new Video
             {
-                Id = Guid.CreateVersion7(),
+                Id = v.Id,
                 ChannelId = channel.Id,
                 Title = v.Title,
                 Description = v.Description,
@@ -62,5 +62,5 @@ public sealed class CatalogSeeder(TimeProvider time) : IDatabaseSeeder<CatalogDb
     private sealed record SampleChannel(
         Guid CreatorId, string Name, string Slug, string Description, List<SampleVideo> Videos);
 
-    private sealed record SampleVideo(string Title, string Description, int DurationSeconds, DateTimeOffset PublishedAt);
+    private sealed record SampleVideo(Guid Id, string Title, string Description, int DurationSeconds, DateTimeOffset PublishedAt);
 }

@@ -198,6 +198,34 @@ public abstract class ReservationTests(InventoryFixture fixture)
     }
 
     [Fact]
+    public async Task Retry_of_an_expired_or_released_reservation_returns_it_with_its_status()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 3);
+        var (expiredId, expiredBuyer) = (Guid.NewGuid(), Guid.NewGuid());
+        var (releasedId, releasedBuyer) = (Guid.NewGuid(), Guid.NewGuid());
+        await client.ReserveAsync(edition.Id, expiredBuyer, expiredId);
+        await client.ReserveAsync(edition.Id, releasedBuyer, releasedId);
+        await client.ReleaseAsync(releasedId);
+
+        // Past the TTL: confirm expires it if the sweeper has not yet.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1));
+        await client.ConfirmAsync(expiredId);
+        Assert.Equal(3, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+
+        var expired = await client.ReserveAsync(edition.Id, expiredBuyer, expiredId);
+        var released = await client.ReserveAsync(edition.Id, releasedBuyer, releasedId);
+
+        Assert.Equal(HttpStatusCode.OK, expired.StatusCode);
+        Assert.Equal("Expired", (await expired.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Status);
+        Assert.Equal(HttpStatusCode.OK, released.StatusCode);
+        Assert.Equal("Released", (await released.Content.ReadFromJsonAsync<ReservationDto>(Ct))!.Status);
+
+        // A copy was free, so a retry may reach the decrement; whatever it took, it gave back.
+        Assert.Equal(3, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
     public async Task Reserve_response_carries_the_price_format_and_video()
     {
         using var client = fixture.CreateClient();
