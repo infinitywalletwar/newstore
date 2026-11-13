@@ -133,6 +133,24 @@ public class PayTests
     }
 
     [Fact]
+    public async Task Pay_that_loses_three_races_answers_like_the_success_path_when_the_deadline_is_already_stored()
+    {
+        var buyer = Guid.NewGuid();
+        var order = await _fixture.BuyAsync(buyer);
+        // The deadline save loses three times: twice to a writer that only touches the row, and the third time to one that has
+        // stored the very deadline this request wanted (a parallel pay). The payment that request wanted is the one it still makes.
+        _fixture.Conflicts.LoseNext(order.Id, losses: 3, storeDeadlineOnLastLoss: true);
+
+        var response = await PayAsync(buyer, order.Id);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var stored = await _fixture.GetOrderAsync(order.Id);
+        Assert.Equal(OrderStatus.Paying, stored.Status);
+        Assert.Equal(stored.CheckoutUrl, (await response.Content.ReadFromJsonAsync<PayResponse>(Ct))!.CheckoutUrl);
+        Assert.Single(_fixture.Payments.CreatesFor(order.Id));
+    }
+
+    [Fact]
     public async Task Payments_down_on_pay_keeps_the_holds_deadline()
     {
         var buyer = Guid.NewGuid();

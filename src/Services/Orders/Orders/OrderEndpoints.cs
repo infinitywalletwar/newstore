@@ -159,7 +159,7 @@ public static class OrderEndpoints
     /// <item>The order is still <c>Reserved</c> (the other writer was a parallel pay that only saved the hold's deadline) and
     /// <paramref name="alreadyDone"/> says the change is already stored: return true without writing.</item>
     /// <item>The order is still <c>Reserved</c> and the change is not stored: apply it again and save, at most three tries in all.</item>
-    /// <item>The order moved on, or the third try lost as well: return false with the order as the winner left it, and the caller
+    /// <item>The order moved on, or the third try lost as well with the change not stored: return false with the order as the winner left it, and the caller
     /// answers from that.</item>
     /// </list>
     /// </summary>
@@ -179,14 +179,16 @@ public static class OrderEndpoints
             catch (DbUpdateConcurrencyException)
             {
                 await db.Entry(order).ReloadAsync(ct);
+                // Checked before the last try is given up: a request that lost every try, with the change stored by the winner,
+                // has what it wanted and answers like the one that saved.
+                if (order.Status == OrderStatus.Reserved && alreadyDone?.Invoke(order) == true)
+                {
+                    return true;
+                }
+
                 if (order.Status != OrderStatus.Reserved || attempt == MaxTries)
                 {
                     return false;
-                }
-
-                if (alreadyDone?.Invoke(order) == true)
-                {
-                    return true;
                 }
             }
         }
