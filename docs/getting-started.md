@@ -7,6 +7,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 | 0 Foundation (done 2026-11-05) | [`2026-11-03-phase-0-foundation.md`](plans/2026-11-03-phase-0-foundation.md) | [`sprint-01.md`](sprints/sprint-01.md) |
 | 1a Buy the last copy (done 2026-11-07; mock interview 2026-11-11) | [`2026-11-06-phase-1a-last-copy.md`](plans/2026-11-06-phase-1a-last-copy.md) | [`sprint-02.md`](sprints/sprint-02.md) |
 | 1b Checkout (done 2026-11-13; mock interview to come) | [`2026-11-09-phase-1b-checkout.md`](plans/2026-11-09-phase-1b-checkout.md) | [`sprint-03.md`](sprints/sprint-03.md) |
+| 2 Video pipeline (in progress) | [`2026-11-14-phase-2-video-pipeline.md`](plans/2026-11-14-phase-2-video-pipeline.md) | [`sprint-04.md`](sprints/sprint-04.md) |
 
 ## Already decided
 
@@ -23,6 +24,7 @@ This is the checklist for starting a newstore phase in a fresh Claude Code sessi
 | gh account and scopes | `gh auth status` | account `infinitywalletwar`, with `project`, `repo` and `workflow` among the scopes |
 | Tools | `command -v jq curl nc` | three paths |
 | Node, for the Angular app (from Phase 1b) | `node --version` | `v26.` followed by any version; Angular 22.2 supports `>=26.0.0` |
+| FFmpeg, for Media's tests (from Phase 2) | `ffmpeg -version` | a first line starting with `ffmpeg version`; install it with `brew install ffmpeg` |
 
 If gh is missing a scope, Claude runs `gh auth refresh -h github.com -s <scope>` in the background and passes on the one-time code it prints. Approve the code at https://github.com/login/device while the browser is signed in as `infinitywalletwar`. Typing `! gh auth refresh` in the prompt fails, because the command needs an interactive terminal.
 
@@ -30,7 +32,7 @@ If gh is missing a scope, Claude runs `gh auth refresh -h github.com -s <scope>`
 
 The roadmap's learning loop says to read the stage's topics before the phase starts. They're in `~/Dev/stdy/roadmap/`. If you'd rather read as you go, read each task's topics before you review its pull request.
 
-**Phase 2.** Its Stage 2 topics are planned but not written yet: S3 and presigned URLs, background processing and resumable work, and large files and streaming. They come before the Phase 2 plan.
+**Phase 2** reads Stage 2 topics 01 to 03: S3 and presigned URLs, Background processing and resumable work, and Large files and streaming (`stage-2-video-pipeline/`). Its tasks also point back to Stage 1's outbox, idempotent consumers and YARP topics.
 
 **Phase 1b** read Stage 1 topics 08 to 13: Sagas, OAuth 2.0, OIDC and JWT, Async/await in depth, Authorization policies, API gateway with YARP and Resilience. **Phase 1a** read Stage 1 topics 01 to 07 and Stage 4's caching with HybridCache. **Phase 0** read Stage 0 topics 01 to 09. Each plan's task headings say which topic goes with which task.
 
