@@ -117,10 +117,10 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   | 5101 | Catalog with `dotnet run` |
   | 8102 | Inventory in Compose |
   | 5102 | Inventory with `dotnet run` |
-| 8104 | Payments in Compose |
-| 5104 | Payments with `dotnet run` |
-| 8105 | FakePay in Compose. A browser reaches the checkout page here. |
-| 5105 | FakePay with `dotnet run` |
+  | 8104 | Payments in Compose |
+  | 5104 | Payments with `dotnet run` |
+  | 8105 | FakePay in Compose. A browser reaches the checkout page here. |
+  | 5105 | FakePay with `dotnet run` |
 
   Each new service takes the next number: 81NN in Compose and 51NN with `dotnet run`.
 

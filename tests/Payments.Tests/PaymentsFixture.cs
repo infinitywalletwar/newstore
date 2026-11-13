@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 
 using NewStore.Messaging.Outbox;
 using NewStore.Payments.Payments;
@@ -21,6 +22,9 @@ public sealed class PaymentsFixture(PostgresServer postgres, KafkaServer kafka) 
 {
     internal FakePayStub Provider { get; } = new();
 
+    /// <summary>Every log record the app writes.</summary>
+    public LogCapture Logs { get; } = new();
+
     public KafkaServer Kafka => kafka;
 
     public async ValueTask InitializeAsync()
@@ -31,6 +35,10 @@ public sealed class PaymentsFixture(PostgresServer postgres, KafkaServer kafka) 
         // Retries after a transient failure start quickly, so a test about them does not take minutes.
         Settings["Messaging:TransientRetryPause"] = "00:00:00.050";
         Settings["Messaging:MaxTransientRetryPause"] = "00:00:00.200";
+        // One handler attempt for a failure that is not transient. A transient failure ignores this limit, so a test that keeps the
+        // provider down for several handler runs shows that the failure is classified as transient: if it were not, the message
+        // would be dead-lettered after the first run.
+        Settings["Messaging:MaxHandlerAttempts"] = "1";
         Settings["Payments:Provider:BaseUrl"] = "http://fakepay.test";
         Settings["Payments:Provider:ApiKey"] = "test-key";
         Settings["Payments:Provider:WebhookSecret"] = TestWebhooks.Secret;
@@ -42,10 +50,15 @@ public sealed class PaymentsFixture(PostgresServer postgres, KafkaServer kafka) 
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
-            services.UseStubHandler<IPaymentProvider>(Provider.Handler);
-            // The standard pipeline waits seconds between attempts, and retries three times. One retry and no wait: a provider that
-            // is down fails the handler quickly, so the consumer's own retry is what the test sees.
-            services.ConfigureAll<HttpStandardResilienceOptions>(o =>
+            services.AddLogging(logging => logging.AddProvider(Logs));
+
+            // The stub goes below both of the provider's clients (the refund client is named after the interface).
+            services.AddHttpClient(nameof(IPaymentProvider)).ConfigurePrimaryHttpMessageHandler(() => Provider.Primary);
+            services.AddHttpClient(FakePayProvider.SessionClientName).ConfigurePrimaryHttpMessageHandler(() => Provider.Primary);
+
+            // Only the refund client's pipeline is trimmed: one retry and no wait, so a provider that is down fails the handler
+            // quickly and the consumer's own retry is what the test sees. The session client keeps the options the service ships.
+            services.Configure<HttpStandardResilienceOptions>(nameof(IPaymentProvider) + "-standard", o =>
             {
                 o.Retry.MaxRetryAttempts = 1;
                 o.Retry.Delay = TimeSpan.Zero;

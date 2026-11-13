@@ -19,22 +19,30 @@ public static partial class WebhookEndpoint
         HttpRequest request, IPaymentProvider provider, PaymentsDbContext db, IOutbox outbox, TimeProvider time,
         ILoggerFactory loggers, CancellationToken ct)
     {
-        // The signature covers the exact bytes, so read the body as text and pass it on untouched.
-        using var reader = new StreamReader(request.Body);
-        var body = await reader.ReadToEndAsync(ct);
+        var logger = loggers.CreateLogger("NewStore.Payments.Webhooks");
 
-        // 1. A bad signature or an old timestamp: refuse, change nothing.
+        // The endpoint is anonymous, so anyone can send a body of any size. Refuse a large one before reading it all, and before any
+        // signature work.
+        if (await ReadBodyAsync(request, ct) is not { } body)
+        {
+            return Problems.BodyTooLarge();
+        }
+
+        // 1. A bad signature, a stale timestamp or an unknown type: refuse, change nothing.
         if (provider.ReadWebhook(body, request.Headers) is not { } providerEvent)
         {
             return Problems.BadWebhook();
         }
 
-        var logger = loggers.CreateLogger("NewStore.Payments.Webhooks");
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         // 2. Remember the event id. The primary key makes a second insert of the same id do nothing, even when two deliveries
-        //    run at once: the second insert waits for the first transaction and then finds the key taken.
+        //    run at once. PostgreSQL: "If a conflicting row has been inserted by an as-yet-uncommitted transaction, the would-be
+        //    inserter must wait to see if that transaction commits. If it rolls back then there is no conflict. If it commits
+        //    without deleting the conflicting row again, there is a uniqueness violation"
+        //    (https://www.postgresql.org/docs/current/index-unique-checks.html); with ON CONFLICT DO NOTHING, that violation
+        //    becomes "no row inserted". The test Ten_parallel_deliveries_of_one_webhook_publish_once runs it.
         var firstTime = await db.Database.ExecuteSqlAsync(
             $"INSERT INTO provider_events (event_id, received_at) VALUES ({providerEvent.EventId}, {now}) ON CONFLICT DO NOTHING", ct);
         if (firstTime == 0)
@@ -98,10 +106,50 @@ public static partial class WebhookEndpoint
         }
 
         // 4. moved == 0: the attempt was not in Created, so nothing moved. The event id is still recorded, which is right: the
-        //    event was handled, and its answer was "no change".
+        //    event was handled, and its answer was "no change". One such case needs a person: the provider took money for a
+        //    payment we had already failed.
+        if (moved == 0 && providerEvent.Type == ProviderEventType.SessionCompleted)
+        {
+            CompletedButNotCreated(logger, providerEvent.EventId, attempt.Id, attempt.Status);
+        }
+
         await transaction.CommitAsync(ct);
         return Results.Ok();
     }
+
+    /// <summary>A webhook is a few hundred bytes. 16 KiB leaves room for a longer id or more fields and stops a flood of large bodies.</summary>
+    private const int MaxBodyBytes = 16 * 1024;
+
+    /// <summary>
+    /// The body as text, or null when it is larger than <see cref="MaxBodyBytes"/>. The signature covers the exact bytes, so the
+    /// text is handed on untouched.
+    /// </summary>
+    private static async Task<string?> ReadBodyAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (request.ContentLength > MaxBodyBytes)
+        {
+            return null;
+        }
+
+        // A body without a Content-Length (chunked) is counted as it is read.
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+        int read;
+        while ((read = await request.Body.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MaxBodyBytes)
+            {
+                return null;
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Webhook {EventId} says payment {PaymentId} was paid, but the payment is {Status}, so nothing moved. Money may have been taken for a payment we gave up on.")]
+    private static partial void CompletedButNotCreated(ILogger logger, string eventId, Guid paymentId, PaymentStatus status);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Webhook {EventId} was already handled; nothing changed.")]
     private static partial void DuplicateIgnored(ILogger logger, string eventId);

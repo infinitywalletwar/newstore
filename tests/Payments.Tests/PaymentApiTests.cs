@@ -15,6 +15,7 @@ public class PaymentApiTests(PaymentsFixture fixture)
     public async Task Create_payment_returns_the_checkout_url()
     {
         var orderId = Guid.NewGuid();
+        var before = DateTimeOffset.UtcNow;
 
         var payment = await fixture.CreatePaymentAsync(orderId, amount: 12.50m);
 
@@ -28,6 +29,12 @@ public class PaymentApiTests(PaymentsFixture fixture)
         var request = Assert.Single(fixture.Provider.SessionRequestsFor(orderId));
         Assert.Equal(payment.Id.ToString(), request.Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("Bearer test-key", request.Headers.Authorization?.ToString());
+
+        // The session is asked for 30 minutes plus a margin. The provider counts its 30-minute minimum from when the request arrives,
+        // so "exactly 30 minutes from the moment we built the request" would be refused.
+        var requestedExpiry = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(Ct))
+            .RootElement.GetProperty("expiresAt").GetDateTimeOffset();
+        Assert.InRange(requestedExpiry - before, TimeSpan.FromSeconds(30 * 60 + 20), TimeSpan.FromMinutes(31));
 
         using var client = fixture.CreateOrdersClient();
         var fetched = await client.GetFromJsonAsync<PaymentResponse>($"/payments/{payment.Id}", Ct);
@@ -116,6 +123,36 @@ public class PaymentApiTests(PaymentsFixture fixture)
         var payment = (await retry.Content.ReadFromJsonAsync<PaymentResponse>(Ct))!;
         Assert.Equal(kept.Id, payment.Id);
         Assert.NotNull(payment.CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task A_provider_that_never_answers_gives_503_within_the_session_budget_and_frees_the_lock()
+    {
+        // The shipped options: the fixture trims only the refund client's pipeline. Session creation holds a row lock and a
+        // transaction, so its pipeline must give up well inside Orders' 10 s attempt timeout (the standard handler's default).
+        var orderId = Guid.NewGuid();
+        fixture.Provider.HangSessions = true;
+        try
+        {
+            using var client = fixture.CreateOrdersClient();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+
+            var response = await client.PostAsJsonAsync("/payments", new { orderId, amount = 9.99m, returnUrl = "http://shop.test/orders" }, Ct);
+
+            watch.Stop();
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.True(response.Headers.RetryAfter is not null);
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(8), $"The 503 took {watch.Elapsed}.");
+        }
+        finally
+        {
+            fixture.Provider.HangSessions = false;
+        }
+
+        // The lock is gone: the next call for the same order does not wait, and finishes the payment.
+        using var retryClient = fixture.CreateOrdersClient();
+        var retry = await retryClient.PostAsJsonAsync("/payments", new { orderId, amount = 9.99m, returnUrl = "http://shop.test/orders" }, Ct);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
     }
 
     [Fact]

@@ -66,9 +66,10 @@ public class RefundTests(PaymentsFixture fixture)
         var request = Request(payment);
         var original = fixture.Provider.Refund;
         var calls = 0;
-        // Down for three requests, then up. With one retry inside the pipeline, the handler fails twice before it succeeds.
+        // Down for six requests, then up. The refund client retries once, so each handler run makes two requests: the handler runs
+        // three times and fails twice more than the fixture's MaxHandlerAttempts (1) would allow for an ordinary failure.
         fixture.Provider.Refund = r =>
-            Interlocked.Increment(ref calls) <= 3 ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : original(r);
+            Interlocked.Increment(ref calls) <= 6 ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : original(r);
         try
         {
             await fixture.Kafka.PublishAsync(OrderEvents.Topic, payment.OrderId.ToString(), request, Ct);
@@ -81,7 +82,7 @@ public class RefundTests(PaymentsFixture fixture)
             fixture.Provider.Refund = original;
         }
 
-        Assert.True(calls >= 4, $"The provider saw {calls} refund requests.");
+        Assert.True(calls >= 7, $"The provider saw {calls} refund requests.");
         Assert.Equal(1, await fixture.CountOutboxAsync<PaymentRefunded>(payment.OrderId));
         Assert.DoesNotContain(request.EventId, await DeadLetteredIdsAsync());
     }

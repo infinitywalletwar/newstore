@@ -14,12 +14,10 @@ public sealed record RefundRequest(string? SessionId);
 
 public static class SessionEndpoints
 {
-    // Stripe: expires_at "can be anywhere from 30 minutes to 24 hours after Checkout Session creation".
-    // A caller computes "now + 30 minutes" and the request needs a moment to arrive, so a few seconds of slack on the lower bound
-    // keep that caller from getting a 400 for arriving late.
+    // Stripe: expires_at "can be anywhere from 30 minutes to 24 hours after Checkout Session creation". Exact, as Stripe's range is:
+    // a caller that computes "now + 30 minutes" must add a margin of its own (Payments does: ProviderOptions.ExpiryMargin).
     private static readonly TimeSpan MinLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan MaxLifetime = TimeSpan.FromHours(24);
-    private static readonly TimeSpan Slack = TimeSpan.FromSeconds(10);
 
     public static IEndpointRouteBuilder MapSessionEndpoints(this IEndpointRouteBuilder routes, FakePayOptions options)
     {
@@ -59,7 +57,7 @@ public static class SessionEndpoints
             errors["successUrl"] = ["successUrl must be an absolute URL."];
         }
 
-        if (request.ExpiresAt < now + MinLifetime - Slack || request.ExpiresAt > now + MaxLifetime)
+        if (request.ExpiresAt < now + MinLifetime || request.ExpiresAt > now + MaxLifetime)
         {
             errors["expiresAt"] = ["expiresAt must be 30 minutes to 24 hours from now."];
         }

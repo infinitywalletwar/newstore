@@ -5,8 +5,8 @@ namespace NewStore.FakePay.Webhooks;
 /// <summary>Posts one webhook. A typed client, so tests put a stub behind it.</summary>
 public sealed class WebhookClient(HttpClient http)
 {
-    /// <summary>True when the receiver answered 2xx. A refusal, an unreachable receiver and a timeout are all "not delivered".</summary>
-    public async Task<bool> PostAsync(Uri url, string body, string signature, CancellationToken cancellationToken)
+    /// <summary>The receiver's answer, or null when there was none (unreachable, or a timeout). Only a 2xx counts as delivered.</summary>
+    public async Task<HttpResponseMessage?> PostAsync(Uri url, string body, string signature, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -15,17 +15,16 @@ public sealed class WebhookClient(HttpClient http)
         request.Headers.Add(WebhookSigner.HeaderName, signature);
         try
         {
-            using var response = await http.SendAsync(request, cancellationToken);
-            return response.IsSuccessStatusCode;
+            return await http.SendAsync(request, cancellationToken);
         }
         catch (HttpRequestException)
         {
-            return false;
+            return null;
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // HttpClient's own timeout.
-            return false;
+            return null;
         }
     }
 }

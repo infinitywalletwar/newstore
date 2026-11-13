@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -28,6 +26,10 @@ builder.Services.AddOptions<PaymentsOptions>()
             && !string.IsNullOrWhiteSpace(o.Provider.ApiKey)
             && !string.IsNullOrWhiteSpace(o.Provider.WebhookSecret),
         "Payments:Provider:BaseUrl, ApiKey and WebhookSecret are required.")
+    .Validate(o => o.Provider.SessionAttemptTimeout > TimeSpan.Zero
+            && o.Provider.SessionTotalTimeout > o.Provider.SessionAttemptTimeout
+            && o.Provider.SessionTotalTimeout <= TimeSpan.FromSeconds(8),
+        "Payments:Provider:SessionAttemptTimeout must be positive and below SessionTotalTimeout, which must be at most 8 s: the row lock is held that long, and the caller gives up after 10 s.")
     .Validate(o => o.SessionLifetime >= TimeSpan.FromMinutes(30) && o.SessionLifetime <= TimeSpan.FromHours(24),
         "Payments:SessionLifetime must be between 30 minutes and 24 hours, the provider's range.")
     .ValidateOnStart();
@@ -40,15 +42,8 @@ builder.AddMessaging<PaymentsDbContext>(m => m
 
 builder.Services.AddScoped<PaymentService>();
 
-// The provider client: FakePay's address and key from configuration, then the standard resilience pipeline (retry, circuit
-// breaker, timeouts). Retrying a POST is safe because every provider call carries an idempotency key.
-builder.Services.AddHttpClient<IPaymentProvider, FakePayProvider>((services, client) =>
-    {
-        var provider = services.GetRequiredService<IOptions<PaymentsOptions>>().Value.Provider;
-        client.BaseAddress = new Uri(provider.BaseUrl);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
-    })
-    .AddStandardResilienceHandler();
+// The provider's two clients, each with its own resilience pipeline.
+builder.Services.AddFakePayProvider();
 
 var app = builder.Build();
 

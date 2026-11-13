@@ -101,6 +101,36 @@ public class WebhookTests(PaymentsFixture fixture)
     }
 
     [Fact]
+    public async Task Completed_after_failed_changes_nothing_and_is_logged_as_a_warning()
+    {
+        var (payment, sessionId) = await NewPaymentAsync();
+        using var client = fixture.CreateClient();
+        await TestWebhooks.PostAsync(client, $"evt_{Guid.NewGuid():N}", TestWebhooks.Expired, sessionId);
+        var completedId = $"evt_{Guid.NewGuid():N}";
+
+        // Money was taken for a payment we had given up on. Nothing moves, and the log must say so.
+        var response = await TestWebhooks.PostAsync(client, completedId, TestWebhooks.Completed, sessionId);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(PaymentStatus.Failed, (await fixture.GetAttemptAsync(payment.Id)).Status);
+        Assert.Equal(0, await fixture.CountOutboxAsync<PaymentSucceeded>(payment.OrderId));
+        var warning = Assert.Single(fixture.Logs.Snapshot(), l => l.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && l.Message.Contains(completedId, StringComparison.Ordinal));
+        Assert.Contains(payment.Id.ToString(), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_body_over_the_limit_is_refused_before_the_signature_is_checked()
+    {
+        using var client = fixture.CreateClient();
+
+        // No signature at all: a signature check would answer 400. The size check comes first and answers 413.
+        var response = await client.PostAsync("/webhooks/fakepay", new StringContent(new string('x', 20 * 1024)), Ct);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Webhook_with_a_bad_signature_is_400_and_changes_nothing()
     {
         var (payment, sessionId) = await NewPaymentAsync();

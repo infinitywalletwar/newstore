@@ -23,17 +23,19 @@ public class SessionTests
     }
 
     [Theory]
-    [InlineData(10, false)]
-    [InlineData(29, false)]
-    [InlineData(30, true)]
-    [InlineData(23 * 60, true)]
-    [InlineData(25 * 60, false)]
-    public async Task Session_lifetime_outside_30_minutes_to_24_hours_is_400(int minutes, bool accepted)
+    [InlineData(10 * 60, false)]
+    [InlineData(30 * 60 - 1, false)]
+    [InlineData(30 * 60, true)]
+    [InlineData(23 * 60 * 60, true)]
+    [InlineData(24 * 60 * 60, true)]
+    [InlineData(24 * 60 * 60 + 1, false)]
+    public async Task Session_lifetime_outside_30_minutes_to_24_hours_is_400(int seconds, bool accepted)
     {
         await using var app = new FakePayApp();
         using var client = app.CreateApiClient();
 
-        var response = await app.PostSessionAsync(client, Guid.NewGuid().ToString(), TimeSpan.FromMinutes(minutes));
+        // The clock is fixed, so "now + N seconds" is exactly N seconds at the server: the boundaries are exact.
+        var response = await app.PostSessionAsync(client, Guid.NewGuid().ToString(), TimeSpan.FromSeconds(seconds));
 
         Assert.Equal(accepted ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -73,5 +75,20 @@ public class SessionTests
 
         var pay = await client.PostAsync($"/checkout/{session.Id}/pay", content: null, Ct);
         Assert.Equal(HttpStatusCode.Conflict, pay.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_session_past_its_expiry_is_not_payable_even_before_the_sweeper_marks_it()
+    {
+        // The sweeper's interval is longer than the time the test moves the clock, so it never runs here.
+        await using var app = new FakePayApp(sweepInterval: "10:00:00");
+        using var client = app.CreateApiClient();
+        var session = await app.CreateSessionAsync(client);
+
+        app.Clock.Advance(TimeSpan.FromMinutes(31));
+
+        Assert.Equal(HttpStatusCode.Conflict, (await client.GetAsync($"/checkout/{session.Id}", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/checkout/{session.Id}/pay", content: null, Ct)).StatusCode);
+        Assert.Empty(app.Webhooks());
     }
 }

@@ -21,14 +21,14 @@ internal sealed class FakePayApp : NewStoreAppFactory<Program>
     public const string ApiKey = "test-key";
     public const string WebhookSecret = "test-secret";
 
-    public FakePayApp(bool deliverTwice = false, bool enableTestEndpoints = false)
+    public FakePayApp(bool deliverTwice = false, bool enableTestEndpoints = false, string sweepInterval = "00:00:01")
     {
         Settings["FakePay:ApiKey"] = ApiKey;
         Settings["FakePay:WebhookSecret"] = WebhookSecret;
         Settings["FakePay:WebhookUrl"] = "http://payments.test/webhooks/fakepay";
         Settings["FakePay:PublicBaseUrl"] = "http://fakepay.test";
         Settings["FakePay:WebhookRetryInterval"] = "00:00:00.050";
-        Settings["FakePay:ExpirySweepInterval"] = "00:00:01";
+        Settings["FakePay:ExpirySweepInterval"] = sweepInterval;
         Settings["FakePay:DeliverTwice"] = deliverTwice.ToString();
         Settings["FakePay:EnableTestEndpoints"] = enableTestEndpoints.ToString();
         Receiver.On(HttpMethod.Post, "/webhooks/fakepay", request => ReceiverReply(request));

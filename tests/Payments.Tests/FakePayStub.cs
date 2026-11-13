@@ -21,6 +21,26 @@ internal sealed class FakePayStub
 
     public StubHttpHandler Handler { get; }
 
+    /// <summary>When true, session requests never answer, until the caller gives up. Refunds are not affected.</summary>
+    public bool HangSessions { get; set; }
+
+    /// <summary>What goes below the clients' resilience pipelines: the stub, behind a handler that can hang a session request.</summary>
+    public HttpMessageHandler Primary => field ??= new HangableHandler(this) { InnerHandler = Handler };
+
+    private sealed class HangableHandler(FakePayStub owner) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (owner.HangSessions && request.RequestUri!.AbsolutePath == "/v1/checkout/sessions")
+            {
+                // Only the caller's token ends this wait: the pipeline's timeout cancels it.
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
+
     public Func<HttpRequestMessage, HttpResponseMessage> CreateSession { get; set; } = request =>
     {
         var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult()).RootElement;

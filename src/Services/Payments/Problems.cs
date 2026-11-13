@@ -21,6 +21,9 @@ internal static class Problems
             type: Type("dependency-unavailable"));
     }
 
+    public static IResult BodyTooLarge() =>
+        Results.Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: "The webhook body is too large.", type: Type("body-too-large"));
+
     public static IResult BadWebhook() =>
-        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "The webhook's signature or timestamp is not valid.", type: Type("bad-webhook"));
+        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "The webhook has a bad signature, a stale timestamp or an unknown type.", type: Type("bad-webhook"));
 }

@@ -17,7 +17,11 @@ public interface IPaymentProvider
     /// <summary>Refunds the attempt's payment. The idempotency key is the attempt's id, so a repeated call refunds once.</summary>
     Task RefundAsync(PaymentAttempt attempt, CancellationToken ct);
 
-    /// <summary>Verifies and parses a webhook. Null when the signature or the timestamp is not valid.</summary>
+    /// <summary>
+    /// Verifies and parses a webhook. Null when the signature is bad, the timestamp is stale, or the event has a type the provider
+    /// never sends (the endpoint answers all three with 400). A real provider can send more types; its implementation will need a
+    /// way to say "valid, ignore it".
+    /// </summary>
     ProviderEvent? ReadWebhook(string body, IHeaderDictionary headers);
 }
 

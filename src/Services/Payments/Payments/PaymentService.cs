@@ -36,7 +36,7 @@ public sealed class PaymentService(PaymentsDbContext db, IPaymentProvider provid
 
     /// <summary>
     /// Locks the attempt's row, and then looks again before calling the provider: a call that waited for the lock finds the session
-    /// the first call stored and makes no request. The cost is a database connection held for the length of one provider call.
+    /// the first call stored and makes no request. The cost: a pooled connection, the row lock and the transaction stay for the whole provider call. That call has its own pipeline (<see cref="FakePayProviderRegistration"/>): at most one retry, 2 s per attempt and 5 s in all by default, so the lock is released well inside the caller's 10 s attempt timeout.
     /// </summary>
     private async Task<PaymentAttempt> EnsureSessionAsync(Guid attemptId, string returnUrl, CancellationToken ct)
     {

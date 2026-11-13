@@ -623,7 +623,7 @@ Branch `phase-1/payments`. Issue #71. Read: topic 08 (sagas: compensation). The 
   - payments sets `Payments__Provider__BaseUrl: http://fakepay:8080`;
   - payments' `Auth__Audience` is `payments`.
 
-- [x] **Step 1: FakePay, test-first**
+- [x] **Step 1: FakePay, test-first** (done in the other order: the tests were written after the code. The PR shows three mutation runs instead: dropping `DeliverTwice`, dropping the webhook retry and stopping the sweeper each fail one FakePay test.)
 
 Write `FakePay.Tests`:
 - `Same_idempotency_key_returns_the_same_session`

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 using NewStore.Messaging;
@@ -22,10 +24,17 @@ public class ProviderTests
             throw exception;
     }
 
-    private static FakePayProvider ProviderThatThrows(Exception exception) => new(
-        new HttpClient(new ThrowingHandler(exception)) { BaseAddress = new Uri("http://fakepay.test") },
-        Options.Create(new PaymentsOptions()),
-        TimeProvider.System);
+    private sealed class FixedClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private static FakePayProvider ProviderThatThrows(Exception exception)
+    {
+        var client = new HttpClient(new ThrowingHandler(exception)) { BaseAddress = new Uri("http://fakepay.test") };
+        return new FakePayProvider(
+            client, new FixedClientFactory(client), Options.Create(new PaymentsOptions()), TimeProvider.System, NullLogger<FakePayProvider>.Instance);
+    }
 
     private static PaymentAttempt Attempt() => new() { Id = Guid.NewGuid(), OrderId = Guid.NewGuid(), Amount = 5m, ProviderSessionId = "cs_1" };
 
@@ -58,5 +67,26 @@ public class ProviderTests
             provider.RefundAsync(Attempt(), TestContext.Current.CancellationToken));
 
         Assert.Same(rejection, thrown.InnerException);
+    }
+
+    [Fact]
+    public void A_signed_event_of_an_unknown_type_is_refused_and_logged_as_a_warning()
+    {
+        var capture = new LogCapture();
+        using var loggers = LoggerFactory.Create(logging => logging.AddProvider(capture));
+        var options = Options.Create(new PaymentsOptions { Provider = { WebhookSecret = TestWebhooks.Secret } });
+        var provider = new FakePayProvider(
+            new HttpClient(), new FixedClientFactory(new HttpClient()), options, TimeProvider.System, loggers.CreateLogger<FakePayProvider>());
+        var body = TestWebhooks.Body("evt_1", "checkout.session.something_new", "cs_1");
+        var headers = new Microsoft.AspNetCore.Http.HeaderDictionary
+        {
+            ["FakePay-Signature"] = TestWebhooks.Sign(body, DateTimeOffset.UtcNow),
+        };
+
+        var read = provider.ReadWebhook(body, headers);
+
+        Assert.Null(read);
+        var warning = Assert.Single(capture.Snapshot(), l => l.Level == LogLevel.Warning);
+        Assert.Contains("checkout.session.something_new", warning.Message, StringComparison.Ordinal);
     }
 }
