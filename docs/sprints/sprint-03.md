@@ -31,6 +31,8 @@ At the retro the owner asked for more weight on interview preparation: they lear
 3. **Short mock interviews two or three times a week:** five questions, three new ones from the bank and two repeats of earlier gaps.
 4. **Wave B waits for the question bank, then runs one pull request at a time.** Each walkthrough ends with three interview questions that its code answers. The review is answering them, using only the files the walkthrough names.
 
+   **Changed on 2026-11-13:** the owner chose to run wave B's three tasks at once after all, like waves A and C, so the Plan table above is what happened. The interview questions at the end of each walkthrough stayed.
+
 ## Review
 
 ## Retro
@@ -40,3 +42,44 @@ At the retro the owner asked for more weight on interview preparation: they lear
 ### What was hard
 
 ### Open questions
+
+### What the sprint built (Claude)
+
+All of it on 2026-11-09 and 2026-11-13. CI on `main` is green after the last merge (5ae5166), and on 2026-11-13 the owner bought a copy by hand on a stack started from a clean clone of `main` (check 3 of "Phase 1b is done when").
+
+| Pull request | Issue | What |
+|---|---|---|
+| #77 | | The Phase 1b plan, with its decisions in the README |
+| #78 | #68 | Wave A, Task 1: a transient handler failure is retried without a limit |
+| #79 | #69 | Wave A, Task 2: the Keycloak realm, token validation and service clients |
+| #80 | | A messaging test waits for the inbox row, not the handler probe |
+| #94 | #70 | Wave B, Task 3: Inventory holds a reservation while the buyer pays, with a caller-supplied id |
+| #95 | #72 | Wave B, Task 5: the gateway as a backend for the browser, with Keycloak sign-in |
+| #96 | #71 | Wave B, Task 4: Payments and FakePay, with signed webhooks and refunds |
+| #98, #100 | #97 | Reserve's p99 regressed after Task 3: fewer round trips, and CI's threshold stays at 3.5 s |
+| #99 | #75 | Wave C, Task 8: the Angular app, served by the gateway |
+| #103 | #73 | Wave C, Task 6: creators open a channel and manage only their own editions |
+| #104 | #74 | Wave C, Task 7: the checkout saga in Orders |
+| #105 | #101 | Payments treats a rate-limiter rejection from FakePay as transient |
+| #106 | #76 | Wave D, Task 9: e2e in CI, and the load test through the gateway |
+| #108 | #107 | The SDK, images and packages aligned on 10.0.404 / 10.0.15 |
+| #85–#87, #109 | | Dependabot: k6 2.3.0, the OpenTelemetry Collector and minor package updates |
+
+Still open: #102 (CI's load-test latency is noisy and two to three times the Mac's) and #92 (move to .NET 11 in one pull request).
+
+### How the agent worked (Claude)
+
+**Cost** at API prices: wave B about $28.75, twice the $10–15 I told you beforehand; wave C about $22.3, under the $30–40 estimate; the #97 fix about $24.1, most of it one Opus implementer whose context grew to about 456k tokens. Waves A and D aren't summed in the ledger. The reviews ran on Opus for the concurrency and security code, and on Sonnet for the web app and the scoped re-reviews.
+
+**What the reviews and CI caught.** Unlike Phase 1a, most findings were in the code:
+
+- A timestamp kept .NET's 100 ns ticks while PostgreSQL stores microseconds, so a Task 3 test passed on the Mac and failed on CI's Linux runner. It was reproduced on the Mac first, with a fixture clock below a microsecond, then fixed.
+- Task 7's double-click test couldn't fail, and Polly's rate-limiter rejection wasn't treated as transient, because the earlier rule named only the open circuit and the timeout. Every service client now converts Polly's base `ExecutionRejectedException`; Payments' FakePay client followed in #101.
+- Under the 1000-buyer burst, Task 9 saw 503s from the client's rate limiter and slow first requests. The fixes are a request queue, a larger listen backlog and a one-time warm-up that gates `/health/ready`.
+- The pre-flight check of wave C's briefs against the merged code found eleven mismatches before any agent started, among them a latent bug on `main`: Catalog and Inventory refused the browser's tokens in Compose, hidden by the test factory's default. Task 6 fixed it.
+
+**The main session's own mistakes:**
+
+- **CI's p99 alone didn't catch a regression.** Task 3 added two database round trips to every losing reserve (five statements instead of three). On a quiet Mac that moved p99 from about 0.45 s to 0.7 s, but CI's numbers for one and the same code range from 1.3 to 3.0 s, so #94's own run passed and `main` went red after the merge. #97 went back to three statements, and a test now counts the database commands per sold-out reserve, which doesn't depend on the runner's noise. CI's threshold stays at 3.5 s as a guard against gross regressions only (#102).
+- **A wrong Dependabot pattern.** The first ignore rule for the .NET images named `mcr.microsoft.com/dotnet/*`, but Dependabot matches the name without the registry, `dotnet/*`. The fix came from the names in Dependabot's own earlier pull requests (#81, #82). Its first run after #108 opened no .NET major-version pull request.
+- **A cost estimate off by a factor of two** for wave B. Wave C's estimate was made from wave B's real numbers and held.
