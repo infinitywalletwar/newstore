@@ -4,7 +4,7 @@
 
 Proves requirement C-4: the last copy is sold once, however many buyers press the button at the same time.
 
-Run it against the Compose stack (needs Docker; the stack is about 3 GB):
+Run it against the Compose stack (needs Docker; the stack is about 3 GB). The overlay passes the container URLs and the `orders` secret to k6. To run the script yourself against the stack's published ports, the defaults are `BASE_URL=http://localhost:8102` and `TOKEN_URL=http://localhost:8180/realms/newstore/protocol/openid-connect/token` (both on the Mac, so they agree), and you must pass `-e ORDERS_CLIENT_SECRET=<secret>`: the script has no default for it and `setup()` fails with a message when it is missing.
 
 ```sh
 docker compose -f compose.yaml -f compose.load.yaml up -d --wait
@@ -36,12 +36,22 @@ The thresholds, and what failing each one means:
 
 ## Results
 
-Phase 1b, Task 3 (reserve takes a caller-supplied id, a lookup before each reserve, and every call checks a JWT), ConditionalUpdate, the Mac with other builds running at the same time (load average 12 to 14):
+Phase 1b, Task 3: reserve takes a caller-supplied id, looks it up before taking a copy and again when a reserve fails, and every call checks a JWT. ConditionalUpdate, Mac with other work running. "Load" is the 1-minute load average from `uptime` when the run started.
 
-| Run | reserve p99 | confirm p99 | Result |
-|---|---|---|---|
-| 1, first run after `up` | 1.09 s | not recorded | reserve threshold crossed |
-| 2, same stack | below 1 s (not recorded) | below 1 s | all thresholds passed |
-| 3, same stack | 783 ms | 339 ms | all thresholds passed |
+First measurement (commit 59baef1):
 
-Every run sold exactly 10 copies, numbered 1 to 10 in both editions, with 990 `sold-out` and no 5xx. Run 1 was the first one against a freshly started stack while the machine was busy; the threshold was not changed.
+| Run | Load | reserve p99 | confirm p99 | Result |
+|---|---|---|---|---|
+| 1, first run after `up` | 12 to 14 | 1.09 s | not recorded | reserve threshold crossed |
+| 2, same stack | 12 to 14 | below 1 s (not recorded) | below 1 s | passed |
+| 3, same stack | 12 to 14 | 783 ms | 339 ms | passed |
+
+After the review fix (commit a4ad119, which adds the second id lookup on every failed reserve; the 990 sold-out buyers now do it too):
+
+| Run | Load | reserve p99 | confirm p99 | Result |
+|---|---|---|---|---|
+| 1 | 9.9 | 771 ms | 361 ms | passed |
+| 2 | 8.3 | 716 ms | 351 ms | passed |
+| 3 | 8.8 | 1.06 s | 448 ms | reserve threshold crossed |
+
+Every run sold exactly 10 copies, numbered 1 to 10 in both editions, with 990 `sold-out`, no 5xx and all 59 checks passing. The threshold was not changed. Reserve p99 for 1000 simultaneous buyers sits between about 0.7 s and 1.1 s on this Mac, so a single run near 1 s is noise or a real regression only when it repeats.
