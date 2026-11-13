@@ -30,7 +30,7 @@ services:
     image: grafana/k6:2.3.0
     profiles: [load]
     volumes: ["./tests/load:/scripts:ro"]
-    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "--summary-trend-stats=med,p(95),p(99),max"]
+    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "-e", "BURST_P99_MS=${BURST_P99_MS:-3000}", "--summary-trend-stats=med,p(95),p(99),max"]
     environment:
       FAKEPAY_URL: http://fakepay:8080
       # setup() creates the client `k6` and the buyers through the admin API, with Keycloak's local admin (AGENTS.md).

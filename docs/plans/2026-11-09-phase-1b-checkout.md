@@ -79,7 +79,7 @@ All paths below are relative to the newstore repository root, `example/newstore/
   - FakePay API key `fakepay`, webhook secret `fakepay-webhook`.
 
   They appear only where AGENTS.md allows, and Task 3 adds `compose.load.yaml` to that list. Tests read client secrets from the realm file instead of repeating them.
-- **The p99 rule.** Reserve through the gateway (`POST /api/orders`) keeps a p99 under 1 s on the Mac. If a run misses it, stop and bring the numbers to the main session. Never loosen the threshold.
+- **The p99 rule.** Reserve through the gateway (`POST /api/orders`) keeps a p99 under 1 s on the Mac **under the steady load** (k6's `steady` scenario: a ramping arrival rate of buyers, nobody refused). The 1,000-buyers-at-once burst is the correctness test; its latency bound is soft (`BURST_P99_MS`, 3 s on the Mac). The owner changed the rule on 2026-11-13, after a diagnosis showed the burst's p99 is the time to drain 1,010 requests that arrive within 0.3 s at cold processes, which moved between 1.3 and 3.0 s with the Mac's load (`.superpowers/sdd/.../p99-gateway-diagnosis-report.md`). If a steady run misses 1 s, stop and bring the numbers to the main session. Never loosen the threshold.
 - **The web app.** It uses no UI library in 1b, only plain CSS. Angular Material, which the README's Stack names, arrives with the first page that needs one of its components.
 
 ## Running tasks at once
@@ -1213,7 +1213,7 @@ Write the spec, then run it in CI. To run it on the Mac, first ask the owner for
 
 Change the scripts and the overlay. Run on the Mac: `docker compose -f compose.yaml -f compose.load.yaml up -d --wait`, then `… run --rm k6`.
 
-Expected: exactly 10 orders `Completed` with numbers 1–10, expired reservations back on sale, no 5xx, and reserve p99 under 1 s. If p99 misses, stop and report the numbers (Global Constraints). Record the run in `tests/load/README.md`: p50, p95 and p99 per tag, setup time, and `docker stats` peaks.
+Expected: exactly 10 orders `Completed` with numbers 1–10, expired reservations back on sale, no 5xx, burst reserve p99 under `BURST_P99_MS` and steady reserve p99 under 1 s (the rule as the owner changed it on 2026-11-13). If p99 misses, stop and report the numbers (Global Constraints). Record the run in `tests/load/README.md`: p50, p95 and p99 per tag, setup time, and `docker stats` peaks.
 
 Commit: `test(load): the last-copy test buys through the gateway`.
 
@@ -1229,9 +1229,9 @@ Commit: `test(load): the last-copy test buys through the gateway`.
 ## Phase 1b is done when
 
 1. **In CI:** on `main`, `build-test`, `web`, `compose-smoke` and `e2e` are green.
-   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 3.5 s on the runner.
+   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 3.5 s on the runner (both the burst and the steady scenario).
    - `e2e` is a new buyer signing up, buying and seeing the copy.
-2. **On the Mac:** the same k6 run has reserve p99 under 1 s, recorded in `tests/load/README.md`.
+2. **On the Mac:** the same k6 run has reserve p99 under 1 s in the steady scenario (and under 3 s in the burst), recorded in `tests/load/README.md`.
 3. **On a clean clone:** `docker compose up -d --wait`, then the owner buys once by hand:
    - open http://localhost:8100, sign up, and buy a copy of "Sourdough in Zero Gravity";
    - pay on FakePay's page and see the copy number;

@@ -76,6 +76,7 @@ jobs:
           # The runner is slower and noisier than the Mac (same-code runs vary 1.6 to 2.8 s), so this guards against gross
           # regressions only; the rule on the Mac is 1 s (tests/load/README.md).
           P99_MS: "3500"
+          BURST_P99_MS: "3500"
       - name: Catalog finds the seeded video
         run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Gateway forwards a search to Catalog

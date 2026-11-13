@@ -2,7 +2,7 @@
 
 ## last-copy.js: 1000 buyers, 10 copies, through the gateway
 
-Proves requirement C-4: the last copy is sold once, however many buyers press the button at the same time, and that a buyer who wins pays and gets the copy through the whole checkout (gateway, Orders, Inventory, Payments, FakePay).
+Two jobs, in one run. The **burst** (scenarios `last_copy` and `expiry`) proves requirement C-4: the last copy is sold once, however many buyers press the button at the same time, and that a buyer who wins pays and gets the copy through the whole checkout (gateway, Orders, Inventory, Payments, FakePay). The **steady load** (scenario `steady`) holds the latency rule: reserve p99 under 1 s on the Mac when buyers arrive at a rate the stack serves. The owner split the two on 2026-11-13, after a diagnosis showed that the p99 of 1,010 requests arriving within 0.3 s is the time the stack needs to drain them, and that it moved between 1.3 and 3.0 s with the Mac's load (see "The rule" below).
 
 Run it against the Compose stack (needs Docker; the stack is about 3 GB). The overlay passes the container URLs and the credentials to k6. To run the script yourself against the stack's published ports, the defaults are `BASE_URL=http://localhost:8100` (the gateway), `FAKEPAY_URL=http://localhost:8105` and `KEYCLOAK_URL=http://localhost:8180` (all on the Mac, so they agree). You must also pass the credentials, none of which has a default: `-e CREATOR_PASSWORD=<password>` (the sample creator `orbital-kitchen`, who creates the test editions) and `-e KEYCLOAK_ADMIN_USER=<user> -e KEYCLOAK_ADMIN_PASSWORD=<password>` (`tests/load/keycloak.js` uses the admin API to create the client `k6`, set the password policy and create the buyers). `setup()` fails with a message when one is missing. The stack must be seeded: Inventory asks Catalog who owns the sample video.
 
@@ -12,7 +12,7 @@ docker compose -f compose.yaml -f compose.load.yaml run --rm k6
 docker compose -f compose.yaml -f compose.load.yaml down -v
 ```
 
-To try the other reserve strategy (ADR 0007), set `RESERVE_STRATEGY=ConcurrencyToken` when you run `up`. On a slower machine, raise the latency threshold with, for example, `P99_MS=2000` when you run `run`.
+To try the other reserve strategy (ADR 0007), set `RESERVE_STRATEGY=ConcurrencyToken` when you run `up`. `P99_MS` (default 1000) is the steady load's bound and `BURST_P99_MS` (default 3000) the burst's; CI sets both to 3500.
 
 What it does:
 
@@ -21,9 +21,11 @@ What it does:
   2. Creates the public client `k6` (password grant, tokens that last 30 minutes), as a stand-in for the browser. The gateway, Orders and Inventory accept it as a second user client (`Auth__UserClients__1: k6` in `compose.load.yaml`).
   3. Creates 1,020 buyers `k6-buyer-0` to `k6-buyer-1019`, in batches of 50 requests (`http.batch`). A buyer that already exists (a second run on the same stack) is fine.
   4. Signs in as the creator and creates two editions of 10 copies each through the gateway (`POST /api/editions`).
-  5. Returns the editions, the buyers and `startAt = now + 20 s`.
+  5. Creates 100 more editions of 1,000 copies each for the steady load.
+  6. Returns the editions, the buyers and `startAt = now + 20 s`.
 - Scenario `last_copy`: 1000 virtual users, one iteration each, each a different buyer. A VU signs in with a password token (tagged `login`), waits for `startAt`, then posts `POST /api/orders` (tagged `reserve`). The 10 who get a `201` pay: `POST /api/orders/{id}/pay` (tagged `pay`; a 409 `order-busy` or a 503 is retried up to 3 times after 100 ms), then `POST /test/sessions/{id}/pay` at FakePay (the session id is the last segment of `checkoutUrl`), then poll `GET /api/orders/{id}` every 500 ms for up to 60 s until `Completed`. The other 990 must get `409 sold-out`.
 - Scenario `expiry`: 10 holders post `POST /api/orders` for the second edition and never pay. After 6 seconds (TTL 3 s plus a 1 s sweep) 10 new buyers post `POST /api/orders`, must get `201` and pay like winners. An order that is never paid stays `Reserved` with a past `reservedUntil` until a later Pay heals it (ADR 0017), so the proof that the copies are back on sale is the new buyers' `201`s and the numbers 1 to 10 in `teardown()`, not the holders' order status.
+- Scenario `steady` (starts 40 s in, after the burst has finished): a `ramping-arrival-rate` executor, 10 to 300 buys a second over 15 s, then 300 a second for 10 s, about 6,300 buys. 300 a second is about a million buys an hour, far above what Phase 1 expects; the stack's measured steady p99 at that rate is well under 1 s (table below), so the rate is a load the stack carries, not a limit it was tuned to. Each VU signs in once and buys from the 100 editions in turn, so a buyer is not handed its open order back (a 200) before its 3 s hold has expired. Every buy must be a `201` (nobody is refused), and `dropped_iterations` must be 0 (k6 could start every arrival). Nobody pays: the holds expire and go back on sale.
 - `teardown()` reads both editions back with the creator's token (every route through the gateway needs one): `copiesLeft` is 0, and the copy numbers are exactly 1 to 10, with no gap and no duplicate.
 - `late_start_ms` is how many milliseconds after `startAt` each VU was ready. A negative value means it waited for the others, so the burst was simultaneous; a positive p95 means Keycloak was too slow to sign everyone in within 20 s.
 
@@ -36,12 +38,34 @@ The thresholds, and what failing each one means:
 | `sold_out: count==990` | Every other buyer got a clean `409 sold-out`. |
 | `http_req_failed: rate==0` | No 5xx and no connection error. A `409` counts as a good answer here. |
 | `server_errors: count==0` | No response was a 5xx, counted on its own. |
-| `http_req_duration{name:reserve}: p(99)<P99_MS` | The slowest 1% of `POST /api/orders` took less than `P99_MS` (1000 ms by default, the rule on the Mac; CI's `P99_MS` is 3500 by the owner's decision, because the runner is slower and noisier, so CI guards against gross regressions only). |
+| `http_req_duration{name:reserve}: p(99)<BURST_P99_MS` | The burst's reserves (and the expiry scenario's): the slowest 1% took less than `BURST_P99_MS` (3000 ms by default, a soft bound; CI's is 3500). |
+| `http_req_duration{name:reserve-steady}: p(99)<P99_MS` | **The rule.** The steady load's `POST /api/orders`: the slowest 1% took less than `P99_MS` (1000 ms by default on the Mac; CI's `P99_MS` is 3500 by the owner's decision, because the runner is slower and noisier, so CI guards against gross regressions only). |
+| `dropped_iterations: count==0` | k6 started every arrival the steady load asked for. |
 | `login`, `pay`, `fakepay-pay`, `poll` p(99) < 60 s | Not limits: a threshold on a tag makes k6 print that tag's own line in the summary. |
 
 `compose.load.yaml` shortens Inventory's reservation TTL to 3 seconds and its sweep interval to 1 second, so the expiry scenario takes seconds, not 10 minutes. A winner has 3 s between its `201` and its Pay (Pay's first step is a Hold); no run has shown a winner refused as expired, so the TTL stays 3 s. It also switches on FakePay's test endpoints and lets the client `k6` in at the gateway, Orders and Inventory. It is for this test only; a stack started without it keeps the 10-minute TTL.
 
-## Through the gateway (Task 9, 2026-11-13)
+## The rule, and what the fixes changed (fix round 1, 2026-11-13)
+
+The first three runs below (before the fixes) missed 1 s in the burst. A diagnosis (traces per hop, the kernel's `ListenOverflows`, six experiments) found:
+
+- Every hop queues the 1,010 requests that arrive within 0.3 s at processes that have not served a request yet: Orders fetched the OpenID metadata, the signing keys and its own token on the first buy, and opened its connections to Inventory then.
+- Orders' TCP accept queue overflowed (`ListenOverflows` 78 to 483 per run); a dropped SYN is retried after about 1 s, which is the 1 s step in the hop timings.
+- In 9 of 18 runs exactly 10 buys got a 503: Orders' client for Inventory uses the standard resilience pipeline, whose concurrency limiter allows 1,000 calls and has a queue of 0 (Microsoft Learn, "Standard resilience handler defaults": "Queue: 0, Permit: 1_000"). That is a bug, not noise.
+
+The fixes: a queue of 1,000 on that limiter in `AddServiceClient` (shared, so Inventory's client for Catalog has it too), a one-shot warm-up that keeps Orders' `/health/ready` unhealthy until the OpenID metadata, the keys, the token and one call to Inventory have worked once, and Kestrel's listen backlog of 4,096 in `AddServiceDefaults` (default 512; the containers' `somaxconn` is 4,096, measured). The owner then decided to split what the rule measures: the 1 s rule is for a steady arrival rate, and the burst keeps every correctness check with a soft latency bound. The gateway has no warm-up: its first requests were not shown to wait for it.
+
+Three runs on the Mac after the fixes, each from a fresh `down -v` and `up -d --build --wait`, then 60 seconds, then k6 with the default thresholds (`P99_MS=1000`, `BURST_P99_MS=3000`). "Load" is the 1-minute load average from `uptime` before k6 started. All three runs: exit code 0, every threshold passed, 7,733 to 7,734 of the same number of checks passing, exactly 10 winners with copy numbers 1 to 10 in both editions, 990 `sold-out`, no 5xx, no dropped iteration, `late_start_ms` negative for every VU, `ListenOverflows` 0 at the gateway, Orders and Inventory after the run, and no `OnRateLimiterRejected` in Orders' log.
+
+| Run | Load | burst reserve p50 / p95 / p99 | steady reserve p50 / p95 / p99 | login p50 / p99 | pay p50 / p99 (20 calls) | poll p50 / p99 | setup |
+|---|---|---|---|---|---|---|---|
+| 1 | 4.1 | 810 ms / 873 ms / 881 ms | 9.4 ms / 18 ms / **47 ms** | 1.33 s / 2.64 s | 302 ms / 530 ms | 6.6 ms / 20 ms | 4.0 s |
+| 2 | 4.7 | 786 ms / 855 ms / 861 ms | 8.9 ms / 29 ms / **219 ms** | 1.25 s / 2.41 s | 293 ms / 597 ms | 7.9 ms / 11 ms | 3.7 s |
+| 3 | 3.7 | 938 ms / 996 ms / 1.00 s | 9.0 ms / 15 ms / **25 ms** | 1.31 s / 2.54 s | 310 ms / 585 ms | 5.1 ms / 14 ms | 3.7 s |
+
+Before the fixes the burst's reserve p99 was 1.44, 2.08 and 1.57 s (table below), and 1.2 s in a debugging run. A debugging run of the finished code with loose thresholds, load 6.7, gave a burst p99 of 927 ms and a steady p99 of 254 ms. The burst now fits under 1 s on the Mac in these runs, but it stays a soft bound (3 s) because the diagnosis measured the same code between 1.3 and 3.0 s under other Mac loads. Peak memory (`docker stats`, MiB, highest of the three runs): Keycloak 750, Kafka 527, k6 492 (limit 1 GB), Orders 289, Inventory 264, PostgreSQL 166, Gateway 168, Catalog 126, Payments 120, OpenTelemetry Collector 111, FakePay 56, Redis 9.
+
+## Through the gateway before the fixes (Task 9, 2026-11-13)
 
 Three runs on the Mac, each from a fresh `down -v` and `up -d --wait`, then 60 seconds, then k6 with the default `P99_MS=1000`. "Load" is the 1-minute load average from `uptime` just before k6 started; the Mac was not otherwise idle (other agents' tools, a browser). All three runs: exactly 10 orders `Completed` with copy numbers 1 to 10 in both editions, 990 `sold-out`, expired reservations back on sale, no 5xx, 2,159 of 2,159 checks passing, `late_start_ms` negative for every VU (the burst was simultaneous). **All three missed the rule of 1 s for reserve p99** and the run was reported to the owner without changing a threshold or a pool size.
 
