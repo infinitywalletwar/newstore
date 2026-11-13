@@ -5,10 +5,11 @@ using Npgsql;
 namespace NewStore.Inventory;
 
 /// <summary>
-/// What both reserve strategies share. The caller chooses the reservation id, so a reserve is safe to send again: the
-/// id is looked up before a copy is taken (<see cref="FindByIdAsync"/>), and again on every way the reserve fails
-/// (<see cref="ExistingOrAsync"/>, <see cref="ResolveConflictAsync"/>), because a parallel request with the same id may
-/// have won in between (ADR 0013).
+/// What both reserve strategies share. The caller chooses the reservation id, so a reserve is safe to send again, and a
+/// parallel request with the same id may win while this one runs (ADR 0013). ConcurrencyToken looks the id up before it
+/// takes a copy (<see cref="FindByIdAsync"/>) and again on every way it fails (<see cref="ExistingOrAsync"/>,
+/// <see cref="ResolveConflictAsync"/>). ConditionalUpdate looks it up only when its one statement took no copy or broke a
+/// unique constraint, so a buyer who simply loses sends no lookup of its own (ADR 0013, "Amendment, 2026-11").
 /// </summary>
 internal static class ReserveSupport
 {
@@ -17,7 +18,11 @@ internal static class ReserveSupport
     /// partial unique index on (edition, buyer) (the buyer already holds a copy). A unique violation on another table is not ours.
     /// </summary>
     public static bool IsReservationConflict(DbUpdateException ex) =>
-        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, TableName: "reservations" };
+        ex.InnerException is PostgresException postgres && IsReservationConflict(postgres);
+
+    /// <inheritdoc cref="IsReservationConflict(DbUpdateException)"/>
+    public static bool IsReservationConflict(PostgresException ex) =>
+        ex is { SqlState: PostgresErrorCodes.UniqueViolation, TableName: "reservations" };
 
     public static Reservation NewPending(
         Guid reservationId, Guid editionId, Guid buyerId, TimeProvider time, InventoryOptions options)
@@ -35,34 +40,38 @@ internal static class ReserveSupport
     }
 
     /// <summary>
-    /// Step 1, before a copy is taken. Null when nobody used the id; <see cref="ReserveOutcome.Existing"/> when it belongs
-    /// to a reservation of this edition and buyer; <see cref="ReserveOutcome.IdTaken"/> when it belongs to another.
+    /// Null when nobody used the id; otherwise the answer <see cref="ForKnownId"/> gives.
     /// </summary>
     public static async Task<ReserveOutcome?> FindByIdAsync(
         InventoryDbContext db, Guid reservationId, Guid editionId, Guid buyerId, CancellationToken ct)
     {
         var existing = await db.Reservations.AsNoTracking().FirstOrDefaultAsync(r => r.Id == reservationId, ct);
-        return existing switch
-        {
-            null => null,
-            _ when existing.EditionId == editionId && existing.BuyerId == buyerId => new ReserveOutcome.Existing(existing),
-            _ => new ReserveOutcome.IdTaken(),
-        };
+        return existing is null ? null : ForKnownId(existing, editionId, buyerId);
     }
 
     /// <summary>
-    /// Every way a reserve fails to take a copy (sold out, sale ended, no such edition) ends here, because the failure may
-    /// be the result of this very id: a retry that overlapped the original waited for it, and then found the last copy
-    /// gone. The lookup is a new statement, and under Read Committed each statement starts with a new snapshot of what
-    /// has committed, so it sees the original's reservation. Found: answer as in step 1. Not found: <paramref name="failure"/>.
+    /// The answer to a reserve whose id already has a reservation: <see cref="ReserveOutcome.Existing"/> when it belongs to
+    /// this edition and buyer (the request was sent again, or a parallel one with this id won); <see cref="ReserveOutcome.IdTaken"/>
+    /// when it belongs to another.
+    /// </summary>
+    public static ReserveOutcome ForKnownId(Reservation existing, Guid editionId, Guid buyerId) =>
+        existing.EditionId == editionId && existing.BuyerId == buyerId
+            ? new ReserveOutcome.Existing(existing)
+            : new ReserveOutcome.IdTaken();
+
+    /// <summary>
+    /// A reserve failed to take a copy (sold out, sale ended, no such edition), and the failure may be the result of this very
+    /// id: a retry that overlapped the original waited for it, and then found the last copy gone. The lookup is a new statement,
+    /// and under Read Committed each statement starts with a new snapshot of what has committed, so it sees the original's
+    /// reservation. Found: <see cref="ForKnownId"/>. Not found: <paramref name="failure"/>.
     /// </summary>
     public static async Task<ReserveOutcome> ExistingOrAsync(
         InventoryDbContext db, Guid reservationId, Guid editionId, Guid buyerId, ReserveOutcome failure, CancellationToken ct) =>
         await FindByIdAsync(db, reservationId, editionId, buyerId, ct) ?? failure;
 
     /// <summary>
-    /// Step 2, after a unique violation and the rollback: the same lookup. A reservation now exists under the id, so the
-    /// violation was the id's (the parallel request with this id won, or the id is taken). No reservation under the id
+    /// After a unique violation on <c>reservations</c> and the rollback: the same lookup. A reservation now exists under the id,
+    /// so the violation was the id's (the parallel request with this id won, or the id is taken). No reservation under the id
     /// means the violation was the (edition, buyer) index: the buyer already holds a copy.
     /// </summary>
     public static async Task<ReserveOutcome> ResolveConflictAsync(
