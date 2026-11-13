@@ -26,6 +26,7 @@ public sealed class ReserveDeadlockTests(NoSweepFixture fixture) : IClassFixture
         await using var observer = new NpgsqlConnection(connectionString);
         await sweep.OpenAsync(Ct);
         await observer.OpenAsync(Ct);
+        await ExecuteAsync(sweep, "SET deadlock_timeout = '30s'");
 
         // The sweep's first step: the reservation row, replaced by an Expired version that is not committed yet.
         await using var transaction = await sweep.BeginTransactionAsync(Ct);
@@ -37,12 +38,19 @@ public sealed class ReserveDeadlockTests(NoSweepFixture fixture) : IClassFixture
         await WaitUntilBlockedAsync(observer);
 
         // Which transaction PostgreSQL aborts "is difficult to predict and should not be relied upon"
-        // (https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-DEADLOCKS). This test expects the retry to be
-        // the victim, because it started waiting first, so its deadlock_timeout expires first. If the sweep is chosen instead,
-        // the test fails on the sweep's UPDATE below: a failure there means "victim choice", not a broken resend.
-        // The sweep's second step: the edition row, which the retry holds. Now each waits for the other, and after
-        // deadlock_timeout (1 s by default) PostgreSQL aborts one of them. The retry started waiting first, so its check runs first.
+        // (https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-DEADLOCKS), so the test fixes it. A backend
+        // checks for a deadlock once, deadlock_timeout after it starts waiting (ProcSleep in proc.c arms the timer once), and
+        // the one that checks first while the cycle exists is the victim. The retry waits first. If the sweep's UPDATE below
+        // started waiting after the retry's check (a slow machine), the retry's check found no cycle and the sweep's later check
+        // aborted the sweep. So: the retry's connections use NoSweepFixture.RetryDeadlockTimeout (5 s), longer than the sweep needs
+        // to reach its UPDATE, and the sweep's session never checks within the test (30 s). The victim is always the retry.
+        // The retry's resend is held back until the sweep owns the edition row (below). Otherwise, when PostgreSQL has aborted the
+        // retry, the resend could reach the edition row before the sweep's backend, which had been waiting, wakes up (a loaded
+        // machine): a second cycle, in which the resend is the victim again, and its 40P01 propagates as a 500.
+        fixture.Gate.HoldSecondStatement();
+        // The sweep's second step: the edition row, which the retry holds. Now each waits for the other.
         await ExecuteAsync(sweep, "UPDATE editions SET copies_left = copies_left + 1 WHERE id = @id", ("id", edition.Id));
+        fixture.Gate.Release();
         await transaction.CommitAsync(Ct);
 
         var response = await retry;
@@ -56,10 +64,14 @@ public sealed class ReserveDeadlockTests(NoSweepFixture fixture) : IClassFixture
         Assert.Equal(2, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
     }
 
-    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, (string Name, object Value) parameter)
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, params (string Name, object Value)[] parameters)
     {
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
         await command.ExecuteNonQueryAsync(Ct);
     }
 
