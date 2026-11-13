@@ -3,7 +3,11 @@ using System.Text.Json;
 
 using Duende.AccessTokenManagement.OpenIdConnect;
 
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.JsonWebTokens;
+
+using StackExchange.Redis;
 
 namespace NewStore.Gateway.Tests;
 
@@ -27,6 +31,13 @@ public sealed class SignInTests(GatewayKeycloak keycloak)
         var setCookie = gateway.Browser.GatewaySetCookies.Last(c => c.StartsWith("newstore-session=", StringComparison.Ordinal));
         Assert.Contains("samesite=strict", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
+        // No Secure flag until Phase 4, on the session cookie and on the handler's correlation and nonce cookies (ADR 0015).
+        Assert.NotEmpty(gateway.Browser.GatewaySetCookies);
+        Assert.DoesNotContain(gateway.Browser.GatewaySetCookies, c => c.Contains("secure", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(gateway.Browser.GatewaySetCookies, c => c.StartsWith(".AspNetCore.Correlation.", StringComparison.Ordinal)
+            && c.Contains("samesite=lax", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(gateway.Browser.GatewaySetCookies, c => c.StartsWith(".AspNetCore.OpenIdConnect.Nonce.", StringComparison.Ordinal)
+            && c.Contains("samesite=lax", StringComparison.OrdinalIgnoreCase));
 
         // The tokens stay on the server: make a call so the access token is known, then look for it in everything the gateway said.
         await gateway.Browser.GetAsync($"/api/editions/{EditionId}", csrf: true);
@@ -113,15 +124,15 @@ public sealed class SignInTests(GatewayKeycloak keycloak)
         Assert.Contains("post_logout_redirect_uri=http%3A%2F%2Flocalhost%2F", logout.Headers.Location.ToString(), StringComparison.Ordinal);
         var after = await gateway.Browser.FollowAsync(logout, logout.RequestMessage!.RequestUri!);
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+        // Keycloak adds a state parameter to the post-logout redirect, so compare the address without the query.
+        Assert.Equal(GatewayKeycloak.GatewayOrigin + "/", after.RequestMessage!.RequestUri!.GetLeftPart(UriPartial.Path));
         Assert.Empty(gateway.Browser.GatewayCookies);
     }
 
     [Fact]
     public async Task Expired_session_is_401_session_expired()
     {
-        await using var gateway = await GatewayHarness.StartAsync(keycloak, app =>
-            // Longer than the access token lives, so the next call has to refresh it.
-            app.TestServices.Add(services => services.Configure<UserTokenManagementOptions>(o => o.RefreshBeforeExpiration = TimeSpan.FromHours(1))));
+        await using var gateway = await GatewayHarness.StartAsync(keycloak, RefreshOnEveryCall);
         await gateway.Browser.SignInAsync(Users.TrailNotes);
         await keycloak.EndSessionsAsync(Users.TrailNotesId);
 
@@ -147,5 +158,82 @@ public sealed class SignInTests(GatewayKeycloak keycloak)
         var user = await gateway.Browser.GetAsync("/auth/user", csrf: true);
         var body = await user.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.True(body.GetProperty("isAuthenticated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Refresh_gives_the_next_call_a_newer_token_and_is_written_back_to_the_session()
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak, RefreshOnEveryCall);
+        gateway.Stub.On(HttpMethod.Get, "/editions/{id}", _ => new HttpResponseMessage(HttpStatusCode.OK));
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var first = await gateway.Browser.GetAsync($"/api/editions/{EditionId}", csrf: true);
+        await Task.Delay(TimeSpan.FromMilliseconds(1100), TestContext.Current.CancellationToken); // iat has a resolution of one second
+        var second = await gateway.Browser.GetAsync($"/api/editions/{EditionId}", csrf: true);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        var tokens = gateway.Stub.Requests.Select(r => new JsonWebTokenHandler().ReadJsonWebToken(r.Headers.Authorization!.Parameter)).ToList();
+        Assert.Equal(2, tokens.Count);
+        Assert.NotEqual(tokens[0].EncodedToken, tokens[1].EncodedToken);
+        Assert.True(tokens[1].IssuedAt > tokens[0].IssuedAt, "The second token should have been issued by a refresh, after the first.");
+
+        // The refreshed tokens were written back: the ticket in Redis holds the token the service got.
+        var stored = await ReadStoredAccessTokenAsync(gateway.Redis.GetConnectionString());
+        Assert.Equal(tokens[1].EncodedToken, stored);
+    }
+
+    private static void RefreshOnEveryCall(GatewayApp app) =>
+        // Longer than the access token lives, so every call has to refresh it.
+        app.TestServices.Add(services => services.Configure<UserTokenManagementOptions>(o => o.RefreshBeforeExpiration = TimeSpan.FromHours(1)));
+
+    private static async Task<string?> ReadStoredAccessTokenAsync(string redisConnectionString)
+    {
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
+        var key = Assert.Single(redis.GetServer(redis.GetEndPoints().First()).Keys(pattern: "newstore:session:*").ToList());
+        var bytes = (byte[]?)await redis.GetDatabase().StringGetAsync(key);
+        return TicketSerializer.Default.Deserialize(bytes!)!.Properties.GetTokenValue("access_token");
+    }
+
+    [Fact]
+    public async Task Logout_deletes_the_session_so_the_old_cookie_no_longer_works()
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+        var oldCookie = Assert.Single(gateway.Browser.GatewayCookies);
+        var user = await gateway.Browser.GetAsync("/auth/user", csrf: true);
+        var logoutUrl = (await user.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken)).GetProperty("logoutUrl").GetString()!;
+        await gateway.Browser.GetAsync(logoutUrl);
+
+        // A copy of the cookie from before the logout, sent by hand.
+        using var replay = new HttpRequestMessage(HttpMethod.Get, "/auth/user");
+        replay.Headers.Add("Cookie", $"{oldCookie.Name}={oldCookie.Value}");
+        replay.Headers.Add("X-CSRF", "1");
+        var response = await gateway.Browser.Gateway.SendAsync(replay, TestContext.Current.CancellationToken);
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.False(body.GetProperty("isAuthenticated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Logout_without_a_session_goes_to_the_start_page()
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+
+        var response = await gateway.Browser.GetAsync("/auth/logout");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location!.OriginalString);
+    }
+
+    [Fact]
+    public async Task Cookie_request_to_auth_user_without_the_csrf_header_is_403()
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var response = await gateway.Browser.GetAsync("/auth/user", csrf: false);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }

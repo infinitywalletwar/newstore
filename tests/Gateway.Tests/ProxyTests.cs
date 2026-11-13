@@ -91,6 +91,20 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
     }
 
     [Fact]
+    public async Task Other_authorization_headers_are_not_forwarded()
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        gateway.Stub.On(HttpMethod.Get, "/videos", _ => Json("[]"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/videos");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", "dXNlcjpwYXNz");
+
+        var response = await gateway.Browser.Gateway.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(Assert.Single(gateway.Stub.Requests).Headers.Authorization);
+    }
+
+    [Fact]
     public async Task Anonymous_call_to_a_signed_in_route_is_401_not_a_redirect()
     {
         await using var gateway = await GatewayHarness.StartAsync(keycloak);

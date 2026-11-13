@@ -127,8 +127,9 @@ newstore/
 ├── src/Shared/Contracts/Orders/RefundRequested.cs                             (Task 4)
 ├── src/Gateway/                                                               (Task 5)
 │   NewStore.Gateway.csproj  Program.cs  Dockerfile  appsettings*.json  Properties/launchSettings.json
-│   Auth/   BffEndpoints.cs  CsrfMiddleware.cs  RedisTicketStore.cs  SessionExpiry.cs
-│   Proxy/  Routes.cs  AccessTokenTransform.cs
+│   Auth/   AuthEndpoints.cs  CsrfMiddleware.cs  GatewayAuthExtensions.cs  OidcOptions.cs  Problems.cs  RedisTicketStore.cs
+│   Proxy/  ProxyExtensions.cs  AccessTokenTransform.cs
+│   Redis/  RedisExtensions.cs                           the one connection and the readiness check
 │   wwwroot/index.html                                   placeholder until Task 8
 ├── src/Services/Orders/                                                       (Task 7)
 │   Orders/  Order.cs  OrderEndpoints.cs  OrderContracts.cs  OrderService.cs

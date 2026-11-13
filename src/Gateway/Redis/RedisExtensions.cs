@@ -25,19 +25,14 @@ public static class RedisExtensions
         options.SyncTimeout = RedisTimeoutMilliseconds;
         options.AsyncTimeout = RedisTimeoutMilliseconds;
 
-        // One connection, made on first use and handed to the container as a factory result, so the container disposes it.
-        var connection = new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(options));
-        builder.Services.AddSingleton(_ => connection.Value);
-        builder.Services.AddSingleton(new RedisConnectionHolder(connection));
+        // One connection, made on first use. A factory registration, so the container disposes it.
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(options));
 
         builder.Services.AddHealthChecks().AddCheck<RedisHealthCheck>(
             "redis", HealthStatus.Degraded, tags: null, timeout: TimeSpan.FromSeconds(ProbeBudgetSeconds));
         return builder;
     }
 }
-
-/// <summary>Lets Data Protection, which is configured before the container exists, reach the same connection.</summary>
-internal sealed record RedisConnectionHolder(Lazy<IConnectionMultiplexer> Connection);
 
 /// <summary>Readiness check: does Redis answer PING?</summary>
 internal sealed class RedisHealthCheck(IConnectionMultiplexer redis) : IHealthCheck

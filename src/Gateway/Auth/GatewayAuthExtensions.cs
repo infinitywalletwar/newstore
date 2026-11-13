@@ -6,11 +6,16 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.StackExchangeRedis;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 using NewStore.Gateway.Redis;
 using NewStore.ServiceDefaults.Security;
+
+using StackExchange.Redis;
 
 namespace NewStore.Gateway.Auth;
 
@@ -42,12 +47,12 @@ public static class GatewayAuthExtensions
 
         // Keys and sessions are in Redis, so a restart or a second instance reads the same cookies. The application name keeps the
         // keys apart from any other app that shares the Redis.
-        var holder = (RedisConnectionHolder)builder.Services.Single(d => d.ServiceType == typeof(RedisConnectionHolder)).ImplementationInstance!;
-        services.AddDataProtection()
-            .SetApplicationName("newstore-gateway")
-            .PersistKeysToStackExchangeRedis(() => holder.Connection.Value.GetDatabase(), "newstore:data-protection-keys");
+        services.AddDataProtection().SetApplicationName("newstore-gateway");
+        // What PersistKeysToStackExchangeRedis does, but with the connection taken from DI instead of built up front.
+        services.AddOptions<KeyManagementOptions>().Configure<IConnectionMultiplexer>((keys, redis) =>
+            keys.XmlRepository = new RedisXmlRepository(() => redis.GetDatabase(), "newstore:data-protection-keys"));
         services.AddSingleton<RedisTicketStore>();
-        services.AddSingleton(TimeProvider.System);
+        services.TryAddSingleton(TimeProvider.System);
 
         // Bearer requests: JwtBearer, from AddNewStoreAuth. The gateway only passes the token on, so it does not check the audience;
         // each service checks its own.
@@ -90,7 +95,11 @@ public static class GatewayAuthExtensions
                 options.Cookie.SameSite = SameSiteMode.Strict;
                 options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
+                // Where a non-API challenge would go. Nothing outside /api is authorized today, so these are defaults kept honest.
+                options.LoginPath = "/auth/login";
+                options.ReturnUrlParameter = "returnUrl";
                 options.Events.OnRedirectToLogin = context => ApiAware(context.HttpContext, Problems.SignInRequired(), () => context.Response.Redirect(context.RedirectUri));
+                options.Events.OnRedirectToAccessDenied = context => ApiAware(context.HttpContext, Problems.Forbidden(), () => context.Response.Redirect(context.RedirectUri));
             })
             .AddOpenIdConnect(OidcScheme, _ => { });
         services.AddOptions<CookieAuthenticationOptions>(CookieScheme)
@@ -141,6 +150,8 @@ public static class GatewayAuthExtensions
         var inner = oidc.Events.OnRedirectToIdentityProvider;
         oidc.Events.OnRedirectToIdentityProvider = async context =>
         {
+            // Defence in depth: a challenge goes to the cookie scheme, so nothing reaches here for /api today. If a later change
+            // challenges oidc on an API route, it still answers 401 instead of redirecting a fetch to Keycloak.
             if (context.Request.Path.StartsWithSegments("/api"))
             {
                 context.HandleResponse();
@@ -153,7 +164,8 @@ public static class GatewayAuthExtensions
     }
 
     // A challenge on /api is a 401 problem, never a redirect: a fetch cannot follow a redirect to Keycloak's login page.
-    // .NET 10's cookie handler answers 401 by itself only for endpoints it recognises as APIs, which YARP routes are not.
+    // .NET 10's cookie handler answers 401 by itself only for endpoints it recognises as APIs (see the breaking-change note linked in
+    // ADR 0015), and the test Anonymous_call_to_a_signed_in_route_is_401_not_a_redirect showed a YARP route is not one.
     private static Task ApiAware(HttpContext http, IResult apiReply, Action otherwise)
     {
         if (http.Request.Path.StartsWithSegments("/api"))

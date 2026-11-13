@@ -50,8 +50,9 @@ internal sealed partial class Browser
                     GatewaySetCookies.Add(setCookie);
                 }
                 // Keycloak marks its cookies Secure even over http. A browser accepts that on localhost and 127.0.0.1; CookieContainer
-                // would hold the cookie back from every http request, so drop the flag.
-                _cookies.SetCookies(uri, SecureFlag().Replace(setCookie, ""));
+                // would hold the cookie back from every http request, so drop the flag. The gateway's own cookies are stored as sent,
+                // so a Secure flag on one of them would keep it from being sent back, as in a browser on plain http.
+                _cookies.SetCookies(uri, toGateway ? setCookie : SecureFlag().Replace(setCookie, ""));
             }
         }
 

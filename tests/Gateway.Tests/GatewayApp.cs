@@ -17,7 +17,7 @@ internal sealed class GatewayApp : NewStoreAppFactory<Program>
     {
         Settings["Oidc:Authority"] = keycloak.Issuer;
         Settings["Oidc:ClientId"] = "gateway";
-        Settings["Oidc:ClientSecret"] = "gateway";
+        Settings["Oidc:ClientSecret"] = RealmFile.ClientSecret("gateway");
         Settings["Oidc:RequireHttpsMetadata"] = "false";
         Settings["ConnectionStrings:Redis"] = redisConnectionString;
         Settings["Services:Catalog"] = "http://catalog.test";

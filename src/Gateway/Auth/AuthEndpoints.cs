@@ -28,7 +28,7 @@ public static class AuthEndpoints
     }
 
     // Starts with one slash, not two, and not a slash and a backslash: browsers read "//host" and "/\host" as another site.
-    // Control characters are refused too, because browsers drop tabs and line breaks inside a URL, so "/<tab>/host" becomes "//host".
+    // Control characters are refused too, because the URL Standard's basic URL parser starts with "Remove all ASCII tab or newline from input" (https://url.spec.whatwg.org/#concept-basic-url-parser), so "/<tab>/host" becomes "//host".
     internal static bool IsLocalPath(string url) =>
         url.Length > 0 && url[0] == '/'
         && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'))

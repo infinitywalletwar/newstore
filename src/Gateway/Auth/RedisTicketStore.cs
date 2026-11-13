@@ -25,6 +25,13 @@ internal sealed partial class RedisTicketStore(IConnectionMultiplexer redis, Tim
     public async Task RenewAsync(string key, AuthenticationTicket ticket)
     {
         var lifetime = ticket.Properties.ExpiresUtc is { } expires ? expires - time.GetUtcNow() : FallbackLifetime;
+        if (lifetime <= TimeSpan.Zero)
+        {
+            // Already expired: Redis refuses a zero or negative expiry, and a session that is over needs no entry.
+            await RemoveAsync(key);
+            return;
+        }
+
         await redis.GetDatabase().StringSetAsync(key, TicketSerializer.Default.Serialize(ticket), lifetime);
     }
 
@@ -43,7 +50,24 @@ internal sealed partial class RedisTicketStore(IConnectionMultiplexer redis, Tim
         }
     }
 
-    public async Task RemoveAsync(string key) => await redis.GetDatabase().KeyDeleteAsync(key);
+    /// <summary>
+    /// A Redis failure is logged and swallowed, so sign-out and the session-expired answer still finish. The ticket then stays until
+    /// its Redis expiry, which is the same time the cookie handler stops accepting it.
+    /// </summary>
+    public async Task RemoveAsync(string key)
+    {
+        try
+        {
+            await redis.GetDatabase().KeyDeleteAsync(key);
+        }
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
+        {
+            LogRemoveFailed(logger, ex);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Redis failed while deleting a session; it stays in Redis until it expires.")]
+    private static partial void LogRemoveFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Redis failed while reading a session; the request is treated as anonymous.")]
     private static partial void LogReadFailed(ILogger logger, Exception exception);

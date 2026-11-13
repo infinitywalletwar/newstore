@@ -11,6 +11,9 @@ internal static class Problems
     public static IResult SessionExpired() =>
         Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Your session ended. Sign in again.", type: Type("session-expired"));
 
+    public static IResult Forbidden() =>
+        Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "You may not use this.", type: Type("forbidden"));
+
     public static IResult Csrf() =>
         Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Requests that use the session cookie must send the X-CSRF: 1 header.", type: Type("csrf"));
 
