@@ -36,6 +36,10 @@ public sealed class ReserveDeadlockTests(NoSweepFixture fixture) : IClassFixture
         var retry = Task.Run(() => retryClient.ReserveAsync(edition.Id, buyerId, reservationId), Ct);
         await WaitUntilBlockedAsync(observer);
 
+        // Which transaction PostgreSQL aborts "is difficult to predict and should not be relied upon"
+        // (https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-DEADLOCKS). This test expects the retry to be
+        // the victim, because it started waiting first, so its deadlock_timeout expires first. If the sweep is chosen instead,
+        // the test fails on the sweep's UPDATE below: a failure there means "victim choice", not a broken resend.
         // The sweep's second step: the edition row, which the retry holds. Now each waits for the other, and after
         // deadlock_timeout (1 s by default) PostgreSQL aborts one of them. The retry started waiting first, so its check runs first.
         await ExecuteAsync(sweep, "UPDATE editions SET copies_left = copies_left + 1 WHERE id = @id", ("id", edition.Id));
