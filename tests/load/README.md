@@ -4,7 +4,7 @@
 
 Proves requirement C-4: the last copy is sold once, however many buyers press the button at the same time.
 
-Run it against the Compose stack (needs Docker; the stack is about 3 GB). The overlay passes the container URLs and the `orders` secret to k6. To run the script yourself against the stack's published ports, the defaults are `BASE_URL=http://localhost:8102` and `TOKEN_URL=http://localhost:8180/realms/newstore/protocol/openid-connect/token` (both on the Mac, so they agree), and you must pass `-e ORDERS_CLIENT_SECRET=<secret>`: the script has no default for it and `setup()` fails with a message when it is missing.
+Run it against the Compose stack (needs Docker; the stack is about 3 GB). The overlay passes the container URLs and the credentials to k6. To run the script yourself against the stack's published ports, the defaults are `BASE_URL=http://localhost:8102`, `TOKEN_URL=http://localhost:8180/realms/newstore/protocol/openid-connect/token` and `KEYCLOAK_URL=http://localhost:8180` (all on the Mac, so they agree). You must also pass the credentials, none of which has a default: `-e ORDERS_CLIENT_SECRET=<secret>` (the `orders` client), `-e CREATOR_PASSWORD=<password>` (the sample creator `orbital-kitchen`, who creates the test editions) and `-e KEYCLOAK_ADMIN_USER=<user> -e KEYCLOAK_ADMIN_PASSWORD=<password>` (`tests/load/keycloak.js` uses the admin API to create the client `k6` when the realm has none). `setup()` fails with a message when one is missing. The stack must be seeded: Inventory asks Catalog who owns the sample video.
 
 ```sh
 docker compose -f compose.yaml -f compose.load.yaml up -d --wait

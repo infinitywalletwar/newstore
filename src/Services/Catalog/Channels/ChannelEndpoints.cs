@@ -15,7 +15,8 @@ namespace NewStore.Catalog.Channels;
 
 public static partial class ChannelEndpoints
 {
-    [GeneratedRegex("^[a-z0-9-]{3,40}$")]
+    // \z, not $: in .NET "$" also matches before a final newline.
+    [GeneratedRegex(@"^[a-z0-9-]{3,40}\z")]
     private static partial Regex SlugPattern();
 
     public static IEndpointRouteBuilder MapChannelEndpoints(this IEndpointRouteBuilder app)

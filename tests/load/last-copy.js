@@ -15,9 +15,11 @@ const TOKEN_URL = __ENV.TOKEN_URL || 'http://localhost:8180/realms/newstore/prot
 const ORDERS_CLIENT_SECRET = __ENV.ORDERS_CLIENT_SECRET;
 const COPIES = 10;
 // Editions are a creator's to make (C-1): the script signs in as the sample creator who owns this sample video, "Sourdough in Zero
-// Gravity". Inventory asks Catalog who owns it, so the stack must be seeded. A sample user's password equals the username (AGENTS.md).
+// Gravity". Inventory asks Catalog who owns it, so the stack must be seeded. 
 const VIDEO_ID = '00000000-0000-7000-8001-000000000011';
 const CREATOR = 'orbital-kitchen';
+// No default, like the orders secret: compose.load.yaml passes it, and setup() fails with a message when it is missing.
+const CREATOR_PASSWORD = __ENV.CREATOR_PASSWORD;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 // Version-4 UUID shape; Math.random is fine for test IDs, and the script needs no network import.
@@ -95,9 +97,12 @@ export function setup() {
   if (!ORDERS_CLIENT_SECRET) {
     throw new Error('ORDERS_CLIENT_SECRET is not set: pass the orders client secret, for example -e ORDERS_CLIENT_SECRET=<secret>.');
   }
+  if (!CREATOR_PASSWORD) {
+    throw new Error('CREATOR_PASSWORD is not set: pass the sample creator\'s password, for example -e CREATOR_PASSWORD=<password>.');
+  }
   // The k6 client is created once; the creator's token comes from it. `token` is Orders' and is for reserve and confirm only.
   ensureK6Client();
-  const creatorToken = passwordToken(CREATOR, CREATOR);
+  const creatorToken = passwordToken(CREATOR, CREATOR_PASSWORD);
   return { first: createEdition(creatorToken), second: createEdition(creatorToken), token: ordersToken(), creatorToken };
 }
 

@@ -3,14 +3,12 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
+using NewStore.Messaging;
 using NewStore.ServiceDefaults.Security;
-
-using Polly.CircuitBreaker;
-using Polly.Timeout;
 
 namespace NewStore.Inventory;
 
-public static class EditionEndpoints
+public static partial class EditionEndpoints
 {
     public const int MaxCopies = 10_000;
 
@@ -26,6 +24,9 @@ public static class EditionEndpoints
         group.MapPost("/{id:guid}/end-sale", EndSaleAsync).RequireAuthorization(Policies.SignedIn);
         return routes;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Catalog could not say who owns video {VideoId}.")]
+    private static partial void LogCatalogUnavailable(ILogger logger, Exception exception, Guid videoId);
 
     /// <summary>
     /// Loads the edition and asks <see cref="EditionOwnerHandler"/> whether the user is its creator. Returns the reply to send
@@ -49,7 +50,7 @@ public static class EditionEndpoints
 
     private static async Task<IResult> CreateAsync(
         CreateEditionRequest request, ClaimsPrincipal user, InventoryDbContext db, CatalogClient catalog, TimeProvider time,
-        CancellationToken ct)
+        ILogger<CatalogClient> logger, CancellationToken ct)
     {
         if (Validate(request) is { Count: > 0 } errors)
         {
@@ -61,8 +62,9 @@ public static class EditionEndpoints
         {
             videoOwner = await catalog.GetVideoOwnerAsync(request.VideoId, ct);
         }
-        catch (Exception e) when (e is HttpRequestException or TimeoutRejectedException or BrokenCircuitException)
+        catch (Exception e) when (e is HttpRequestException or TransientFailureException)
         {
+            LogCatalogUnavailable(logger, e, request.VideoId);
             return Problems.Unavailable("dependency-unavailable", "The catalog is not reachable. Try again shortly.");
         }
 

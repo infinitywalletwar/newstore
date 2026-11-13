@@ -60,6 +60,7 @@ public class ChannelCreationTests(SeededCatalogAppFactory factory) : IClassFixtu
     [InlineData("Upper-Case")]
     [InlineData("has space")]
     [InlineData("")]
+    [InlineData("abc\n")]
     public async Task Invalid_slug_is_400(string slug)
     {
         using var client = ClientFor(Guid.NewGuid());

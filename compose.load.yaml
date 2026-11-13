@@ -22,6 +22,8 @@ services:
       TOKEN_URL: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
       # setup() creates the client `k6` through the admin API, with Keycloak's local admin (AGENTS.md).
       KEYCLOAK_URL: http://keycloak:8080
+      # The sample creator `orbital-kitchen` signs in to create the test editions; a sample user's password equals its username (AGENTS.md).
+      CREATOR_PASSWORD: orbital-kitchen
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
     depends_on:
