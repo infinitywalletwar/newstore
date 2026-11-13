@@ -56,8 +56,9 @@ public sealed class ConditionalUpdateStrategy(
         }
         catch (DbUpdateException ex) when (ReserveSupport.IsReservationConflict(ex))
         {
-            // The failed INSERT aborted the transaction: roll it back (the decrement goes with it) before the lookup,
-            // which PostgreSQL would refuse inside an aborted transaction.
+            // EF rolls a failed SaveChanges back to a savepoint, which undoes the INSERT only
+            // (https://learn.microsoft.com/ef/core/saving/transactions). The decrement is still in the transaction, together with
+            // the lock on the edition row. Roll everything back first, so the lookup runs outside it and the copy is not taken.
             await transaction.RollbackAsync(ct);
             return await ReserveSupport.ResolveConflictAsync(db, reservationId, editionId, buyerId, ct);
         }
