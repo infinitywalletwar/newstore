@@ -35,11 +35,7 @@ public static class OrderEndpoints
         var now = time.GetUtcNowToMicrosecond();
 
         // A buyer who clicks Buy twice, or comes back to the page, gets the open order again instead of a second reservation.
-        var open = await db.Orders.AsNoTracking()
-            .Where(o => o.BuyerId == buyer && o.EditionId == request.EditionId
-                && (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paying) && o.ReservedUntil > now)
-            .OrderByDescending(o => o.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        var open = await FindOpenOrderAsync(db, buyer, request.EditionId, now, ct);
         if (open is not null)
         {
             return Results.Ok(OrderResponse.From(open));
@@ -59,6 +55,14 @@ public static class OrderEndpoints
 
         if (result is ReserveResult.Rejected rejected)
         {
+            // Two clicks at the same instant both passed the check above. Inventory kept the first reservation and answered the
+            // second "already holding"; by now the first request has probably saved its order, so look again before saying no.
+            if (rejected.Type == Problems.Type("already-holding")
+                && await FindOpenOrderAsync(db, buyer, request.EditionId, now, ct) is { } winner)
+            {
+                return Results.Ok(OrderResponse.From(winner));
+            }
+
             // Sold out, sale ended, already holding, no such edition: the buyer sees Inventory's answer, and no order is kept.
             return Problems.Passed(rejected.StatusCode, rejected.Type, rejected.Title);
         }
@@ -79,9 +83,18 @@ public static class OrderEndpoints
             UpdatedAt = now,
         };
         db.Orders.Add(order);
-        await db.SaveChangesAsync(ct);
+        // Not the request's token: Inventory already holds the copy, and a buyer who closed the tab must not leave a reservation
+        // without an order. What still leaks is a crash between the two calls (ADR 0017).
+        await db.SaveChangesAsync(CancellationToken.None);
         return Results.Created($"/orders/{order.Id}", OrderResponse.From(order));
     }
+
+    private static Task<Order?> FindOpenOrderAsync(OrdersDbContext db, Guid buyer, Guid editionId, DateTimeOffset now, CancellationToken ct) =>
+        db.Orders.AsNoTracking()
+            .Where(o => o.BuyerId == buyer && o.EditionId == editionId
+                && (o.Status == OrderStatus.Reserved || o.Status == OrderStatus.Paying) && o.ReservedUntil > now)
+            .OrderByDescending(o => o.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
     private static async Task<IResult> PayAsync(
         Guid id, ClaimsPrincipal user, OrdersDbContext db, InventoryClient inventory, PaymentsClient payments,
@@ -104,9 +117,15 @@ public static class OrderEndpoints
             // Step 1: extend the reservation to the hold's longer deadline. Repeating it changes nothing.
             if (await inventory.HoldAsync(order.ReservationId, ct) is not HoldResult.Held held)
             {
-                order.Status = OrderStatus.Expired;
-                order.UpdatedAt = time.GetUtcNowToMicrosecond();
-                return await SaveThenAnswerAsync(db, order, ct);
+                await SaveAsync(db, order, o => o.Status = OrderStatus.Expired, time, ct);
+                return Answer(order);
+            }
+
+            // The hold's deadline is saved before Payments is called: if Payments is down, a buyer who comes back after the
+            // reservation's own 10 minutes still finds the order open.
+            if (!await SaveAsync(db, order, o => o.ReservedUntil = held.ExpiresAt, time, ct))
+            {
+                return Answer(order);
             }
 
             // Step 2: one payment per order, however many times this runs: Payments' unique order id decides.
@@ -114,12 +133,17 @@ public static class OrderEndpoints
             var payment = await payments.CreateAsync(order.Id, order.Price, returnUrl, ct);
 
             // Step 3: record it. xmin makes this fail if a payment event or a parallel pay changed the order in the meantime.
-            order.Status = OrderStatus.Paying;
-            order.PaymentId = payment.PaymentId;
-            order.CheckoutUrl = payment.CheckoutUrl;
-            order.ReservedUntil = held.ExpiresAt;
-            order.UpdatedAt = time.GetUtcNowToMicrosecond();
-            return await SaveThenAnswerAsync(db, order, ct);
+            await SaveAsync(
+                db, order,
+                o =>
+                {
+                    o.Status = OrderStatus.Paying;
+                    o.PaymentId = payment.PaymentId;
+                    o.CheckoutUrl = payment.CheckoutUrl;
+                    o.ReservedUntil = held.ExpiresAt;
+                },
+                time, ct);
+            return Answer(order);
         }
         catch (TransientFailureException)
         {
@@ -128,26 +152,39 @@ public static class OrderEndpoints
         }
     }
 
-    /// <summary>Saves, and if another writer changed the order first, answers from the order as that writer left it.</summary>
-    private static async Task<IResult> SaveThenAnswerAsync(OrdersDbContext db, Order order, CancellationToken ct)
+    /// <summary>
+    /// Applies <paramref name="change"/> and saves. If another writer changed the order first (<c>xmin</c> moved), the order is
+    /// reloaded. When the reloaded order is still <c>Reserved</c> the other writer was a parallel pay that only saved the hold's
+    /// deadline, so the change is applied again and saved. Otherwise the order has moved on, and the method returns false with the
+    /// order as the other writer left it: the caller answers from that.
+    /// </summary>
+    private static async Task<bool> SaveAsync(OrdersDbContext db, Order order, Action<Order> change, TimeProvider time, CancellationToken ct)
     {
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            await db.SaveChangesAsync(ct);
+            change(order);
+            order.UpdatedAt = time.GetUtcNowToMicrosecond();
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 3)
+            {
+                await db.Entry(order).ReloadAsync(ct);
+                if (order.Status != OrderStatus.Reserved)
+                {
+                    return false;
+                }
+            }
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            await db.Entry(order).ReloadAsync(ct);
-        }
-
-        return Answer(order);
     }
 
     private static IResult Answer(Order order) => order.Status switch
     {
         OrderStatus.Paying => Results.Ok(new PayResponse(order.CheckoutUrl!)),
         OrderStatus.Expired => Problems.Conflict("order-expired", "The reservation ran out of time. The copy went back on sale."),
-        // After a lost save race every writer has moved the order on from Reserved, so this is a bug.
+        // SaveAsync retries while the order is Reserved, so a Reserved order here means three lost races in a row.
         OrderStatus.Reserved => throw new InvalidOperationException($"Order {order.Id} is still Reserved after a save conflict."),
         _ => Problems.Conflict("order-closed", $"The order is {order.Status}."),
     };

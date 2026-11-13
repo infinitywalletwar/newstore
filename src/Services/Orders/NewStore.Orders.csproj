@@ -5,4 +5,7 @@
     <PackageReference Include="Npgsql.DependencyInjection" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="NewStore.Orders.Tests" />
+  </ItemGroup>
 </Project>

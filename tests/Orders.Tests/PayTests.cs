@@ -47,7 +47,11 @@ public class PayTests
         // The hold's deadline replaced the reservation's.
         Assert.True(stored.ReservedUntil > order.ReservedUntil);
 
-        // Hold first, then the payment, which carries the order's price and the way back to the order page.
+        // The hold came first: Orders asks Inventory, and only then creates the payment.
+        var log = OrdersFixture.Calls.Entries;
+        Assert.True(log.IndexOf($"hold {stored.ReservationId}") < log.IndexOf($"create {order.Id}"), string.Join(", ", log.TakeLast(4)));
+        Assert.Contains($"hold {stored.ReservationId}", log);
+        // The payment carries the order's price and the way back to the order page.
         var hold = Assert.Single(_fixture.Inventory.RequestsFor(stored.ReservationId));
         Assert.EndsWith("/hold", hold.RequestUri!.AbsolutePath, StringComparison.Ordinal);
         var create = StubReplies.Body(Assert.Single(_fixture.Payments.CreatesFor(order.Id)));
@@ -73,6 +77,22 @@ public class PayTests
     {
         var buyer = Guid.NewGuid();
         var order = await _fixture.BuyAsync(buyer);
+        var original = _fixture.Payments.Create;
+        // Make the overlap certain: the first create waits until the second one has arrived, so both pays are between hold and
+        // record at the same moment, and exactly one of the two saves can win the order's row.
+        var arrived = 0;
+        var both = new TaskCompletionSource();
+        _fixture.Payments.Create = r =>
+        {
+            if (Interlocked.Increment(ref arrived) == 2)
+            {
+                both.SetResult();
+            }
+
+            Assert.True(both.Task.Wait(TimeSpan.FromSeconds(10)), "The second pay never reached Payments.");
+            return original(r);
+        };
+        var before = _fixture.Payments.Handler.Requests.Count;
 
         var replies = await Task.WhenAll(PayAsync(buyer, order.Id), PayAsync(buyer, order.Id));
 
@@ -80,10 +100,36 @@ public class PayTests
         Assert.All(replies, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
         var urls = await Task.WhenAll(replies.Select(async r => (await r.Content.ReadFromJsonAsync<PayResponse>(Ct))!.CheckoutUrl));
         Assert.Single(urls.Distinct());
-        // Whatever Orders sent, it named one order: Payments' unique order id makes that one payment.
-        var creates = _fixture.Payments.CreatesFor(order.Id);
-        Assert.All(creates, r => Assert.Equal(order.Id, StubReplies.Body(r).GetProperty("orderId").GetGuid()));
-        Assert.Equal(OrderStatus.Paying, (await _fixture.GetOrderAsync(order.Id)).Status);
+        // Every request Payments received since the click names this order: Payments' unique order id makes that one payment, and the
+        // stub made exactly one, which is the one the order recorded.
+        var created = _fixture.Payments.Handler.Requests.Skip(before).ToList();
+        Assert.Equal(2, created.Count);
+        Assert.All(created, r => Assert.Equal(order.Id, StubReplies.Body(r).GetProperty("orderId").GetGuid()));
+        var stored = await _fixture.GetOrderAsync(order.Id);
+        Assert.Equal(OrderStatus.Paying, stored.Status);
+        Assert.Equal(_fixture.Payments.PaymentIdFor(order.Id), stored.PaymentId);
+        Assert.Equal(urls[0], stored.CheckoutUrl);
+    }
+
+    [Fact]
+    public async Task Payments_down_on_pay_keeps_the_holds_deadline()
+    {
+        var buyer = Guid.NewGuid();
+        var order = await _fixture.BuyAsync(buyer);
+        _fixture.Payments.Create = _ => StubReplies.Unavailable();
+
+        var response = await PayAsync(buyer, order.Id);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        // The hold's deadline (45 minutes) replaced the reservation's (10) even though the payment failed: a buyer who comes back
+        // after minute 10 still finds the order open.
+        var stored = await _fixture.GetOrderAsync(order.Id);
+        Assert.Equal(OrderStatus.Reserved, stored.Status);
+        Assert.True(stored.ReservedUntil > order.ReservedUntil.AddMinutes(30), $"ReservedUntil is {stored.ReservedUntil}.");
+        using var client = _fixture.BuyerClient(buyer);
+        var again = await client.PostAsJsonAsync("/orders", new { editionId = order.EditionId }, Ct);
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Equal(order.Id, (await again.Content.ReadFromJsonAsync<OrderResponse>(Ct))!.Id);
     }
 
     [Fact]

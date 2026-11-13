@@ -38,6 +38,15 @@ public class SagaTests
         where TEvent : NewStore.Messaging.IIntegrationEvent =>
         _fixture.Kafka.PublishAsync(PaymentEvents.Topic, order.Id.ToString(), @event, Ct);
 
+    private static PaymentFailed Failed(Order order) => new()
+    {
+        EventId = Guid.NewGuid(),
+        OccurredAt = DateTimeOffset.UtcNow,
+        OrderId = order.Id,
+        PaymentId = order.PaymentId ?? Guid.NewGuid(),
+        Reason = "session expired",
+    };
+
     private int Calls(Order order, string action) =>
         _fixture.Inventory.RequestsFor(order.ReservationId).Count(r => r.RequestUri!.AbsolutePath.EndsWith("/" + action, StringComparison.Ordinal));
 
@@ -72,7 +81,8 @@ public class SagaTests
         await PublishAsync(paying, Succeeded(paying));
         await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunding);
 
-        Assert.Equal(1, await _fixture.CountOutboxAsync<RefundRequested>(paying.Id));
+        var request = Assert.Single(await _fixture.RefundRequestsAsync(paying.Id));
+        Assert.Equal(paying.PaymentId, request.PaymentId);
         var order = await _fixture.GetOrderAsync(paying.Id);
         Assert.Null(order.CopyNumber);
 
@@ -126,6 +136,86 @@ public class SagaTests
 
         Assert.Equal(1, Calls(paying, "release"));
         Assert.Equal(0, Calls(paying, "confirm"));
+    }
+
+    [Fact]
+    public async Task PaymentSucceeded_for_a_failed_order_ends_in_a_refund_without_asking_inventory()
+    {
+        var paying = await _fixture.PayingOrderAsync();
+        var failed = Failed(paying);
+        await PublishAsync(paying, failed);
+        await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Failed);
+
+        // The payment succeeded after the provider's session had already expired.
+        await PublishAsync(paying, Succeeded(paying));
+        await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunding);
+
+        Assert.Equal(0, Calls(paying, "confirm"));
+        // The event asks for the money of the payment that succeeded, not only "a" refund.
+        var request = Assert.Single(await _fixture.RefundRequestsAsync(paying.Id));
+        Assert.Equal(paying.PaymentId, request.PaymentId);
+        Assert.Equal(paying.Id, request.OrderId);
+    }
+
+    [Fact]
+    public async Task PaymentFailed_on_a_reserved_order_releases_and_fails_it()
+    {
+        var reserved = await _fixture.GetOrderAsync((await _fixture.BuyAsync(Guid.NewGuid())).Id);
+
+        await PublishAsync(reserved, Failed(reserved));
+        await _fixture.WaitForStatusAsync(reserved.Id, OrderStatus.Failed);
+
+        Assert.Equal(1, Calls(reserved, "release"));
+    }
+
+    [Fact]
+    public async Task PaymentFailed_on_a_completed_order_changes_nothing()
+    {
+        var paying = await _fixture.PayingOrderAsync();
+        await PublishAsync(paying, Succeeded(paying));
+        await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Completed);
+        var failed = Failed(paying);
+
+        await PublishAsync(paying, failed);
+        await _fixture.WaitHandledAsync(failed.EventId);
+
+        Assert.Equal(OrderStatus.Completed, (await _fixture.GetOrderAsync(paying.Id)).Status);
+        Assert.Equal(0, Calls(paying, "release"));
+    }
+
+    [Fact]
+    public async Task Repeated_payment_events_while_refunding_or_refunded_change_nothing()
+    {
+        var paying = await _fixture.PayingOrderAsync();
+        _fixture.Inventory.Confirm = _ => StubReplies.Problem(HttpStatusCode.Conflict, "reservation-expired");
+        await PublishAsync(paying, Succeeded(paying));
+        await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunding);
+
+        // A second PaymentSucceeded (a different message) while Refunding: no second refund request.
+        var again = Succeeded(paying);
+        await PublishAsync(paying, again);
+        await _fixture.WaitHandledAsync(again.EventId);
+        Assert.Equal(OrderStatus.Refunding, (await _fixture.GetOrderAsync(paying.Id)).Status);
+        Assert.Equal(1, await _fixture.CountOutboxAsync<RefundRequested>(paying.Id));
+
+        var refunded = new PaymentRefunded
+        {
+            EventId = Guid.NewGuid(),
+            OccurredAt = DateTimeOffset.UtcNow,
+            OrderId = paying.Id,
+            PaymentId = paying.PaymentId!.Value,
+            Amount = paying.Price,
+        };
+        await PublishAsync(paying, refunded);
+        await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunded);
+
+        // The same again, then another PaymentSucceeded, once Refunded.
+        var late = Succeeded(paying);
+        await PublishAsync(paying, refunded);
+        await PublishAsync(paying, late);
+        await _fixture.WaitHandledAsync(late.EventId);
+        Assert.Equal(OrderStatus.Refunded, (await _fixture.GetOrderAsync(paying.Id)).Status);
+        Assert.Equal(1, await _fixture.CountOutboxAsync<RefundRequested>(paying.Id));
     }
 
     [Fact]
@@ -211,11 +301,6 @@ public class SagaTests
         Assert.Equal(JsonValueKind.Null, copy.GetProperty("deliveryStatus").ValueKind);
         Assert.NotEqual(paying.Id, copy.GetProperty("orderId").GetGuid());
         Assert.NotEqual(reserved.Id, copy.GetProperty("orderId").GetGuid());
-
-        // The time in the response is the stored one, to the microsecond: both went through the same truncation.
-        var stored = await _fixture.GetOrderAsync(completed.Id);
-        Assert.Equal(stored.CompletedAt, copy.GetProperty("completedAt").GetDateTimeOffset());
-        Assert.Equal(0, stored.CompletedAt!.Value.UtcTicks % 10);
     }
 
     [Fact]

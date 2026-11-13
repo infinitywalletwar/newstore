@@ -177,6 +177,38 @@ public class BuyTests
     }
 
     [Fact]
+    public async Task A_double_click_on_buy_gets_the_same_order_twice()
+    {
+        var buyer = Guid.NewGuid();
+        var edition = Guid.NewGuid();
+        var original = _fixture.Inventory.Reserve;
+        var arrived = 0;
+        var second = new TaskCompletionSource();
+        // Inventory's unique (edition, buyer) index: the first reserve wins, the second is answered already-holding. The first waits
+        // for the second to arrive, so both passed the open-order check with no order yet; the second's answer waits until the
+        // first request has saved its order.
+        _fixture.Inventory.Reserve = r =>
+        {
+            if (Interlocked.Increment(ref arrived) == 1)
+            {
+                Assert.True(second.Task.Wait(TimeSpan.FromSeconds(10)), "The second buy never reached Inventory.");
+                return original(r);
+            }
+
+            second.SetResult();
+            OrdersFixture.WaitAsync(async () => await CountOrdersAsync(buyer) == 1, "the first order is saved").GetAwaiter().GetResult();
+            return StubReplies.Problem(HttpStatusCode.Conflict, "already-holding");
+        };
+
+        var replies = await Task.WhenAll(BuyAsync(buyer, edition), BuyAsync(buyer, edition));
+
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.Created], replies.Select(r => r.StatusCode).Order());
+        var ids = await Task.WhenAll(replies.Select(async r => (await r.Content.ReadFromJsonAsync<OrderResponse>(Ct))!.Id));
+        Assert.Single(ids.Distinct());
+        Assert.Equal(1, await CountOrdersAsync(buyer));
+    }
+
+    [Fact]
     public async Task Buy_again_after_the_reservation_ran_out_reserves_again()
     {
         var buyer = Guid.NewGuid();
@@ -214,6 +246,22 @@ public class BuyTests
         var response = await BuyAsync(Guid.NewGuid(), Guid.Empty);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    public async Task Inventory_answering_429_or_408_on_buy_is_503_with_retry_after(HttpStatusCode status)
+    {
+        var buyer = Guid.NewGuid();
+        _fixture.Inventory.Reserve = _ => new HttpResponseMessage(status);
+
+        var response = await BuyAsync(buyer, Guid.NewGuid());
+
+        // After the pipeline's retries the buyer is told to try again, not shown a 500.
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(5, response.Headers.RetryAfter!.Delta!.Value.TotalSeconds);
+        Assert.Equal(0, await CountOrdersAsync(buyer));
     }
 
     [Fact]

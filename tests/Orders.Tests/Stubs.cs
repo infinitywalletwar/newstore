@@ -35,6 +35,31 @@ internal static class StubReplies
     }
 }
 
+/// <summary>The calls both stubs received, in the order they arrived, so a test can assert which call came first.</summary>
+internal sealed class CallLog
+{
+    private readonly List<string> _entries = [];
+
+    public void Add(string entry)
+    {
+        lock (_entries)
+        {
+            _entries.Add(entry);
+        }
+    }
+
+    public List<string> Entries
+    {
+        get
+        {
+            lock (_entries)
+            {
+                return [.. _entries];
+            }
+        }
+    }
+}
+
 /// <summary>
 /// Stands in for Inventory's reservation endpoints. The defaults behave like Inventory (ADR 0013): a first reserve is 201 and a repeat
 /// of the same id is 200 <c>Pending</c>; hold and confirm answer 200; confirm repeats give the same copy number; release is 204. A
@@ -46,11 +71,15 @@ internal sealed class InventoryStub
     private readonly ConcurrentDictionary<Guid, (Guid EditionId, Guid BuyerId)> _reserved = new();
     private int _nextCopy;
 
-    public InventoryStub()
+    public InventoryStub(CallLog log)
     {
         Handler = new StubHttpHandler()
             .On(HttpMethod.Post, "/editions/{id}/reservations", r => Reserve(r))
-            .On(HttpMethod.Post, "/reservations/{id}/hold", r => Hold(r))
+            .On(HttpMethod.Post, "/reservations/{id}/hold", r =>
+            {
+                log.Add($"hold {StubReplies.IdAfter(r, "reservations")}");
+                return Hold(r);
+            })
             .On(HttpMethod.Post, "/reservations/{id}/confirm", r => Confirm(r))
             .On(HttpMethod.Post, "/reservations/{id}/release", r => Release(r));
         Reset();
@@ -119,9 +148,13 @@ internal sealed class PaymentsStub
 {
     private readonly ConcurrentDictionary<Guid, Guid> _payments = new();
 
-    public PaymentsStub()
+    public PaymentsStub(CallLog log)
     {
-        Handler = new StubHttpHandler().On(HttpMethod.Post, "/payments", r => Create(r));
+        Handler = new StubHttpHandler().On(HttpMethod.Post, "/payments", r =>
+        {
+            log.Add($"create {StubReplies.Body(r).GetProperty("orderId").GetGuid()}");
+            return Create(r);
+        });
         Reset();
     }
 
@@ -146,6 +179,9 @@ internal sealed class PaymentsStub
                 sessionExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
             });
         };
+
+    /// <summary>The id of the one payment this stub made for an order, or null when it made none.</summary>
+    public Guid? PaymentIdFor(Guid orderId) => _payments.TryGetValue(orderId, out var id) ? id : null;
 
     /// <summary>The create requests for an order, with their bodies already read.</summary>
     public List<HttpRequestMessage> CreatesFor(Guid orderId) =>

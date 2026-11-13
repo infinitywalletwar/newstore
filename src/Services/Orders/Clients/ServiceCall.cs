@@ -1,17 +1,19 @@
+using System.Net;
 using System.Net.Http.Json;
 
 using NewStore.Messaging;
 
-using Polly.CircuitBreaker;
-using Polly.Timeout;
+using Polly;
 
 namespace NewStore.Orders.Clients;
 
 /// <summary>
 /// How Orders' clients send a request. Every way a call can fail to get an answer ends as <see cref="TransientFailureException"/>:
-/// a 5xx, a connection error, and the two exceptions Polly's pipeline throws when it gives up (<see cref="BrokenCircuitException"/>
-/// when the circuit is open, <see cref="TimeoutRejectedException"/> when a timeout fired). Messaging does not know Polly's types, so
-/// a handler that let them through would be dead-lettered instead of retried (ADR 0014, point 8).
+/// a 5xx, a 408 or 429 (the statuses the standard handler's retry treats as transient), a connection error, and every exception
+/// Polly's pipeline throws when it gives up: <see cref="ExecutionRejectedException"/> is the base of <c>BrokenCircuitException</c>
+/// (the circuit is open), <c>TimeoutRejectedException</c> (a timeout fired) and <c>RateLimiterRejectedException</c> (the concurrency
+/// limiter is full). Messaging does not know Polly's types, so a handler that let them through would be dead-lettered instead of
+/// retried (ADR 0014, point 8).
 /// </summary>
 internal static class ServiceCall
 {
@@ -26,12 +28,12 @@ internal static class ServiceCall
             };
             response = await http.SendAsync(request, ct);
         }
-        catch (Exception e) when (e is BrokenCircuitException or TimeoutRejectedException or HttpRequestException)
+        catch (Exception e) when (e is ExecutionRejectedException or HttpRequestException)
         {
             throw new TransientFailureException($"POST {path} got no answer: {e.Message}", e);
         }
 
-        if ((int)response.StatusCode >= 500)
+        if ((int)response.StatusCode >= 500 || response.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests)
         {
             var status = (int)response.StatusCode;
             response.Dispose();

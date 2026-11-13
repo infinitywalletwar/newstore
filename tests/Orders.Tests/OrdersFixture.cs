@@ -20,9 +20,12 @@ namespace NewStore.Orders.Tests;
 /// </summary>
 public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : NewStoreAppFactory<Program>, IAsyncLifetime
 {
-    internal InventoryStub Inventory { get; } = new();
+    /// <summary>One fixture exists per test run, so the log can be shared by both stubs through a static.</summary>
+    internal static CallLog Calls { get; } = new();
 
-    internal PaymentsStub Payments { get; } = new();
+    internal InventoryStub Inventory { get; } = new(Calls);
+
+    internal PaymentsStub Payments { get; } = new(Calls);
 
     public KafkaServer Kafka => kafka;
 
@@ -135,6 +138,22 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
         }
 
         Assert.Fail($"Timed out waiting for: {what}.");
+    }
+
+    /// <summary>Waits until the inbox holds <paramref name="eventId"/>: the message was handled (or found handled).</summary>
+    public Task WaitHandledAsync(Guid eventId) =>
+        WaitAsync(
+            () => QueryAsync(db => db.Set<NewStore.Messaging.Inbox.InboxMessage>().AnyAsync(m => m.MessageId == eventId, TestContext.Current.CancellationToken)),
+            $"message {eventId} is handled");
+
+    /// <summary>The <c>RefundRequested</c> events in the outbox for an order, as published.</summary>
+    public async Task<List<NewStore.Contracts.Orders.RefundRequested>> RefundRequestsAsync(Guid orderId)
+    {
+        var payloads = await QueryAsync(db => db.Set<OutboxMessage>()
+            .Where(m => m.Type == typeof(NewStore.Contracts.Orders.RefundRequested).FullName && m.Key == orderId.ToString())
+            .Select(m => m.Payload)
+            .ToListAsync(TestContext.Current.CancellationToken));
+        return [.. payloads.Select(p => System.Text.Json.JsonSerializer.Deserialize<NewStore.Contracts.Orders.RefundRequested>(p)!)];
     }
 
     public Task WaitForStatusAsync(Guid orderId, OrderStatus status) =>

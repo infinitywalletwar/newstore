@@ -2,6 +2,7 @@ using NewStore.Messaging;
 using NewStore.Orders.Clients;
 
 using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 
 namespace NewStore.Orders.Tests;
@@ -26,6 +27,8 @@ public class ClientTests
     {
         new BrokenCircuitException("The circuit is open."),
         new TimeoutRejectedException("The attempt timed out."),
+        // The standard handler's concurrency limiter rejects with this third subclass of ExecutionRejectedException.
+        new RateLimiterRejectedException(),
         new HttpRequestException("Connection refused."),
     };
 
