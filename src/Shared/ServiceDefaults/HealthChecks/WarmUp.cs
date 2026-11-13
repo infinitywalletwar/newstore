@@ -84,7 +84,9 @@ internal sealed partial class WarmUpService(
                 LogFinished(attempt);
                 return;
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            // Only the host's own stop is a shutdown. A timeout is a TaskCanceledException (an OperationCanceledException) too, and
+            // Duende's token request rethrows it, so a Keycloak that does not answer must be retried, not stop the host.
+            catch (Exception e) when (!stoppingToken.IsCancellationRequested)
             {
                 LogFailed(e, attempt, pause);
             }

@@ -69,6 +69,28 @@ public class WarmUpTests
     }
 
     [Fact]
+    public async Task A_timeout_in_the_warm_up_is_retried_and_does_not_stop_the_host()
+    {
+        // An HttpClient timeout surfaces as TaskCanceledException, a subclass of OperationCanceledException, and Duende's token
+        // request rethrows it. It is a failed attempt, not a shutdown.
+        var runs = 0;
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddServiceDefaults();
+        builder.AddReadinessWarmUp(
+            (_, _) => ++runs < 2 ? throw new TaskCanceledException("Keycloak did not answer") : Task.CompletedTask,
+            firstRetryPause: TimeSpan.FromMilliseconds(10));
+        using var host = builder.Build();
+        var stopped = false;
+        host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() => stopped = true);
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        await WaitUntilAsync(() => ReadinessAsync(host).GetAwaiter().GetResult() == HealthStatus.Healthy);
+
+        Assert.Equal(2, runs);
+        Assert.False(stopped);
+    }
+
+    [Fact]
     public async Task The_auth_warm_up_fetches_the_signing_keys_and_one_token()
     {
         var tokens = new CountingTokenSource();
