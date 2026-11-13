@@ -11,14 +11,17 @@ public class EditionTests(ConditionalUpdateFixture fixture) : IClassFixture<Cond
         var ct = TestContext.Current.CancellationToken;
         using var client = fixture.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/editions", new
+        var creator = Guid.NewGuid();
+        var video = Guid.NewGuid();
+        FakeCatalog.SetOwner(video, creator);
+
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Post, "/editions", new
         {
-            videoId = Guid.NewGuid(),
-            creatorId = Guid.NewGuid(),
+            videoId = video,
             format = "Dvd",
             price = 19.5m,
             copies = 10,
-        }, ct);
+        });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = (await response.Content.ReadFromJsonAsync<EditionDto>(ct))!;
@@ -42,14 +45,17 @@ public class EditionTests(ConditionalUpdateFixture fixture) : IClassFixture<Cond
         var ct = TestContext.Current.CancellationToken;
         using var client = fixture.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/editions", new
+        var creator = Guid.NewGuid();
+        var video = Guid.NewGuid();
+        FakeCatalog.SetOwner(video, creator);
+
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Post, "/editions", new
         {
-            videoId = Guid.NewGuid(),
-            creatorId = Guid.NewGuid(),
+            videoId = video,
             format = "Digital",
             price = 5m,
             copies,
-        }, ct);
+        });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
@@ -104,7 +110,7 @@ public class EditionTests(ConditionalUpdateFixture fixture) : IClassFixture<Cond
         using var client = fixture.CreateClient();
         var edition = await client.CreateEditionAsync();
 
-        var response = await client.PatchAsJsonAsync($"/editions/{edition.Id}", new { }, ct);
+        var response = await client.SendAsUserAsync(edition.CreatorId, HttpMethod.Patch, $"/editions/{edition.Id}", new { });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));

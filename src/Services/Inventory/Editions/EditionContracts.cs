@@ -1,6 +1,7 @@
 namespace NewStore.Inventory;
 
-public sealed record CreateEditionRequest(Guid VideoId, Guid CreatorId, string? Format, decimal Price, int Copies);
+/// <summary>There is no creator here: <see cref="Edition.CreatorId"/> is the token's subject.</summary>
+public sealed record CreateEditionRequest(Guid VideoId, string? Format, decimal Price, int Copies);
 
 public sealed record UpdateEditionRequest(decimal? Price, int? Copies);
 

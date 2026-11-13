@@ -870,7 +870,7 @@ Branch `phase-1/creators`. Issue #73. Owns the Compose stack in wave C. Read: to
 
   `last-copy.js` setup signs in as `orbital-kitchen` and creates the test editions on video `…0011` with that token. The overlay adds `Auth__UserClients__1: k6` to inventory.
 
-- [ ] **Step 1: Catalog, failing tests, then code**
+- [x] **Step 1: Catalog, failing tests, then code**
 
 Tests:
 - `Sample_videos_have_fixed_ids`
@@ -885,7 +885,7 @@ Tests:
 
 Implement, then migrate. Expected: Catalog.Tests pass. Commit: `feat(catalog): open a channel, and tell Inventory who owns a video`.
 
-- [ ] **Step 2: Inventory, failing tests, then code**
+- [x] **Step 2: Inventory, failing tests, then code**
 
 Catalog is a `StubHttpHandler` behind `CatalogClient`. Tests:
 - `Create_edition_takes_the_creator_from_the_token`: a `creatorId` in the body is ignored.
@@ -900,7 +900,7 @@ Catalog is a `StubHttpHandler` behind `CatalogClient`. Tests:
 
 Expected: Inventory.Tests pass. Commit: `feat(inventory): creators manage only their own editions; sample editions`.
 
-- [ ] **Step 3: Compose and k6 on the Mac**
+- [x] **Step 3: Compose and k6 on the Mac**
 
 1. Wipe the stack and start it: `docker compose down -v && docker compose up -d --wait`.
 2. `curl http://localhost:8101/videos/00000000-0000-7000-8001-000000000011/editions` lists a Digital edition. Retry for up to 30 s while the snapshot travels through Kafka.
@@ -909,7 +909,7 @@ Expected: Inventory.Tests pass. Commit: `feat(inventory): creators manage only t
 
 Commit: `test(load): creators make the test editions with their own token`.
 
-- [ ] **Step 4: ADR 0016 and pull request**
+- [x] **Step 4: ADR 0016 and pull request**
 
 1. **ADR 0016, Creator is a resource rule, not a role.**
    - Resource-based authorization, quoting the [ASP.NET Core docs](https://learn.microsoft.com/aspnet/core/security/authorization/resourcebased).

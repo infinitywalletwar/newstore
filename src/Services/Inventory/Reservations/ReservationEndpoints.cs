@@ -8,7 +8,7 @@ public static class ReservationEndpoints
 {
     public static IEndpointRouteBuilder MapReservationEndpoints(this IEndpointRouteBuilder routes)
     {
-        // Only Orders reserves, holds, confirms and releases: azp must be "orders". The edition endpoints stay open for now.
+        // Only Orders reserves, holds, confirms and releases: azp must be "orders". The edition endpoints have their own rules (EditionEndpoints).
         var group = routes.MapGroup("").RequireAuthorization(Policies.Client("orders"));
         group.MapPost("/editions/{editionId:guid}/reservations", ReserveAsync);
         group.MapGet("/reservations/{id:guid}", GetAsync);

@@ -7,48 +7,56 @@
       "description": "Cooking experiments for people who float.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000011",
           "title": "Sourdough in Zero Gravity",
           "description": "A loaf rises differently when nothing pulls the dough down. Starter, flour and a sealed pouch.",
           "durationSeconds": 240,
           "publishedAt": "2026-01-01T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000012",
           "title": "Espresso Without a Cup",
           "description": "Pulling a shot when liquid clings to everything it touches.",
           "durationSeconds": 462,
           "publishedAt": "2026-01-13T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000013",
           "title": "Tortillas at Weightless Speed",
           "description": "Spinning dough thin without a countertop.",
           "durationSeconds": 684,
           "publishedAt": "2026-01-25T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000014",
           "title": "Hot Sauce for Dulled Taste",
           "description": "Why cabin air makes food bland and how heat compensates.",
           "durationSeconds": 906,
           "publishedAt": "2026-02-06T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000015",
           "title": "Freeze-Dried Dinner Ranked",
           "description": "Eight pouches, one honest scorecard.",
           "durationSeconds": 1128,
           "publishedAt": "2026-02-18T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000016",
           "title": "Salt and Pepper in Suspension",
           "description": "Shakers fail when crystals never fall; the liquid workaround.",
           "durationSeconds": 1350,
           "publishedAt": "2026-03-02T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000017",
           "title": "Rehydrating Soup Properly",
           "description": "Water temperature and patience for a decent broth.",
           "durationSeconds": 1572,
           "publishedAt": "2026-03-14T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000018",
           "title": "The Zero Gravity Birthday Cake",
           "description": "A candle-free celebration with sticky frosting.",
           "durationSeconds": 294,
@@ -63,48 +71,56 @@
       "description": "Hiking routes, gear and map reading.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000021",
           "title": "Ridge Walk in Fog",
           "description": "Navigating by compass when the summit disappears.",
           "durationSeconds": 277,
           "publishedAt": "2026-01-03T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000022",
           "title": "Ultralight Pack Under Five Kilos",
           "description": "What to cut and what never to cut.",
           "durationSeconds": 499,
           "publishedAt": "2026-01-15T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000023",
           "title": "River Crossing Basics",
           "description": "Reading current speed before wetting a boot.",
           "durationSeconds": 721,
           "publishedAt": "2026-01-27T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000024",
           "title": "Night Hike by Moonlight",
           "description": "Pacing and eyesight on an open plateau.",
           "durationSeconds": 943,
           "publishedAt": "2026-02-08T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000025",
           "title": "Blister Prevention Tape",
           "description": "Hot spots, tape layers and dry socks.",
           "durationSeconds": 1165,
           "publishedAt": "2026-02-20T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000026",
           "title": "Reading Contour Lines",
           "description": "Steep, flat and saddle on a paper map.",
           "durationSeconds": 1387,
           "publishedAt": "2026-03-04T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000027",
           "title": "Winter Camp Stove Tricks",
           "description": "Keeping fuel warm below freezing.",
           "durationSeconds": 1609,
           "publishedAt": "2026-03-16T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000028",
           "title": "Trail Etiquette Explained",
           "description": "Who yields on a narrow switchback.",
           "durationSeconds": 331,
@@ -119,48 +135,56 @@
       "description": "Indie game development, one prototype at a time.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000031",
           "title": "Tilemap Collision from Scratch",
           "description": "Grid physics without an engine.",
           "durationSeconds": 314,
           "publishedAt": "2026-01-05T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000032",
           "title": "Writing a Dialogue Parser",
           "description": "Branching conversations in a plain text format.",
           "durationSeconds": 536,
           "publishedAt": "2026-01-17T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000033",
           "title": "Procedural Dungeon Rooms",
           "description": "Random layouts that still feel designed.",
           "durationSeconds": 758,
           "publishedAt": "2026-01-29T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000034",
           "title": "Palette Swaps for Free Variety",
           "description": "Recolouring sprites with a lookup shader.",
           "durationSeconds": 980,
           "publishedAt": "2026-02-10T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000035",
           "title": "Frame Pacing Explained",
           "description": "Why a stable sixty beats an unstable ninety.",
           "durationSeconds": 1202,
           "publishedAt": "2026-02-22T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000036",
           "title": "Save Files That Survive Updates",
           "description": "Versioned serialization for game state.",
           "durationSeconds": 1424,
           "publishedAt": "2026-03-06T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000037",
           "title": "Juice Your Jump",
           "description": "Squash, stretch and coyote time.",
           "durationSeconds": 1646,
           "publishedAt": "2026-03-18T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000038",
           "title": "Shipping a Game Jam Entry",
           "description": "Scope cuts in the last six hours.",
           "durationSeconds": 368,
@@ -175,48 +199,56 @@
       "description": "Hand tool woodworking without the noise.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000041",
           "title": "Sharpening a Chisel in Ten Minutes",
           "description": "Waterstones, a strop and a steady wrist.",
           "durationSeconds": 351,
           "publishedAt": "2026-01-07T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000042",
           "title": "Cutting Dovetails by Hand",
           "description": "Tails first, pins second, patience throughout.",
           "durationSeconds": 573,
           "publishedAt": "2026-01-19T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000043",
           "title": "Flattening a Workbench Top",
           "description": "Winding sticks and a jack plane.",
           "durationSeconds": 795,
           "publishedAt": "2026-01-31T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000044",
           "title": "Choosing Boards at the Lumberyard",
           "description": "Grain direction, cup and hidden checks.",
           "durationSeconds": 1017,
           "publishedAt": "2026-02-12T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000045",
           "title": "A Marking Gauge from Offcuts",
           "description": "A weekend build for a lifetime tool.",
           "durationSeconds": 1239,
           "publishedAt": "2026-02-24T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000046",
           "title": "Hide Glue Versus Yellow Glue",
           "description": "Open time, repair and reversibility.",
           "durationSeconds": 1461,
           "publishedAt": "2026-03-08T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000047",
           "title": "Finishing with Shellac",
           "description": "Padding thin coats for a glassy surface.",
           "durationSeconds": 1683,
           "publishedAt": "2026-03-20T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000048",
           "title": "Mortise and Tenon Chairs",
           "description": "A stable joint for legs and rails.",
           "durationSeconds": 405,
@@ -231,48 +263,56 @@
       "description": "Oceans, tides and what lives below.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000051",
           "title": "Why Tides Have Two Highs",
           "description": "The moon pulls twice if you count the bulge.",
           "durationSeconds": 388,
           "publishedAt": "2026-01-09T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000052",
           "title": "Hydrothermal Vent Communities",
           "description": "Life that never needed sunlight.",
           "durationSeconds": 610,
           "publishedAt": "2026-01-21T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000053",
           "title": "Rip Currents and How to Escape",
           "description": "Swim sideways, not against the pull.",
           "durationSeconds": 832,
           "publishedAt": "2026-02-02T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000054",
           "title": "Plankton Is the Real Ocean",
           "description": "Tiny drifters make half our oxygen.",
           "durationSeconds": 1054,
           "publishedAt": "2026-02-14T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000055",
           "title": "Mapping the Seafloor with Sonar",
           "description": "Sound pings turned into valleys.",
           "durationSeconds": 1276,
           "publishedAt": "2026-02-26T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000056",
           "title": "The Sargasso Sea Mystery",
           "description": "A sea without shores and a floating forest.",
           "durationSeconds": 1498,
           "publishedAt": "2026-03-10T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000057",
           "title": "Coral Bleaching Timeline",
           "description": "Heat stress and the slow recovery.",
           "durationSeconds": 1720,
           "publishedAt": "2026-03-22T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000058",
           "title": "Deep Dive in a Submersible",
           "description": "Pressure, silence and a tiny window.",
           "durationSeconds": 442,
@@ -287,48 +327,56 @@
       "description": "Moonlit planting and low-light growing.",
       "videos": [
         {
+          "id": "00000000-0000-7000-8001-000000000061",
           "title": "Moonflowers That Open at Dusk",
           "description": "Planting a fragrant evening border.",
           "durationSeconds": 425,
           "publishedAt": "2026-01-11T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000062",
           "title": "Composting Kitchen Scraps",
           "description": "Greens, browns and the right dampness.",
           "durationSeconds": 647,
           "publishedAt": "2026-01-23T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000063",
           "title": "Growing Mushrooms in a Closet",
           "description": "Substrate, spores and humidity.",
           "durationSeconds": 869,
           "publishedAt": "2026-02-04T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000064",
           "title": "Shade Beds That Still Bloom",
           "description": "Ferns, hostas and woodland bulbs.",
           "durationSeconds": 1091,
           "publishedAt": "2026-02-16T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000065",
           "title": "Pruning Roses in Late Winter",
           "description": "Cut angle and bud direction.",
           "durationSeconds": 1313,
           "publishedAt": "2026-02-28T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000066",
           "title": "Seed Starting Under Lamps",
           "description": "Light distance and gentle airflow.",
           "durationSeconds": 1535,
           "publishedAt": "2026-03-12T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000067",
           "title": "Pollinators After Dark",
           "description": "Moths and bats at the evening bloom.",
           "durationSeconds": 257,
           "publishedAt": "2026-03-24T12:00:00Z"
         },
         {
+          "id": "00000000-0000-7000-8001-000000000068",
           "title": "Herb Spiral from Old Bricks",
           "description": "Microclimates stacked in a small bed.",
           "durationSeconds": 479,

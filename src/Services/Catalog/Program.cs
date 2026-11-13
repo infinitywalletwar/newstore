@@ -10,10 +10,14 @@ using NewStore.Contracts.Inventory;
 using NewStore.Messaging;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
+using NewStore.ServiceDefaults.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+// Reads stay anonymous. Opening a channel needs a signed-in user; the owner lookup is for the client "inventory" only.
+builder.AddNewStoreAuth().AddClientPolicy("inventory");
 builder.AddPostgresDatabase<CatalogDbContext>("Catalog");
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.AddMessaging<CatalogDbContext>(m => m
@@ -31,6 +35,8 @@ if (await app.RunDatabaseCommandsAsync<CatalogDbContext>(args) is { } exitCode)
 }
 
 app.MapDefaultEndpoints();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapVideoEndpoints();
 app.MapChannelEndpoints();
 app.MapEditionEndpoints();
