@@ -257,6 +257,7 @@ newstore/
 │   ├── Gateway/
 │   │   NewStore.Gateway: Auth/ (OIDC sign-in, session cookie in Redis, CSRF header), Proxy/ (YARP routes, access-token transform), Redis/
 │   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Editions/, Caching/, Seed/ (sample-catalog.json)
+│   ├── Fakes/        stand-ins for outside services; FakePay: a hosted-checkout page and signed webhooks (not part of the store)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
 │       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics

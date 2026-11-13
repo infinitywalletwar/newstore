@@ -624,7 +624,7 @@ Branch `phase-1/payments`. Issue #71. Read: topic 08 (sagas: compensation). The 
   - payments sets `Payments__Provider__BaseUrl: http://fakepay:8080`;
   - payments' `Auth__Audience` is `payments`.
 
-- [ ] **Step 1: FakePay, test-first**
+- [x] **Step 1: FakePay, test-first** (done in the other order: the tests were written after the code. The PR shows three mutation runs instead: dropping `DeliverTwice`, dropping the webhook retry and stopping the sweeper each fail one FakePay test.)
 
 Write `FakePay.Tests`:
 - `Same_idempotency_key_returns_the_same_session`
@@ -644,7 +644,7 @@ The webhook receiver in these tests is a `StubHttpHandler` behind FakePay's type
 
 Then implement. Before you write the Decline behaviour into ADR 0014, check it in Stripe's docs. If no page states it, record that it couldn't be confirmed. Expected: FakePay.Tests pass. Commit: `feat(fakepay): a hosted-checkout stand-in with signed webhooks`.
 
-- [ ] **Step 2: Payments, failing tests**
+- [x] **Step 2: Payments, failing tests**
 
 `Payments.Tests` uses PostgreSQL and Kafka from TestSupport and a `StubHttpHandler` for FakePay. It must not reference the FakePay project, because two web projects in one test project give two generated `Program` classes. Sign webhooks with a small signer in the test.
 
@@ -663,7 +663,7 @@ Tests:
 
 Expected: the tests fail.
 
-- [ ] **Step 3: Implement Payments, migrate, run the tests**
+- [x] **Step 3: Implement Payments, migrate, run the tests**
 
 Expected: Payments.Tests and FakePay.Tests pass, and `docker compose build payments fakepay` succeeds. Commit: `feat(payments): payment attempts, the FakePay webhook and refunds`.
 

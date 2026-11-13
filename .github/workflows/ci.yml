@@ -37,6 +37,10 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8101/health/ready
       - name: Inventory is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8102/health/ready
+      - name: Payments is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8104/health/ready
+      - name: FakePay is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8105/health/ready
       - name: Gateway is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8100/health/ready
       - name: Keycloak issues a service token
