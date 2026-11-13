@@ -278,7 +278,7 @@ The spike settles every open point before production code. Its checks become con
 
   The storage settings follow the [Docker Compose page at 2.4.0](https://github.com/floci-io/floci/blob/2.4.0/docs/configuration/docker-compose.md); the `$$` escape is the [Compose spec's](https://github.com/compose-spec/compose-spec/blob/main/12-interpolation.md).
 
-- [ ] **Step 1: The contract tests**
+- [x] **Step 1: The contract tests**
 
 Each test makes its own bucket, configures it through the SDK (`PutCORSConfigurationAsync`, `PutPublicAccessBlockAsync`, `PutBucketPolicyAsync`) with the values in Global Constraints, and talks to S3 the way the browser will: a plain `HttpClient` with no AWS credentials.
 
@@ -296,7 +296,7 @@ Each test makes its own bucket, configures it through the SDK (`PutCORSConfigura
 
 Run `dotnet test --project tests/Media.Tests`. Expected: each test passes or fails, and each failure is a finding.
 
-- [ ] **Step 2: Settle each failure, or stop**
+- [x] **Step 2: Settle each failure, or stop**
 
 For a failing check, try only the knob named for it, then rerun:
 - Part PUTs refused over checksums: set `AmazonS3Config.RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED` (the SDK's default is `WHEN_SUPPORTED`: [ClientConfig source](https://github.com/aws/aws-sdk-net/blob/main/sdk/src/Core/Amazon.Runtime/ClientConfig.cs)).
