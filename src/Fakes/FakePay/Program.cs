@@ -30,6 +30,7 @@ builder.Services.AddHostedService<ExpirySweeper>();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+app.UseApiKey();
 app.MapSessionEndpoints(app.Services.GetRequiredService<IOptions<FakePayOptions>>().Value);
 
 app.Run();

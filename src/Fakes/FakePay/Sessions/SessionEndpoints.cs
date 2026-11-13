@@ -23,7 +23,7 @@ public static class SessionEndpoints
 
     public static IEndpointRouteBuilder MapSessionEndpoints(this IEndpointRouteBuilder routes, FakePayOptions options)
     {
-        var api = routes.MapGroup("/v1").AddEndpointFilter<ApiKeyFilter>();
+        var api = routes.MapGroup("/v1");
         api.MapPost("/checkout/sessions", CreateSession);
         api.MapPost("/refunds", CreateRefund);
 
@@ -170,21 +170,29 @@ public static class SessionEndpoints
 
     private static string StatusName(SessionStatus status) => status.ToString().ToLowerInvariant();
 
-    /// <summary>Checks <c>Authorization: Bearer &lt;ApiKey&gt;</c> in constant time and answers 401 otherwise.</summary>
-    private sealed class ApiKeyFilter(IOptions<FakePayOptions> options) : IEndpointFilter
-    {
-        public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-        {
-            var header = context.HttpContext.Request.Headers.Authorization.ToString();
-            const string prefix = "Bearer ";
-            var presented = header.StartsWith(prefix, StringComparison.Ordinal) ? header[prefix.Length..] : "";
-            var expected = options.Value.ApiKey;
-            if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented), Encoding.UTF8.GetBytes(expected)))
+    /// <summary>
+    /// Checks <c>Authorization: Bearer &lt;ApiKey&gt;</c> on every <c>/v1</c> request, in constant time, and answers 401 otherwise. It is
+    /// middleware and not an endpoint filter, because a filter runs after the body is bound: a request with a missing key and a
+    /// missing body would get a 400 or 500 instead of the 401.
+    /// </summary>
+    public static IApplicationBuilder UseApiKey(this IApplicationBuilder app) =>
+        app.UseWhen(
+            context => context.Request.Path.StartsWithSegments("/v1"),
+            branch => branch.Use(async (context, next) =>
             {
-                return Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Invalid API key.");
-            }
+                var header = context.Request.Headers.Authorization.ToString();
+                const string prefix = "Bearer ";
+                var presented = header.StartsWith(prefix, StringComparison.Ordinal) ? header[prefix.Length..] : "";
+                var expected = context.RequestServices.GetRequiredService<IOptions<FakePayOptions>>().Value.ApiKey;
+                if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented), Encoding.UTF8.GetBytes(expected)))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    context.Response.Headers.WWWAuthenticate = "Bearer";
+                    await context.Response.WriteAsJsonAsync(
+                        new { title = "Invalid API key.", status = StatusCodes.Status401Unauthorized }, context.RequestAborted);
+                    return;
+                }
 
-            return await next(context);
-        }
-    }
+                await next(context);
+            }));
 }

@@ -52,6 +52,9 @@ public class SessionTests
         Assert.Equal(HttpStatusCode.Unauthorized, missing.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, mismatch.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, refund.StatusCode);
+
+        // The key is checked before the body is read: no key and no body is a 401, not a 400.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsync("/v1/checkout/sessions", content: null, Ct)).StatusCode);
     }
 
     [Fact]
