@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 using Microsoft.Extensions.Logging;
 
-namespace NewStore.Inventory.Tests;
+namespace NewStore.TestSupport;
 
 /// <summary>One log call the app made.</summary>
 public sealed record CapturedLog(string Category, LogLevel Level, EventId EventId, string Message, Exception? Exception);
