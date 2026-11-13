@@ -57,7 +57,7 @@ public sealed class ConcurrencyTokenStrategy(
             }
 
             edition.CopiesLeft--;
-            edition.LockedAt ??= time.GetUtcNow();
+            edition.LockedAt ??= time.GetUtcNowToMicrosecond();
             var reservation = ReserveSupport.NewPending(reservationId, editionId, buyerId, time, options.Value);
             db.Reservations.Add(reservation);
             try

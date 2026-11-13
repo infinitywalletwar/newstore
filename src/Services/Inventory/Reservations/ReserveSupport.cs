@@ -22,7 +22,7 @@ internal static class ReserveSupport
     public static Reservation NewPending(
         Guid reservationId, Guid editionId, Guid buyerId, TimeProvider time, InventoryOptions options)
     {
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         return new Reservation
         {
             Id = reservationId,

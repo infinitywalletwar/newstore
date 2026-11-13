@@ -35,7 +35,7 @@ public sealed partial class ReservationExpiryService(
         {
             await using var scope = scopes.CreateAsyncScope();
             var expired = await scope.ServiceProvider.GetRequiredService<ReservationService>()
-                .SweepAsync(time.GetUtcNow(), ct);
+                .SweepAsync(time.GetUtcNowToMicrosecond(), ct);
             if (expired > 0)
             {
                 Expired(logger, expired);

@@ -14,8 +14,14 @@ namespace NewStore.Inventory.Tests;
 public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafka, ReserveStrategy strategy)
     : NewStoreAppFactory<Program>, IAsyncLifetime
 {
-    /// <summary>Every "now" of the service, including the sweeper's timer.</summary>
-    public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
+    /// <summary>
+    /// Every "now" of the service, including the sweeper's timer. It starts a few 100 ns ticks past a whole microsecond: PostgreSQL
+    /// keeps microseconds, so a service that stores or returns an unrounded time answers differently before and after a round trip.
+    /// </summary>
+    public FakeTimeProvider Clock { get; } = new(WholeMicrosecond(DateTimeOffset.UtcNow).AddTicks(3));
+
+    private static DateTimeOffset WholeMicrosecond(DateTimeOffset value) =>
+        new(value.UtcTicks - (value.UtcTicks % 10), TimeSpan.Zero);
 
     /// <summary>Every log record the app writes, whatever the configured log levels.</summary>
     public LogCapture Logs { get; } = new();

@@ -40,7 +40,8 @@ public sealed class HoldTests(NoSweepFixture fixture) : IClassFixture<NoSweepFix
         var edition = await client.CreateEditionAsync(copies: 3);
         var reservation = await client.ReserveOkAsync(edition.Id);
         var held = await client.HoldOkAsync(reservation.Id);
-        Assert.Equal(TimeSpan.FromMinutes(45), held.ExpiresAt - fixture.Clock.GetUtcNow());
+        // The clock has not moved since the reserve, so the hold began at ReservedAt.
+        Assert.Equal(TimeSpan.FromMinutes(45), held.ExpiresAt - reservation.ReservedAt);
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(45) + TimeSpan.FromSeconds(1));
         await SweepAsync();

@@ -31,7 +31,7 @@ public sealed class ConditionalUpdateStrategy(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         var decremented = await db.Editions
             .Where(e => e.Id == editionId && e.CopiesLeft > 0 && e.EndedAt == null)
             .ExecuteUpdateAsync(set => set

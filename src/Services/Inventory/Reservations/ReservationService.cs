@@ -61,7 +61,7 @@ public sealed class ReservationService(
                 return new HoldOutcome.Expired();
         }
 
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         if (reservation.ExpiresAt <= now)
         {
             reservation.Status = ReservationStatus.Expired;
@@ -104,7 +104,7 @@ public sealed class ReservationService(
                 return new ConfirmOutcome.Expired();
         }
 
-        var now = time.GetUtcNow();
+        var now = time.GetUtcNowToMicrosecond();
         if (reservation.ExpiresAt <= now)
         {
             // Too late, and the sweeper has not got here yet: do its work for this one reservation.
