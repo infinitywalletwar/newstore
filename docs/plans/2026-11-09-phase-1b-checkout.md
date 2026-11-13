@@ -1007,7 +1007,7 @@ Branch `phase-1/orders`. Issue #74. Read: topics 08 (sagas), 10 (async/await) an
 
   An unknown order throws `InvalidOperationException`, so the message is dead-lettered. Orders runs no timer: the provider's session expiry is the saga's timeout step.
 
-- [ ] **Step 1: The buy and pay endpoints, failing tests**
+- [x] **Step 1: The buy and pay endpoints, failing tests**
 
 Inventory and Payments are `StubHttpHandler`s. Tests:
 - `Buy_reserves_and_returns_the_order`
@@ -1024,11 +1024,11 @@ Inventory and Payments are `StubHttpHandler`s. Tests:
 
 Expected: the tests fail.
 
-- [ ] **Step 2: Implement the endpoints, then run the tests**
+- [x] **Step 2: Implement the endpoints, then run the tests**
 
 Commit: `feat(orders): buy and pay, with the reservation and the payment created by Orders`.
 
-- [ ] **Step 3: The saga handlers, failing tests, then code**
+- [x] **Step 3: The saga handlers, failing tests, then code**
 
 Tests use Kafka from TestSupport, with events published by `KafkaServer.PublishAsync`:
 - `PaymentSucceeded_confirms_and_completes_the_order_with_the_copy_number`
@@ -1040,7 +1040,7 @@ Tests use Kafka from TestSupport, with events published by `KafkaServer.PublishA
 
 Expected: they pass after the handlers are written. Commit: `feat(orders): the checkout saga reacts to payment events`.
 
-- [ ] **Step 4: Compose, ADR 0017, pull request**
+- [x] **Step 4: Compose, ADR 0017, pull request**
 
 1. **Compose:** `orders` and `orders-migrate`, with `Auth__*` and the caller credentials for client `orders`, and `Services__Inventory` and `Services__Payments`. Add the gateway's dependency on orders; Task 5 already set its `Services__Orders`. Run `docker compose build orders gateway`.
 2. **ADR 0017, the checkout saga.**

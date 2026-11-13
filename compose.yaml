@@ -192,7 +192,7 @@ services:
     deploy: { resources: { limits: { memory: 512m } } }
 
   # The backend for the browser: signs it in to Keycloak, keeps the session in Redis and forwards /api calls with the user's
-  # access token (ADR 0015). Orders is not in the stack until Task 7, so `Services__Orders` points at a service that does not exist yet.
+  # access token (ADR 0015).
   gateway:
     build:
       context: .
@@ -221,6 +221,7 @@ services:
       redis: { condition: service_healthy }
       catalog: { condition: service_healthy }
       inventory: { condition: service_healthy }
+      orders: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
@@ -272,6 +273,65 @@ services:
       postgres: { condition: service_healthy }
       payments-migrate: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  # One-shot job: applies Orders' migrations and exits (ADR 0005).
+  orders-migrate:
+    build:
+      context: .
+      dockerfile: src/Services/Orders/Dockerfile
+    image: newstore/orders:local
+    pull_policy: build
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      ConnectionStrings__Orders: Host=postgres;Database=orders;Username=orders;Password=orders
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: orders
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  # The checkout saga (ADR 0017): reserves through Inventory, creates the payment at Payments, and reacts to Payments' events.
+  orders:
+    build:
+      context: .
+      dockerfile: src/Services/Orders/Dockerfile
+    image: newstore/orders:local
+    pull_policy: build
+    environment:
+      ConnectionStrings__Orders: Host=postgres;Database=orders;Username=orders;Password=orders
+      Messaging__BootstrapServers: kafka:9092
+      # Tokens carry the public issuer; the keys are fetched on the internal address (ADR 0012).
+      Auth__Issuer: http://localhost:8180/realms/newstore
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
+      # Orders' own client, for calls to Inventory and Payments.
+      Auth__ClientId: orders
+      Auth__ClientSecret: orders
+      Auth__TokenEndpoint: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
+      Services__Inventory: http://inventory:8080
+      Services__Payments: http://payments:8080
+      # The provider's page sends the buyer back here: the gateway serves the app (ADR 0015).
+      Orders__WebBaseUrl: http://localhost:8100
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: orders
+    ports: ["127.0.0.1:8103:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      orders-migrate: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      inventory: { condition: service_healthy }
+      payments: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
