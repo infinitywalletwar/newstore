@@ -65,7 +65,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 
 ## Code
 
-- Target .NET 10. A .NET 11 preview SDK is also installed and `dotnet` uses it by default, so `global.json` pins SDK 10.0.404. It also selects the Microsoft.Testing.Platform test runner, which xUnit 4 needs on the .NET 10 SDK. Upgrade the SDK, the `aspnet` image tag and the Microsoft.AspNetCore.* package versions together, so tests, containers and CI run the same runtime: SDK 10.0.404 ships runtime 10.0.15.
+- Target .NET 10. The .NET 11 SDK (11.0.100) is also installed, and without a `global.json` `dotnet` uses the newest SDK, so `global.json` pins SDK 10.0.404. It also selects the Microsoft.Testing.Platform test runner, which xUnit 4 needs on the .NET 10 SDK. Upgrade the SDK, the `aspnet` image tag and the Microsoft.AspNetCore.* package versions together, so tests, containers and CI run the same runtime: SDK 10.0.404 ships runtime 10.0.15. Move to .NET 11 in one pull request (#92); until then Dependabot ignores .NET major versions.
 - `Directory.Build.props` sets the target framework, nullable reference types, implicit usings and warnings as errors for every project, so project files leave these out.
 - Package versions live only in `Directory.Packages.props`. A project's `PackageReference` has no `Version`.
 - Migrations are generated code. The root `.editorconfig` marks `**/Migrations/*.cs` as generated, so migration files carry no pragmas and no per-folder `.editorconfig`.

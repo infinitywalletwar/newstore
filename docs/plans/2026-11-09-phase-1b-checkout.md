@@ -667,7 +667,7 @@ Expected: the tests fail.
 
 Expected: Payments.Tests and FakePay.Tests pass, and `docker compose build payments fakepay` succeeds. Commit: `feat(payments): payment attempts, the FakePay webhook and refunds`.
 
-- [ ] **Step 4: ADR 0014, Compose, CI, pull request**
+- [x] **Step 4: ADR 0014, Compose, CI, pull request**
 
 1. **ADR 0014, Payments and the fake provider.**
    - Why a separate service.
@@ -1217,7 +1217,7 @@ Expected: exactly 10 orders `Completed` with numbers 1–10, expired reservation
 
 Commit: `test(load): the last-copy test buys through the gateway`.
 
-- [ ] **Step 3: CI, docs, pull request**
+- [x] **Step 3: CI, docs, pull request**
 
 1. The CI jobs from Interfaces.
 2. **README:** the status line says 1b is done, waiting for the owner's checks. Add `tests/e2e/` to the layout.
