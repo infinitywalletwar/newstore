@@ -11,6 +11,7 @@
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="..\..\..\src\Shared\ServiceDefaults\NewStore.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\..\src\Shared\Messaging\NewStore.Messaging.csproj" />
     <PackageReference Include="xunit.v3.assert" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
   </ItemGroup>
