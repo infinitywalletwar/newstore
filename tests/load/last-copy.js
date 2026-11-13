@@ -96,9 +96,11 @@ export const options = {
     // The burst's bound is soft: 1,000 buyers in 0.3 s queue at every hop (tests/load/README.md). The rule is the steady load's.
     'http_req_duration{name:reserve}': ['p(99)<' + BURST_P99_MS],
     'http_req_duration{name:reserve-steady}': ['p(99)<' + P99_MS],
-    // k6 could not start every arrival it was asked for: the stack (or k6) fell behind the rate.
+    // "The number of iterations that weren't started due to lack of VUs (for the arrival-rate executors)" (k6 metrics reference).
+    // At 300/s with maxVUs 600 this trips when the mean reserve latency passes about 2 s (600 VUs / 300 per s), which can be before
+    // P99_MS does: if CI fails, check dropped_iterations first.
     dropped_iterations: ['count==0'],
-    // Not limits: a threshold on a tag makes k6 print that tag's own line in the summary, which the README's table reads.
+    // Not limits: with a threshold on the tag, the k6 summary printed that tag's own line in every run, which the README's table reads.
     'http_req_duration{name:login}': ['p(99)<60000'],
     'http_req_duration{name:pay}': ['p(99)<60000'],
     'http_req_duration{name:fakepay-pay}': ['p(99)<60000'],
@@ -261,7 +263,11 @@ function numbersAreOneToTen(editionId, label, creatorToken) {
 }
 
 export function teardown(data) {
-  numbersAreOneToTen(data.first, 'first edition', data.creatorToken);
-  numbersAreOneToTen(data.second, 'second edition', data.creatorToken);
-  setPasswordPolicy(data.oldPolicy);
+  try {
+    numbersAreOneToTen(data.first, 'first edition', data.creatorToken);
+    numbersAreOneToTen(data.second, 'second edition', data.creatorToken);
+  } finally {
+    // Put the realm's policy back even when a check above throws.
+    setPasswordPolicy(data.oldPolicy);
+  }
 }

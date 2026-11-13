@@ -31,7 +31,7 @@ function audienceMapper(audience) {
   };
 }
 
-// Keycloak's admin tokens last 60 s, so a long job asks for a fresh one before each step.
+// A fresh admin token for each step, so a long job never depends on one token's lifetime.
 export function adminToken() {
   if (!ADMIN_USER || !ADMIN_PASSWORD) {
     throw new Error('KEYCLOAK_ADMIN_USER and KEYCLOAK_ADMIN_PASSWORD are not set: pass them with -e.');
@@ -85,7 +85,7 @@ export function getPasswordPolicy() {
   return res.json('passwordPolicy') || '';
 }
 
-// A partial update: Keycloak changes only the fields the body has.
+// Sends only `passwordPolicy` (Keycloak answered 204 in every run, and the old policy, empty, was restored).
 export function setPasswordPolicy(policy) {
   const res = http.put(`${KEYCLOAK_URL}/admin/realms/${REALM}`, JSON.stringify({ passwordPolicy: policy }),
     { headers: adminHeaders(), tags: { name: 'keycloak-set-policy' } });

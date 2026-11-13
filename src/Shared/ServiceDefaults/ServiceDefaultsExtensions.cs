@@ -27,9 +27,11 @@ public static class ServiceDefaultsExtensions
         // Kestrel's listen backlog, the queue of connections the kernel has accepted but the app has not, is 512 by default
         // (SocketTransportOptions.Backlog: "Defaults to 512 pending connections",
         // https://github.com/dotnet/aspnetcore/blob/v10.0.14/src/Servers/Kestrel/Transport.Sockets/src/SocketTransportOptions.cs).
-        // When a burst fills it, the kernel drops the SYN and the client retries after about 1 s: the load test measured 78 to 483
-        // `ListenOverflows` per run at Orders. The kernel also caps the value at net.core.somaxconn, which is 4096 in the
-        // OrbStack containers on the Mac (`docker run ... cat /proc/sys/net/core/somaxconn`), so 4096 is the most that has an effect there.
+        // When a burst fills it, the load test measured 78 to 483 `ListenOverflows` per run at Orders, and a client whose SYN is
+        // lost waits for its retransmission: RFC 6298 section 2.1 says "the sender SHOULD set RTO <- 1 second" until an RTT is
+        // measured (https://www.rfc-editor.org/rfc/rfc6298). listen(2) says a backlog above /proc/sys/net/core/somaxconn "is silently
+        // capped to that value" and "Since Linux 5.4, the default in this file is 4096; in earlier kernels, the default value is 128"
+        // (https://man7.org/linux/man-pages/man2/listen.2.html). 4096 is therefore the most that has an effect on a kernel with the default.
         builder.Services.Configure<SocketTransportOptions>(options => options.Backlog = 4096);
 
         builder.Services.AddProblemDetails();
