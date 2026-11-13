@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Microsoft.EntityFrameworkCore;
 
 using NewStore.Messaging;
@@ -36,7 +38,7 @@ public static class PaymentEndpoints
         {
             // The column is numeric(10,2). A larger value would reach PostgreSQL and come back as a 500 (numeric field overflow).
             // The rounding is the database's: a value that rounds up past the maximum overflows too.
-            errors["amount"] = [$"amount must not be more than {MaxAmount}."];
+            errors["amount"] = [$"amount must not be more than {MaxAmount.ToString(CultureInfo.InvariantCulture)}."];
         }
 
         if (!Uri.TryCreate(request.ReturnUrl, UriKind.Absolute, out var returnUrl) || returnUrl.Scheme is not ("http" or "https"))

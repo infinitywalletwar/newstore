@@ -18,7 +18,6 @@ public sealed class ConflictInjector : SaveChangesInterceptor
     /// <summary>The database's connection string with its password: the context's own <c>GetConnectionString()</c> leaves the password out.</summary>
     public string ConnectionString { get; set; } = "";
 
-
     private Guid _orderId;
     private int _losses;
     private bool _storeDeadlineOnLastLoss;
@@ -36,11 +35,12 @@ public sealed class ConflictInjector : SaveChangesInterceptor
     {
         var order = eventData.Context?.ChangeTracker.Entries<Order>()
             .FirstOrDefault(e => e.State == EntityState.Modified && e.Entity.Id == _orderId)?.Entity;
-        if (order is not null && Interlocked.Decrement(ref _losses) >= 0)
+        var left = order is null ? -1 : Interlocked.Decrement(ref _losses);
+        if (order is not null && left >= 0)
         {
             await using var connection = new NpgsqlConnection(ConnectionString);
             await connection.OpenAsync(cancellationToken);
-            var last = Volatile.Read(ref _losses) == 0 && _storeDeadlineOnLastLoss;
+            var last = left == 0 && _storeDeadlineOnLastLoss;
             await using var command = new NpgsqlCommand(
                 last
                     ? "UPDATE orders SET updated_at = clock_timestamp(), reserved_until = @until WHERE id = @id"

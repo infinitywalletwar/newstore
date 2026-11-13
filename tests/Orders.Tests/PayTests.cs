@@ -151,6 +151,22 @@ public class PayTests
     }
 
     [Fact]
+    public async Task Pay_that_loses_three_races_without_the_deadline_stored_is_409_order_busy()
+    {
+        var buyer = Guid.NewGuid();
+        var order = await _fixture.BuyAsync(buyer);
+        // The cap still applies: three lost saves and the deadline not stored means nothing was recorded, so the buyer is asked to retry.
+        _fixture.Conflicts.LoseNext(order.Id, losses: 3, storeDeadlineOnLastLoss: false);
+
+        var response = await PayAsync(buyer, order.Id);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:order-busy", await TypeOfAsync(response));
+        Assert.Equal(OrderStatus.Reserved, (await _fixture.GetOrderAsync(order.Id)).Status);
+        Assert.Empty(_fixture.Payments.CreatesFor(order.Id));
+    }
+
+    [Fact]
     public async Task Payments_down_on_pay_keeps_the_holds_deadline()
     {
         var buyer = Guid.NewGuid();

@@ -168,6 +168,7 @@ public class WebhookTests(PaymentsFixture fixture)
     [InlineData("wrong,right", HttpStatusCode.OK)]
     [InlineData("right,wrong", HttpStatusCode.OK)]
     [InlineData("wrong,wrong", HttpStatusCode.BadRequest)]
+    [InlineData("notHex,right", HttpStatusCode.OK)]
     public async Task Webhook_is_accepted_when_any_v1_value_matches(string order, HttpStatusCode expected)
     {
         var (payment, sessionId) = await NewPaymentAsync();
@@ -177,7 +178,7 @@ public class WebhookTests(PaymentsFixture fixture)
         var signed = TestWebhooks.Sign(body, DateTimeOffset.UtcNow).Split(',');
         var right = signed[1];
         var wrong = "v1=" + new string('0', 64);
-        var v1Values = order.Split(',').Select(name => name == "right" ? right : wrong);
+        var v1Values = order.Split(',').Select(name => name switch { "right" => right, "notHex" => "v1=zz", _ => wrong });
         using var request = new HttpRequestMessage(HttpMethod.Post, "/webhooks/fakepay")
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),

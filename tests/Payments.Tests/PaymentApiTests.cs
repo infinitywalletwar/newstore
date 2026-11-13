@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 
 using Microsoft.EntityFrameworkCore;
@@ -89,6 +90,34 @@ public class PaymentApiTests(PaymentsFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal(0, await fixture.QueryAsync(db => db.PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)));
+    }
+
+    [Fact]
+    public async Task The_amount_error_names_the_maximum_with_a_decimal_point_whatever_the_servers_culture()
+    {
+        // The test server does not carry the test's own culture into the request (it runs the app without the caller's execution
+        // context), so the culture is set for the threads that run the request.
+        var previous = CultureInfo.DefaultThreadCurrentCulture;
+        CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            using var client = fixture.CreateOrdersClient();
+            using var content = new StringContent(
+                $$"""{"orderId":"{{Guid.NewGuid()}}","amount":100000000,"returnUrl":"http://shop.test/orders"}""",
+                System.Text.Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync("/payments", content, Ct);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Ct);
+            Assert.Equal(
+                "amount must not be more than 99999999.99.",
+                problem.GetProperty("errors").GetProperty("amount")[0].GetString());
+        }
+        finally
+        {
+            CultureInfo.DefaultThreadCurrentCulture = previous;
+        }
     }
 
     [Fact]

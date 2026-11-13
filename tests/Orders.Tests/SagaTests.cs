@@ -185,9 +185,6 @@ public class SagaTests
         Assert.Equal(0, Calls(paying, "release"));
     }
 
-    private int ConfirmCalls(Guid reservationId) =>
-        _fixture.Inventory.RequestsFor(reservationId).Count(r => r.RequestUri!.AbsolutePath.EndsWith("/confirm", StringComparison.Ordinal));
-
     [Fact]
     public async Task Repeated_payment_events_while_refunding_or_refunded_change_nothing()
     {
@@ -198,14 +195,14 @@ public class SagaTests
 
         // A second PaymentSucceeded (a different message) while Refunding: no second refund request.
         var refunding = await _fixture.GetOrderAsync(paying.Id);
-        var confirms = ConfirmCalls(refunding.ReservationId);
+        var confirms = Calls(refunding, "confirm");
         var again = Succeeded(paying);
         await PublishAsync(paying, again);
         await _fixture.WaitHandledAsync(again.EventId);
         var afterRepeat = await _fixture.GetOrderAsync(paying.Id);
         Assert.Equal(OrderStatus.Refunding, afterRepeat.Status);
         // The repeat asked Inventory for nothing and wrote nothing to the order.
-        Assert.Equal(confirms, ConfirmCalls(refunding.ReservationId));
+        Assert.Equal(confirms, Calls(refunding, "confirm"));
         Assert.Equal(refunding.UpdatedAt, afterRepeat.UpdatedAt);
         Assert.Equal(1, await _fixture.CountOutboxAsync<RefundRequested>(paying.Id));
 
