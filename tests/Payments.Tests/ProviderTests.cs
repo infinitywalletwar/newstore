@@ -7,12 +7,13 @@ using NewStore.Payments.Payments;
 using NewStore.Payments.Provider;
 
 using Polly.CircuitBreaker;
+using Polly.RateLimiting;
 using Polly.Timeout;
 
 namespace NewStore.Payments.Tests;
 
 /// <summary>
-/// The provider client sits behind Polly's resilience pipeline. When the circuit is open or a timeout fires, Polly throws its own
+/// The provider client sits behind Polly's resilience pipeline. When the circuit is open, a timeout fires or the rate limiter is full, Polly throws its own
 /// exceptions, which Messaging does not know. The client turns them into <see cref="TransientFailureException"/>, so a handler
 /// that calls it is retried instead of dead-lettered.
 /// </summary>
@@ -42,6 +43,7 @@ public class ProviderTests
     {
         new BrokenCircuitException("The circuit is open."),
         new TimeoutRejectedException("The attempt timed out."),
+        new RateLimiterRejectedException(),
     };
 
     [Theory]

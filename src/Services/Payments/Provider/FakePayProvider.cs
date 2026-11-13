@@ -6,15 +6,15 @@ using Microsoft.Extensions.Options;
 using NewStore.Messaging;
 using NewStore.Payments.Payments;
 
-using Polly.CircuitBreaker;
-using Polly.Timeout;
+using Polly;
 
 namespace NewStore.Payments.Provider;
 
 /// <summary>
 /// <see cref="IPaymentProvider"/> for FakePay. The <see cref="HttpClient"/> carries the base address, the API key and the
 /// resilience pipeline (see <c>Program.cs</c>). When that pipeline gives up without an answer, Polly throws
-/// <see cref="BrokenCircuitException"/> (the circuit is open) or <see cref="TimeoutRejectedException"/>. Messaging does not know
+/// <see cref="ExecutionRejectedException"/>, the base of <c>BrokenCircuitException</c> (the circuit is open), <c>TimeoutRejectedException</c>
+/// (a timeout fired) and <c>RateLimiterRejectedException</c> (the concurrency limiter is full). Messaging does not know
 /// those types, so this class turns them into <see cref="TransientFailureException"/>: a handler that calls the provider is then
 /// retried while the provider is down, not dead-lettered. An answer with a bad status is an <see cref="HttpRequestException"/>,
 /// which Messaging classifies itself.
@@ -108,13 +108,9 @@ public sealed partial class FakePayProvider(
         {
             return await http.SendAsync(request, ct);
         }
-        catch (BrokenCircuitException ex)
+        catch (ExecutionRejectedException ex)
         {
-            throw new TransientFailureException("FakePay's circuit breaker is open.", ex);
-        }
-        catch (TimeoutRejectedException ex)
-        {
-            throw new TransientFailureException("FakePay did not answer in time.", ex);
+            throw new TransientFailureException($"FakePay gave no answer, Polly's pipeline rejected the call: {ex.Message}", ex);
         }
     }
 
