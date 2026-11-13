@@ -79,7 +79,7 @@ services:
     deploy: { resources: { limits: { memory: 1g } } }
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.164.0
+    image: otel/opentelemetry-collector-contrib:0.165.0
     volumes:
       - ./deploy/compose/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
