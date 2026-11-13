@@ -54,7 +54,9 @@ jobs:
         # The runner is slower than the Mac, so the latency threshold is looser (tests/load/README.md).
         run: docker compose -f compose.yaml -f compose.load.yaml run --rm k6
         env:
-          P99_MS: "2000"
+          # The runner is slower and noisier than the Mac (same-code runs vary 1.6 to 2.8 s), so this guards against gross
+          # regressions only; the rule on the Mac is 1 s (tests/load/README.md).
+          P99_MS: "3500"
       - name: Catalog finds the seeded video
         run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Gateway forwards a search to Catalog
