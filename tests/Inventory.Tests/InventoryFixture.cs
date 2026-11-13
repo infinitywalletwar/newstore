@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
@@ -23,6 +24,9 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
     private static DateTimeOffset WholeMicrosecond(DateTimeOffset value) =>
         new(value.UtcTicks - (value.UtcTicks % 10), TimeSpan.Zero);
 
+    /// <summary>Catalog, as a table of video owners (<see cref="FakeCatalog"/>). It records the calls Inventory makes.</summary>
+    public StubHttpHandler Catalog { get; } = FakeCatalog.Create();
+
     /// <summary>Every log record the app writes, whatever the configured log levels.</summary>
     public LogCapture Logs { get; } = new();
 
@@ -34,6 +38,11 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
         Settings["ConnectionStrings:Inventory"] =
             await postgres.CreateDatabaseAsync("inventory", TestContext.Current.CancellationToken);
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
+        // Inventory calls Catalog as client "inventory"; the stub below answers, so the address and the secret are never used.
+        Settings["Services:Catalog"] = "http://catalog.test";
+        Settings["Auth:ClientId"] = "inventory";
+        Settings["Auth:ClientSecret"] = "inventory";
+        Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
         Settings["Inventory:ReserveStrategy"] = strategy.ToString();
         Settings["Inventory:ExpirySweepInterval"] = SweepInterval;
         await MigrateAsync<InventoryDbContext>();
@@ -47,6 +56,13 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
             services.AddLogging(logging => logging.AddProvider(Logs));
+            services.UseStubHandler<CatalogClient>(Catalog);
+            // The standard pipeline waits seconds between retries; a test that makes Catalog fail does not need to.
+            services.ConfigureAll<HttpStandardResilienceOptions>(o =>
+            {
+                o.Retry.Delay = TimeSpan.Zero;
+                o.Retry.UseJitter = false;
+            });
         });
     }
 }

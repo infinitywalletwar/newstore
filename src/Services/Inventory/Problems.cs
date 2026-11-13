@@ -11,6 +11,12 @@ internal static class Problems
     public static IResult Conflict(string slug, string title) =>
         Results.Problem(statusCode: StatusCodes.Status409Conflict, title: title, type: Type(slug));
 
+    public static IResult Forbidden(string slug, string title) =>
+        Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: title, type: Type(slug));
+
+    public static IResult Unavailable(string slug, string title) =>
+        Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: title, type: Type(slug));
+
     public static IResult Validation(Dictionary<string, string[]> errors) =>
         Results.ValidationProblem(errors, type: Type("validation"));
 }

@@ -16,6 +16,10 @@ public class AuthSettingsTests(PostgresServer postgres, KafkaServer kafka)
         factory.Settings["ConnectionStrings:Inventory"] =
             await postgres.CreateDatabaseAsync("inventory", TestContext.Current.CancellationToken);
         factory.Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
+        factory.Settings["Services:Catalog"] = "http://catalog.test";
+        factory.Settings["Auth:ClientId"] = "inventory";
+        factory.Settings["Auth:ClientSecret"] = "inventory";
+        factory.Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
         factory.Settings.Remove("Auth:UserClients:0");
 
         var auth = factory.Services.GetRequiredService<IOptions<AuthOptions>>().Value;

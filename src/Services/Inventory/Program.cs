@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -13,8 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-// Tokens come from Keycloak. Only the client "orders" may use the reservation endpoints.
+// Tokens come from Keycloak. Only the client "orders" may use the reservation endpoints; the edition endpoints take a
+// signed-in user and, for an existing edition, check that the user is its creator (ADR 0016).
 builder.AddNewStoreAuth().AddClientPolicy("orders");
+builder.Services.AddSingleton<IAuthorizationHandler, EditionOwnerHandler>();
+
+// Catalog knows who owns a video; Inventory asks it before a creator sells one.
+builder.AddServiceClient<CatalogClient>("Services:Catalog");
+builder.Services.AddScoped<IDatabaseSeeder<InventoryDbContext>, InventorySeeder>();
 
 // EF logs an Error for the unique violation the reserve strategies answer with a 409. Its logger factory hides that one.
 builder.Services.AddSingleton(services => new HandledConflictLoggerFactory(services.GetRequiredService<ILoggerFactory>()));
