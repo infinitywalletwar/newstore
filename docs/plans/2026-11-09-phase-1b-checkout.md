@@ -40,7 +40,7 @@ All paths below are relative to the newstore repository root, `example/newstore/
 - npm, pinned exactly in each `package.json`, with the lock file committed; install with `npm ci`:
   - `@angular/*` `22.2.5` and `@angular/cli` `22.2.6`
   - `@playwright/test` `1.65.0`
-- These are project dependencies under `web/` and `tests/e2e/`, not global tools. Downloading Playwright's Chromium on the Mac (`npx playwright install chromium`) needs the owner's go-ahead first. CI downloads it freely.
+- These are project dependencies under `web/` and `tests/e2e/`, not global tools. The owner decided that Playwright's Chromium is not downloaded on the Mac at all; only CI's `e2e` job installs it.
 - Images: `node:26.12.1-alpine` (it has an arm64 build) for the Angular build stage. The Phase 0 and 1a tags stay.
 - Ports. The gateway breaks the "next number" rule on purpose, because it is the front door. AGENTS.md says so.
 
@@ -79,7 +79,7 @@ All paths below are relative to the newstore repository root, `example/newstore/
   - FakePay API key `fakepay`, webhook secret `fakepay-webhook`.
 
   They appear only where AGENTS.md allows, and Task 3 adds `compose.load.yaml` to that list. Tests read client secrets from the realm file instead of repeating them.
-- **The p99 rule.** Reserve through the gateway (`POST /api/orders`) keeps a p99 under 1 s on the Mac. If a run misses it, stop and bring the numbers to the main session. Never loosen the threshold.
+- **The p99 rule.** Reserve through the gateway (`POST /api/orders`) keeps a p99 under 1 s on the Mac **under the steady load** (k6's `steady` scenario: a ramping arrival rate of buyers, nobody refused). The 1,000-buyers-at-once burst is the correctness test; its latency bound is soft (`BURST_P99_MS`, 3 s on the Mac). The owner changed the rule on 2026-11-13, after a diagnosis showed the burst's p99 is the time to drain 1,010 requests that arrive within 0.3 s at cold processes, which moved between 1.3 and 3.0 s with the Mac's load (summary in `tests/load/README.md`, "The rule, and what the fixes changed"). If a steady run misses 1 s, stop and bring the numbers to the main session. Never loosen the threshold.
 - **The web app.** It uses no UI library in 1b, only plain CSS. Angular Material, which the README's Stack names, arrives with the first page that needs one of its components.
 
 ## Running tasks at once
@@ -1168,7 +1168,7 @@ Branch `phase-1/done-1b`. Issue #76. Owns the Compose stack. Closes A-1 (#1), C-
   - the README: status line and layout
 
 **Interfaces:**
-- **Playwright:** `@playwright/test` 1.65.0, Chromium only, `baseURL` `http://localhost:8100`, a trace on the first retry. It runs on the host against the base stack, so `localhost` means what it means to a buyer.
+- **Playwright:** `@playwright/test` 1.64.1, Chromium only, `baseURL` `http://localhost:8100`, a trace on the first retry. It runs on the host against the base stack, so `localhost` means what it means to a buyer.
 - **`checkout.spec.ts`,** "a new buyer signs up, buys a copy and sees it in my copies":
   1. Open `/` and click `sign-in`. On Keycloak's page, follow Register.
   2. Fill in a random username, an email, a first and last name, and a password, then submit. Expect `user-name` to be visible.
@@ -1205,15 +1205,15 @@ Branch `phase-1/done-1b`. Issue #76. Owns the Compose stack. Closes A-1 (#1), C-
   - A new job `e2e` starts the base stack, then runs `npm ci` and `npx playwright install --with-deps chromium` in `tests/e2e`, then `npx playwright test`. It uploads the trace as an artifact on failure.
   - The two are separate jobs, because one stack can't have both TTLs.
 
-- [ ] **Step 1: The browser test**
+- [x] **Step 1: The browser test**
 
-Write the spec, then run it in CI. To run it on the Mac, first ask the owner for the go-ahead to download Chromium. Expected: green. Commit: `test(e2e): a new buyer buys a copy in the browser`.
+Write the spec and run it in CI only (no browser on the Mac, by the owner's decision). Expected: green. Commit: `test(e2e): a new buyer buys a copy in the browser`.
 
-- [ ] **Step 2: k6 through the gateway**
+- [x] **Step 2: k6 through the gateway**
 
 Change the scripts and the overlay. Run on the Mac: `docker compose -f compose.yaml -f compose.load.yaml up -d --wait`, then `… run --rm k6`.
 
-Expected: exactly 10 orders `Completed` with numbers 1–10, expired reservations back on sale, no 5xx, and reserve p99 under 1 s. If p99 misses, stop and report the numbers (Global Constraints). Record the run in `tests/load/README.md`: p50, p95 and p99 per tag, setup time, and `docker stats` peaks.
+Expected: exactly 10 orders `Completed` with numbers 1–10, expired reservations back on sale, no 5xx, burst reserve p99 under `BURST_P99_MS` and steady reserve p99 under 1 s (the rule as the owner changed it on 2026-11-13). If p99 misses, stop and report the numbers (Global Constraints). Record the run in `tests/load/README.md`: p50, p95 and p99 per tag, setup time, and `docker stats` peaks.
 
 Commit: `test(load): the last-copy test buys through the gateway`.
 
@@ -1229,9 +1229,9 @@ Commit: `test(load): the last-copy test buys through the gateway`.
 ## Phase 1b is done when
 
 1. **In CI:** on `main`, `build-test`, `web`, `compose-smoke` and `e2e` are green.
-   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 2 s on the runner.
+   - `compose-smoke` includes k6 through the gateway: exactly 10 orders complete, numbers 1 to 10 are each used once, expired reservations go back on sale, no response is a 5xx, and reserve's p99 is under 3.5 s on the runner (both the burst and the steady scenario).
    - `e2e` is a new buyer signing up, buying and seeing the copy.
-2. **On the Mac:** the same k6 run has reserve p99 under 1 s, recorded in `tests/load/README.md`.
+2. **On the Mac:** the same k6 run has reserve p99 under 1 s in the steady scenario (and under 3 s in the burst), recorded in `tests/load/README.md`.
 3. **On a clean clone:** `docker compose up -d --wait`, then the owner buys once by hand:
    - open http://localhost:8100, sign up, and buy a copy of "Sourdough in Zero Gravity";
    - pay on FakePay's page and see the copy number;

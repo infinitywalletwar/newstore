@@ -42,7 +42,16 @@ public static class ServiceClientExtensions
 
         // Handlers run in the order they are added, outermost first. The resilience handler is first, so the token handler sits
         // inside it and runs again on every retry.
-        http.AddStandardResilienceHandler();
+        // The standard pipeline's concurrency limiter allows 1,000 calls at once and, by default, a queue of 0: the 1,001st call is
+        // rejected on the spot ("Rate limiter ... Queue: 0, Permit: 1_000",
+        // https://learn.microsoft.com/dotnet/core/resilience/http-resilience#standard-resilience-handler-defaults). A burst of
+        // buyers (the last-copy load test sends 1,010 buys in 0.3 s) made Orders answer 503 to the ten over the limit. A queue
+        // makes them wait their turn; the queue is bounded, so a real overload is still rejected past 1,000 waiting calls.
+        // The wait is NOT covered by the total timeout: the same table lists the rate limiter first (outermost) and the total timeout
+        // second, inside it. A queued call waits for a permit, and each permit holder is bounded by the 30 s total timeout, so a call
+        // can wait up to about 30 s and then run up to 30 s: about 60 s worst case. The caller's token cancels a queued wait, so
+        // nothing waits for ever. A Kafka saga handler spends that time inside the inbox transaction.
+        http.AddStandardResilienceHandler(options => options.RateLimiter.DefaultRateLimiterOptions.QueueLimit = 1000);
         http.AddHttpMessageHandler<ServiceTokenHandler>();
         return http;
     }

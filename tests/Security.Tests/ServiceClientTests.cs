@@ -65,6 +65,26 @@ public class ServiceClientTests
     }
 
     [Fact]
+    public async Task A_burst_over_the_concurrency_limit_waits_instead_of_failing()
+    {
+        // The standard pipeline's concurrency limiter has a queue of 0 by default: the call over the limit is rejected at once
+        // (a 503 for the buyer). With 2 permits and 6 slow calls at the same time, all 6 must still succeed.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(CallerSettings);
+        builder.AddServiceClient<InventoryClient>("Services:Inventory");
+        builder.Services.UseTestServiceTokens();
+        builder.Services.AddHttpClient(nameof(InventoryClient)).ConfigurePrimaryHttpMessageHandler(() => new SlowHandler());
+        builder.Services.ConfigureAll<HttpStandardResilienceOptions>(o => o.RateLimiter.DefaultRateLimiterOptions.PermitLimit = 2);
+        using var host = builder.Build();
+        var client = host.Services.GetRequiredService<InventoryClient>();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6)
+            .Select(_ => client.PingAsync(TestContext.Current.CancellationToken)));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+    }
+
+    [Fact]
     public void Service_client_reads_its_base_address_from_configuration()
     {
         using var host = StartHost(new StubHttpHandler());
@@ -111,6 +131,15 @@ public class ServiceClientTests
         using var host = builder.Build();
 
         Assert.Equal(["gateway"], host.Services.GetRequiredService<IOptions<AuthOptions>>().Value.UserClients);
+    }
+
+    private sealed class SlowHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(100, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
     }
 
     private sealed class FlakyTokenSource(Func<string> next) : IServiceTokenSource

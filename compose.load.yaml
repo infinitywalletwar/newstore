@@ -1,32 +1,49 @@
 # Overlay for the last-copy load test (tests/load/README.md):
 #   docker compose -f compose.yaml -f compose.load.yaml up -d --wait
 #   docker compose -f compose.yaml -f compose.load.yaml run --rm k6
-# It shortens Inventory's reservation TTL, so the expiry scenario can run in seconds. Never use it as a base stack.
+# It shortens Inventory's reservation TTL (so the expiry scenario runs in seconds), lets the k6 client in at the gateway, Orders
+# and Inventory, and switches on FakePay's test endpoints. Never use it as a base stack.
 services:
   inventory:
     environment:
       Inventory__ReservationTtl: "00:00:03"
       Inventory__ExpirySweepInterval: "00:00:01"
       Inventory__ReserveStrategy: ${RESERVE_STRATEGY:-ConditionalUpdate}
-      # The k6 client (tests/load/keycloak.js) signs users in like the gateway does, so Inventory takes it as a second user client.
+      # The k6 client (tests/load/keycloak.js) signs users in like the gateway does, so every service that checks a user's
+      # token takes it as a second user client.
       Auth__UserClients__1: k6
+
+  orders:
+    environment:
+      Auth__UserClients__1: k6
+
+  gateway:
+    environment:
+      Auth__UserClients__1: k6
+
+  # The winners pay through FakePay's test endpoint, which is off unless this is set.
+  fakepay:
+    environment:
+      FakePay__EnableTestEndpoints: "true"
 
   k6:
     image: grafana/k6:2.3.0
     profiles: [load]
     volumes: ["./tests/load:/scripts:ro"]
-    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://inventory:8080", "-e", "P99_MS=${P99_MS:-1000}"]
+    command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "-e", "BURST_P99_MS=${BURST_P99_MS:-3000}", "--summary-trend-stats=med,p(95),p(99),max"]
     environment:
-      # The secret of the realm's `orders` client, which equals its id (local-only, AGENTS.md). k6 trades it for a token.
-      ORDERS_CLIENT_SECRET: orders
-      TOKEN_URL: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
-      # setup() creates the client `k6` through the admin API, with Keycloak's local admin (AGENTS.md).
+      FAKEPAY_URL: http://fakepay:8080
+      # setup() creates the client `k6` and the buyers through the admin API, with Keycloak's local admin (AGENTS.md).
       KEYCLOAK_URL: http://keycloak:8080
       # The sample creator `orbital-kitchen` signs in to create the test editions; a sample user's password equals its username (AGENTS.md).
       CREATOR_PASSWORD: orbital-kitchen
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
     depends_on:
+      gateway: { condition: service_healthy }
+      orders: { condition: service_healthy }
       inventory: { condition: service_healthy }
+      fakepay: { condition: service_healthy }
       keycloak: { condition: service_healthy }
-    deploy: { resources: { limits: { memory: 512m } } }
+    # 1,010 VUs each keep a token and sockets: the peak was about 380 MiB (tests/load/README.md), so 1g leaves room.
+    deploy: { resources: { limits: { memory: 1g } } }

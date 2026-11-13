@@ -52,6 +52,15 @@ public sealed class InventoryClient(HttpClient http)
     private const string ExpiredType = "urn:newstore:problem:reservation-expired";
     private const string ReleasedType = "urn:newstore:problem:reservation-released";
 
+    /// <summary>
+    /// One cheap call that opens the connection to Inventory and fetches Orders' token before the first buyer needs them. Any
+    /// answer will do, so the status is ignored; a call that gets no answer throws, and the warm-up tries again.
+    /// </summary>
+    public async Task WarmUpAsync(CancellationToken ct)
+    {
+        using var response = await http.GetAsync("/health/live", ct);
+    }
+
     public async Task<ReserveResult> ReserveAsync(Guid editionId, Guid reservationId, Guid buyerId, CancellationToken ct)
     {
         using var response = await ServiceCall.PostAsync(
