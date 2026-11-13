@@ -175,5 +175,45 @@ services:
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 
+  # The backend for the browser: signs it in to Keycloak, keeps the session in Redis and forwards /api calls with the user's
+  # access token (ADR 0015). Orders is not in the stack until Task 7, so `Services__Orders` points at a service that does not exist yet.
+  gateway:
+    build:
+      context: .
+      dockerfile: src/Gateway/Dockerfile
+    image: newstore/gateway:local
+    pull_policy: build
+    environment:
+      ConnectionStrings__Redis: redis:6379
+      # Browsers are sent to the public issuer; the gateway itself fetches discovery and keys from the keycloak container (ADR 0012).
+      Oidc__Authority: http://localhost:8180/realms/newstore
+      Oidc__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Oidc__ClientId: gateway
+      Oidc__ClientSecret: gateway
+      Oidc__RequireHttpsMetadata: "false"
+      Auth__Issuer: http://localhost:8180/realms/newstore
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
+      Services__Catalog: http://catalog:8080
+      Services__Inventory: http://inventory:8080
+      Services__Orders: http://orders:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: gateway
+    ports: ["127.0.0.1:8100:8080"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      catalog: { condition: service_healthy }
+      inventory: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
 volumes:
   postgres-data:

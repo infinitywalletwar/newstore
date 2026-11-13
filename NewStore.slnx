@@ -28,6 +28,9 @@
   <Folder Name="/tests/Inventory.Tests/">
     <Project Path="tests/Inventory.Tests/NewStore.Inventory.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Gateway.Tests/">
+    <Project Path="tests/Gateway.Tests/NewStore.Gateway.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Security.Tests/">
     <Project Path="tests/Security.Tests/NewStore.Security.Tests.csproj" />
   </Folder>

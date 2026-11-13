@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="NewStore.TestSupport" />
+    <Using Include="System.Net.Http.Json" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Testcontainers.Keycloak" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <ProjectReference Include="..\..\src\Gateway\NewStore.Gateway.csproj" />
+    <ProjectReference Include="..\Shared\NewStore.TestSupport\NewStore.TestSupport.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The tests read the sample users' passwords from the file Keycloak imports, so the two cannot drift apart. -->
+    <Content Include="..\..\deploy\compose\keycloak\newstore-realm.json" Link="newstore-realm.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
