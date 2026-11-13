@@ -87,6 +87,28 @@ public class PayTests
     }
 
     [Fact]
+    public async Task Pay_that_loses_the_race_to_a_payment_event_answers_from_the_stored_state()
+    {
+        var buyer = Guid.NewGuid();
+        var order = await _fixture.BuyAsync(buyer);
+        var original = _fixture.Payments.Create;
+        // While Orders waits for Payments, the saga completes the order: the row changes under the pay request.
+        _fixture.Payments.Create = r =>
+        {
+            _fixture.QueryAsync(db => db.Orders.Where(o => o.Id == order.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, OrderStatus.Completed), Ct)).GetAwaiter().GetResult();
+            return original(r);
+        };
+
+        var response = await PayAsync(buyer, order.Id);
+
+        // The pay request's save failed on xmin. It reloaded, saw Completed and answered from that, instead of writing Paying over it.
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:order-closed", await TypeOfAsync(response));
+        Assert.Equal(OrderStatus.Completed, (await _fixture.GetOrderAsync(order.Id)).Status);
+    }
+
+    [Fact]
     public async Task Pay_after_the_reservation_ran_out_marks_the_order_expired()
     {
         var buyer = Guid.NewGuid();

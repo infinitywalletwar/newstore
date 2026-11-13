@@ -117,6 +117,8 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   | 5101 | Catalog with `dotnet run` |
   | 8102 | Inventory in Compose |
   | 5102 | Inventory with `dotnet run` |
+  | 8103 | Orders in Compose |
+  | 5103 | Orders with `dotnet run` |
   | 8104 | Payments in Compose |
   | 5104 | Payments with `dotnet run` |
   | 8105 | FakePay in Compose. A browser reaches the checkout page here. |

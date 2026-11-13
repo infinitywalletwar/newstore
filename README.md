@@ -257,6 +257,7 @@ newstore/
 │   ├── Gateway/
 │   │   NewStore.Gateway: Auth/ (OIDC sign-in, session cookie in Redis, CSRF header), Proxy/ (YARP routes, access-token transform), Redis/
 │   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Editions/, Caching/, Seed/ (sample-catalog.json)
+│   │                 Orders: Orders/ (buy, pay, my copies), Clients/ (Inventory and Payments), Saga/ (the handlers of Payments' events)
 │   ├── Fakes/        stand-ins for outside services; FakePay: a hosted-checkout page and signed webhooks (not part of the store)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
@@ -267,6 +268,7 @@ newstore/
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
+│   ├── Orders.Tests/     buy, pay and the checkout saga against real PostgreSQL and Kafka, with stubs for Inventory and Payments
 │   ├── Gateway.Tests/    sign-in, sessions and routing against real Keycloak and Redis
 │   └── Shared/       NewStore.TestSupport: the app factory, span sink, and the PostgreSQL and Kafka servers every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool
