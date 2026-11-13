@@ -1,0 +1,51 @@
+# Payments is a service, and the provider is behind an interface
+
+## Status
+
+Accepted
+
+## Date
+
+2026-11-13
+
+## Context
+
+Story C-2: a buyer pays on a provider's hosted page, and "paying twice, or a payment provider retrying its callback, never charges twice or assigns two copies". A payment that succeeds after the reservation's hold ran out must be refunded (C-2, and the README's Decisions).
+
+Three forces shape the design:
+
+- The provider answers in two ways: a reply to our call, and a webhook later. Either can repeat or get lost.
+- Phase 7 moves to Stripe test mode. Nothing outside the provider code should change.
+- Until then, tests and the local stack need a provider that is fast, offline and under our control.
+
+## Decision
+
+1. **Payments is its own service,** with its own database (`payments`: `payment_attempts`, `provider_events`, the outbox and the inbox). The owner chose this on 2026-11-08. Payments talks to the provider and owns the idempotency rules around it. Orders asks Payments for a payment (`POST /payments`, only Orders' client token passes the policy) and reacts to `PaymentSucceeded`, `PaymentFailed` and `PaymentRefunded` on one topic, `payments.payments`, keyed by order id.
+2. **The provider sits behind `IPaymentProvider`:** `CreateSessionAsync`, `RefundAsync` and `ReadWebhook`. The rest of Payments sees only `ProviderSession` and `ProviderEvent`. FakePay implements it now; a Stripe implementation replaces `FakePayProvider` in Phase 7, and its webhook parsing and signature check live in that class alone.
+3. **FakePay is a separate small app** (`src/Fakes/FakePay`, state in memory, no database, no outbox), so the integration is a real HTTP integration. It copies the parts of Stripe's Checkout that matter here:
+   - A session is created with an `Idempotency-Key`; the same key returns the same session. Stripe: "For API v1, Stripe saves the status code and body of the first request made with a given idempotency key … Retries with the same key return the saved response" ([Idempotent requests](https://docs.stripe.com/api/idempotent_requests)). FakePay does not copy Stripe's check that "compares incoming parameters to those of the original request and errors if they're not the same".
+   - `expiresAt` must be 30 minutes to 24 hours ahead: "It can be anywhere from 30 minutes to 24 hours after Checkout Session creation" ([Create a Checkout Session, `expires_at`](https://docs.stripe.com/api/checkout/sessions/create)). FakePay accepts 10 seconds less than 30 minutes, because Payments computes "now + 30 minutes" and the request needs a moment to arrive; without the slack, the default lifetime would be refused. (This slack is ours, not Stripe's; not verified how Stripe treats the same case.)
+   - **Decline leaves the session open.** Stripe's card-declines page says: "Checkout provides feedback to the customer when a card declines and allows them to try again" ([Card declines, Reduce card declines](https://docs.stripe.com/declines/card)). No page we found states that the Checkout Session stays `open` after a decline, so this part is the owner's decision (README: "FakePay's Decline button leaves the payment open"), not a confirmed Stripe behaviour.
+   - Webhooks are signed and retried until a `2xx`; Stripe: "Stripe attempts to deliver events to your destination for up to three days with an exponential back off in live mode" ([Event delivery behaviors](https://docs.stripe.com/webhooks#automatic-retries)). FakePay retries at a fixed interval, and can send each event twice (`FakePay:DeliverTwice`) to make duplicates easy to test.
+4. **Webhook signing and the replay window follow Stripe's scheme.** The header is `FakePay-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "{t}.{body}")>`, which is Stripe's: the signed text is "the timestamp value (as a string), the character `.`, the actual JSON payload" and the HMAC uses SHA-256 ([Verify manually](https://docs.stripe.com/webhooks?verify=verify-manually#verify-manually)). Payments checks two things, in this order: the HMAC, compared in constant time, and then that the timestamp is within 5 minutes of now in either direction. The timestamp is inside the signed text, so "an attacker can't change the timestamp without invalidating the signature" ([Preventing replay attacks](https://docs.stripe.com/webhooks#preventing-replay-attacks)), which is why a signature alone would let a captured request be sent again next week. Stripe's libraries use the same 5-minute default. Our check reads one `v1` value; Stripe may send several while a secret is being rolled, so the Stripe implementation must accept any matching one.
+5. **The webhook handler is idempotent by a table and a guard,** in one transaction: insert the provider's event id into `provider_events` (`ON CONFLICT DO NOTHING`; zero rows means a duplicate: answer 200, change nothing), then move the payment out of `Created` only (`UPDATE … WHERE status = 'Created'`), and enqueue the event in the same transaction. Stripe advises the first half: "guard against duplicated event receipts by logging the event IDs you've processed, and then not processing already-logged events" ([Handle duplicate events](https://docs.stripe.com/webhooks#handle-duplicate-events)); and the second half answers "Stripe doesn't guarantee the delivery of events in the order that they're generated" ([Event ordering](https://docs.stripe.com/webhooks#event-ordering)): a late `expired` after a `completed` finds the payment out of `Created` and changes nothing.
+6. **Creating a payment is safe to repeat.** The attempt is inserted first (`ON CONFLICT (order_id) DO NOTHING`, so parallel creates for one order produce one row and no error), then the session is created with the attempt's id as the provider's idempotency key, then stored. If the provider call fails, the attempt stays without a session, the endpoint answers 503 `dependency-unavailable` with `Retry-After`, and the next call finishes it with the same key. The session call runs while a row lock (`SELECT … FOR UPDATE`) is held, so parallel callers wait and then find the session, and the provider sees one request.
+7. **A refund is driven by an event.** Orders publishes `RefundRequested` (topic `orders.orders`); Payments' handler refunds with the payment id as the idempotency key, marks the attempt `Refunded` and enqueues `PaymentRefunded`. A provider that is down raises `HttpRequestException` (a 5xx) or `TransientFailureException`, which Messaging retries without a limit (ADR 0008, amended). A payment that is not `Succeeded` raises `InvalidOperationException`: the message is dead-lettered, because retrying cannot change the payment.
+8. **Polly's rejections become `TransientFailureException` inside `FakePayProvider`.** The provider client uses the standard resilience handler. When its circuit is open or a timeout fires, Polly throws `BrokenCircuitException` or `TimeoutRejectedException`, which Messaging does not classify (decision of Task 1's review). Converting them in the client, which chose to add the pipeline, keeps Messaging free of Polly and makes a refund wait while FakePay's circuit is open. A test covers both exceptions on both calls.
+
+## Alternatives considered
+
+- **Payments as a module inside Orders.** Fewer deployables, but Orders would own both the saga and the provider's wire format and secrets, and the refund path could not be tested on its own. The owner chose a service; the cost is one more container and the two events.
+- **No interface; call FakePay's client directly.** Less code today. Phase 7 would then touch the endpoint, the handler and the webhook code. With the interface only `FakePayProvider` is replaced.
+- **Stripe test mode from the start.** Stripe's docs say that "Registered webhook endpoints must be publicly accessible HTTPS URLs", or that the Stripe CLI can forward events to a local listener ([Set up your endpoint](https://docs.stripe.com/webhooks#set-up-your-endpoint)). Either needs a network, an account and keys in every test run and in CI. FakePay keeps tests offline and lets them cause failures on demand (expiry, duplicates, a down receiver). The price is that FakePay can drift from Stripe; Phase 7's test-mode payment is what catches that.
+- **A signature without a timestamp check.** Simpler, but a captured valid request would be accepted whenever it was sent. The event-id table stops a replay of an event we already handled, but it keeps every id for as long as we keep the table; the window limits what an old capture can do, and old ids can be pruned.
+- **Refund by a synchronous call from Orders to Payments.** Orders would have to handle Payments being down at the moment it decides to refund. With the event, the decision is written to Orders' outbox with the order's change, and Payments acts when it can. The price is that Orders learns the result later, by `PaymentRefunded`.
+- **Check "already handled" with a read before the write** (`SELECT` the event id, then act). Two deliveries at the same moment both pass the read. The insert with `ON CONFLICT DO NOTHING` is one atomic step: the second insert waits for the first transaction and then finds the key taken (the same mechanism as the inbox, `IdempotentDispatcher`).
+
+## Consequences
+
+- Orders (Task 7) consumes `PaymentSucceeded`, `PaymentFailed` and `PaymentRefunded` from `payments.payments` and publishes `RefundRequested` to `orders.orders`. A shared topic needs one place for its name and partition count, so each producer has a static class for it (`PaymentEvents`, `OrderEvents`); AGENTS.md says so.
+- A webhook whose signature is valid but whose type FakePay never sends is refused with 400, like a bad one. Stripe sends many event types; the Stripe implementation needs a way to say "valid, ignore it" so that Stripe is answered 200.
+- `provider_events` grows by one row per webhook and has no cleanup yet.
+- Creating a payment holds a database connection while it waits for the provider, bounded by the resilience pipeline's timeouts. At Orders' rate this is fine; a high-volume service would take the idempotency key to the provider from a stored value and not hold the lock.
+- FakePay's local credentials (`fakepay`, `fakepay-webhook`) appear only where AGENTS.md allows.

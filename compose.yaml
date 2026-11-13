@@ -175,5 +175,83 @@ services:
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 
+  # One-shot job: applies Payments' migrations and exits (ADR 0005). The image's entrypoint is
+  # `dotnet NewStore.Payments.dll`, so `command` supplies the argument.
+  payments-migrate:
+    build:
+      context: .
+      dockerfile: src/Services/Payments/Dockerfile
+    image: newstore/payments:local
+    pull_policy: build
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      ConnectionStrings__Payments: Host=postgres;Database=payments;Username=payments;Password=payments
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: payments
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  payments:
+    build:
+      context: .
+      dockerfile: src/Services/Payments/Dockerfile
+    image: newstore/payments:local
+    pull_policy: build
+    environment:
+      ConnectionStrings__Payments: Host=postgres;Database=payments;Username=payments;Password=payments
+      Messaging__BootstrapServers: kafka:9092
+      # Tokens carry the public issuer; the keys are fetched on the internal address (ADR 0012).
+      Auth__Audience: payments
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
+      Payments__Provider__BaseUrl: http://fakepay:8080
+      Payments__Provider__ApiKey: fakepay
+      Payments__Provider__WebhookSecret: fakepay-webhook
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: payments
+    ports: ["127.0.0.1:8104:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      payments-migrate: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  # A stand-in for a hosted payment page such as Stripe's (ADR 0014). Not a store service: no database, no outbox.
+  # The browser reaches it on localhost:8105; it calls Payments' webhook on the Compose network.
+  fakepay:
+    build:
+      context: .
+      dockerfile: src/Fakes/FakePay/Dockerfile
+    image: newstore/fakepay:local
+    pull_policy: build
+    environment:
+      FakePay__ApiKey: fakepay
+      FakePay__WebhookSecret: fakepay-webhook
+      FakePay__WebhookUrl: http://payments:8080/webhooks/fakepay
+      FakePay__PublicBaseUrl: http://localhost:8105
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: fakepay
+    ports: ["127.0.0.1:8105:8080"]
+    depends_on:
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 256m } } }
+
 volumes:
   postgres-data:

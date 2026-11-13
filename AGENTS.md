@@ -53,6 +53,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   - To consume, write an `IIntegrationEventHandler<TEvent>` and register it with `AddMessaging<TContext>(m => m.AddHandler<TEvent, THandler>("topic"))`. The handler needs no idempotency code: it runs inside the inbox transaction, once per message id, and its writes commit with the inbox row.
   - The context's model calls `modelBuilder.AddOutbox()` and `modelBuilder.AddInbox()`, and the service's migration creates `outbox_messages` and `inbox_messages`. `AddTopic` creates topics at startup.
   - An event that another service consumes is a record in `NewStore.Contracts` (`src/Shared/Contracts/<Producer>/`), because the consumer picks the class by the CLR full name in the `type` header. The record holds its topic name and partition count as constants, and both ends declare the topic with them.
+  - When several events share a topic, its name and partition count live in one static class named for the producer (`PaymentEvents`, `OrderEvents`), and the key is the aggregate's id. An event that has a topic to itself keeps the constants on the record, as `EditionSnapshot` does.
   - `MessagingCleanupService` deletes published outbox rows one day after publishing and inbox rows after seven days (`Messaging:OutboxRetention`, `Messaging:InboxRetention`). A consumer that replays older messages raises the inbox retention first, or they are handled again.
   - A handler that calls another service lets `HttpRequestException` and timeouts propagate, or throws `TransientFailureException`. The consumer retries those without a limit, except an `HttpRequestException` with a 4xx status other than 408 and 429, which is permanent; any other exception is dead-lettered after `MaxHandlerAttempts`.
   - Kafka is never in a readiness check: a service without Kafka still serves reads. The relay's `outbox-relay` check is a live check only.
@@ -102,6 +103,7 @@ Keep it to a few sentences per decision. Every statement about how a framework o
 - Every container image runs on arm64, because the owner's Mac is Apple Silicon. Pin exact image tags in `compose.yaml`.
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
 - Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
+- FakePay's local credentials: API key `fakepay`, webhook secret `fakepay-webhook`. Payments and FakePay both read them from Compose or `appsettings.Development.json`, never from `appsettings.json`.
 - Host ports:
 
   | Port | What |
@@ -115,6 +117,10 @@ Keep it to a few sentences per decision. Every statement about how a framework o
   | 5101 | Catalog with `dotnet run` |
   | 8102 | Inventory in Compose |
   | 5102 | Inventory with `dotnet run` |
+| 8104 | Payments in Compose |
+| 5104 | Payments with `dotnet run` |
+| 8105 | FakePay in Compose. A browser reaches the checkout page here. |
+| 5105 | FakePay with `dotnet run` |
 
   Each new service takes the next number: 81NN in Compose and 51NN with `dotnet run`.
 
