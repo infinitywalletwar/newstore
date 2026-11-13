@@ -12,14 +12,14 @@ The tasks of [the Phase 2 plan](../plans/2026-11-14-phase-2-video-pipeline.md), 
 
 | Wave | Issue | Task |
 |---|---|---|
-| A | #? | 1 The spike: local S3 and FFmpeg |
-| B | #? | 2 Media and resumable uploads |
-| B | #? | 3 Catalog: drafts and `VideoPublished` |
-| B | #? | 4 The gateway routes (merges after 2) |
-| C | #? | 5 The worker |
-| C | #? | 6 Downloads |
-| C | #? | 7 The web app |
-| D | #? | 8 Phase 2 done |
+| A | #115 | 1 The spike: local S3 and FFmpeg |
+| B | #116 | 2 Media and resumable uploads |
+| B | #117 | 3 Catalog: drafts and `VideoPublished` |
+| B | #118 | 4 The gateway routes (merges after 2) |
+| C | #119 | 5 The worker |
+| C | #120 | 6 Downloads |
+| C | #121 | 7 The web app |
+| D | #122 | 8 Phase 2 done |
 
 Task 1 is a spike: if the local S3 emulator fails one of its checks, the sprint stops there until the owner decides on the fallback.
 

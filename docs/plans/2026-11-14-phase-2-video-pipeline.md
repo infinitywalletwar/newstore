@@ -132,10 +132,10 @@ Found while writing this plan, and checked:
 
 | Wave | Tasks, at the same time | Owns the Compose stack on the Mac | Issue |
 |---|---|---|---|
-| A | 1 The spike: local S3 and FFmpeg | Task 1 | #? |
-| B | 2 Media and resumable uploads ‖ 3 Catalog: drafts and `VideoPublished` ‖ 4 The gateway routes | Task 2 | #?, #?, #? |
-| C | 5 The worker ‖ 6 Downloads ‖ 7 The web app | Task 5 | #?, #?, #? |
-| D | 8 Phase 2 done | Task 8 | #? |
+| A | 1 The spike: local S3 and FFmpeg | Task 1 | #115 |
+| B | 2 Media and resumable uploads ‖ 3 Catalog: drafts and `VideoPublished` ‖ 4 The gateway routes | Task 2 | #116, #117, #118 |
+| C | 5 The worker ‖ 6 Downloads ‖ 7 The web app | Task 5 | #119, #120, #121 |
+| D | 8 Phase 2 done | Task 8 | #122 |
 
 - A wave starts when every task of the previous wave has merged. Each task starts from that `main`, in its own worktree, on branch `phase-2/<slug>`. The slugs are `s3-spike`, `media-uploads`, `catalog-drafts`, `gateway-media`, `worker`, `downloads`, `web-video` and `done-2`.
 - **Merge order inside a wave.** Task 4 merges after Task 2, because the gateway's Compose service needs `media` to exist. The other tasks merge in any order.
@@ -223,7 +223,7 @@ The browser talks to the gateway and to S3, and the file's bytes never pass thro
 
 ### Task 1: The spike: local S3 and FFmpeg
 
-Branch `phase-2/s3-spike`. Issue #?. Owns the Compose stack in wave A. Read: topic 01 (S3 and presigned URLs), and topic 03's FFmpeg section.
+Branch `phase-2/s3-spike`. Issue #115. Owns the Compose stack in wave A. Read: topic 01 (S3 and presigned URLs), and topic 03's FFmpeg section.
 
 The spike settles every open point before production code. Its checks become contract tests that stay: they prove the emulator behaves like S3 in each place this phase relies on, and a later Floci upgrade that changes one of them fails CI. **If a check fails** after the one documented knob for it has been tried, stop and report to the main session with the output. Do not switch emulators: the fallback, LocalStack with an auth token, needs the owner's account and their decision.
 
@@ -343,7 +343,7 @@ Commit: `chore(compose): Floci as the local S3`.
 
 ### Task 2: Media and resumable uploads
 
-Branch `phase-2/media-uploads`. Issue #?. Owns the Compose stack in wave B. Advances V-1. Read: topics 01 (multipart, resume, the complete call) and 03 ("Буферизация и стриминг загрузки"). The resumable upload gets a deep walkthrough: explain it request by request, show the test that proves the resume, and suggest one change for the owner to try (make `PartSize` 5 MiB in `appsettings.Development.json`, upload a 20 MB file, and watch the four PUTs in the browser's network tab).
+Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Advances V-1. Read: topics 01 (multipart, resume, the complete call) and 03 ("Буферизация и стриминг загрузки"). The resumable upload gets a deep walkthrough: explain it request by request, show the test that proves the resume, and suggest one change for the owner to try (make `PartSize` 5 MiB in `appsettings.Development.json`, upload a 20 MB file, and watch the four PUTs in the browser's network tab).
 
 **Files:**
 - **Create:**
@@ -585,7 +585,7 @@ Implement, run. Commit: `feat(media): expire uploads nobody finished`.
 
 ### Task 3: Catalog: drafts and `VideoPublished`
 
-Branch `phase-2/catalog-drafts`. Issue #?. Advances V-1, V-3 and V-4. Read: Stage 1 topics 06 (the outbox) and 07 (idempotent consumers), and topic 02's "Идемпотентность, повторы, чекпоинты".
+Branch `phase-2/catalog-drafts`. Issue #117. Advances V-1, V-3 and V-4. Read: Stage 1 topics 06 (the outbox) and 07 (idempotent consumers), and topic 02's "Идемпотентность, повторы, чекпоинты".
 
 **Files:**
 - **Create:**
@@ -685,7 +685,7 @@ Expected: they pass after the handler is written. Commit: `feat(catalog): publis
 
 ### Task 4: The gateway routes
 
-Branch `phase-2/gateway-media`. Issue #?. Merges after Task 2. Read: Stage 1 topic 12 (YARP).
+Branch `phase-2/gateway-media`. Issue #118. Merges after Task 2. Read: Stage 1 topic 12 (YARP).
 
 **Files:**
 - Modify: `src/Gateway/Proxy/ProxyExtensions.cs`, `src/Gateway/appsettings.Development.json` (`Services:Media` = `http://localhost:5106`), `tests/Gateway.Tests/ProxyTests.cs`, `compose.yaml` (the gateway's `Services__Media: http://media:8080` and its dependency on `media`), `ci.yml`.
@@ -727,7 +727,7 @@ Expected: Gateway.Tests pass, and `docker compose build gateway` succeeds. Commi
 
 ### Task 5: The worker
 
-Branch `phase-2/worker`. Issue #?. Owns the Compose stack in wave C. Advances V-2. Read: topic 02 (all of it) and topic 03 ("HLS", "FFmpeg: получить HLS"). The worker gets a deep walkthrough, as a hard part would: the lease step by step, the test that proves a crashed worker's job is taken over, and one change for the owner (set `Media:Processing:Lease` to 10 s and kill the worker container mid-encode with `docker compose kill media-worker`, then start it and watch the job's `attempts`).
+Branch `phase-2/worker`. Issue #119. Owns the Compose stack in wave C. Advances V-2. Read: topic 02 (all of it) and topic 03 ("HLS", "FFmpeg: получить HLS"). The worker gets a deep walkthrough, as a hard part would: the lease step by step, the test that proves a crashed worker's job is taken over, and one change for the owner (set `Media:Processing:Lease` to 10 s and kill the worker container mid-encode with `docker compose kill media-worker`, then start it and watch the job's `attempts`).
 
 **Files:**
 - **Create:**
@@ -904,7 +904,7 @@ Commit: `feat(media): the worker container and the seeded sample`.
 
 ### Task 6: Downloads
 
-Branch `phase-2/downloads`. Issue #?. Closes L-2. Read: topic 01 ("Ссылка на скачивание для владельца") and Stage 1 topic 07 (idempotent consumers).
+Branch `phase-2/downloads`. Issue #120. Closes L-2. Read: topic 01 ("Ссылка на скачивание для владельца") and Stage 1 topic 07 (idempotent consumers).
 
 **Files:**
 - Create: `src/Services/Media/Downloads/CopyAssignedHandler.cs`, `DownloadEndpoints.cs`, `DownloadOptions.cs`; `tests/Media.Tests/DownloadTests.cs`; `docs/adr/0021-playback-and-downloads.md`
@@ -955,7 +955,7 @@ Expected: they fail. Implement, run. Expected: Media.Tests pass. Commit: `feat(m
 
 ### Task 7: The web app
 
-Branch `phase-2/web-video`. Issue #?. Advances V-1, V-3 and L-2 in the browser. Read: topic 01 ("Multipart upload", "Докачка после обрыва") and topic 03 ("Воспроизведение: hls.js и Safari"). Middle depth, except the uploader, which gets the deep walkthrough of the resume.
+Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser. Read: topic 01 ("Multipart upload", "Докачка после обрыва") and topic 03 ("Воспроизведение: hls.js и Safari"). Middle depth, except the uploader, which gets the deep walkthrough of the resume.
 
 **Files:**
 - **Create:** `web/src/app/studio/studio.component.ts`, `web/src/app/studio/uploader.ts`, `web/src/app/videos/video-player.component.ts`, `web/src/app/studio/studio.spec.ts`
@@ -1038,7 +1038,7 @@ Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 
 ### Task 8: Phase 2 done
 
-Branch `phase-2/done-2`. Issue #?. Owns the Compose stack. Closes V-1, V-2 and V-3. Read: topics 01 to 03 again, for the mock interview.
+Branch `phase-2/done-2`. Issue #122. Owns the Compose stack. Closes V-1, V-2 and V-3. Read: topics 01 to 03 again, for the mock interview.
 
 **Files:**
 - **Create:**
