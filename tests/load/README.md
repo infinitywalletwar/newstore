@@ -12,7 +12,7 @@ docker compose -f compose.yaml -f compose.load.yaml run --rm k6
 docker compose -f compose.yaml -f compose.load.yaml down -v
 ```
 
-To try the other reserve strategy (ADR 0007), set `RESERVE_STRATEGY=ConcurrencyToken` when you run `up`. `P99_MS` (default 1000) is the steady load's bound and `BURST_P99_MS` (default 3000) the burst's; CI sets both to 3500.
+To try the other reserve strategy (ADR 0007), set `RESERVE_STRATEGY=ConcurrencyToken` when you run `up`. `P99_MS` (default 1000) is the steady load's bound and `BURST_P99_MS` (default 3000) the burst's; CI sets `P99_MS` to 3500 and `BURST_P99_MS` to 8000.
 
 What it does:
 
@@ -38,7 +38,7 @@ The thresholds, and what failing each one means:
 | `sold_out: count==990` | Every other buyer got a clean `409 sold-out`. |
 | `http_req_failed: rate==0` | No 5xx and no connection error. A `409` counts as a good answer here. |
 | `server_errors: count==0` | No response was a 5xx, counted on its own. |
-| `http_req_duration{name:reserve}: p(99)<BURST_P99_MS` | The burst's reserves (and the expiry scenario's): the slowest 1% took less than `BURST_P99_MS` (3000 ms by default, a soft bound; CI's is 3500). |
+| `http_req_duration{name:reserve}: p(99)<BURST_P99_MS` | The burst's reserves (and the expiry scenario's): the slowest 1% took less than `BURST_P99_MS` (3000 ms by default, a soft bound; CI's is 8000). |
 | `http_req_duration{name:reserve-steady}: p(99)<P99_MS` | **The rule.** The steady load's `POST /api/orders`: the slowest 1% took less than `P99_MS` (1000 ms by default on the Mac; CI's `P99_MS` is 3500 by the owner's decision, because the runner is slower and noisier, so CI guards against gross regressions only). |
 | `steady_vu_turns: max<=100` | No steady VU walked past its 100th edition. A 101st buy would meet the VU's own open order and answer `200`, so `steady: the buy is 201` would fail; this threshold names that cause. The metric is the turn number of each steady iteration, so its max in the summary is the most editions one VU used. |
 | `dropped_iterations: count==0` | k6 started every arrival the steady load asked for. It counts iterations "that weren't started due to lack of VUs (for the arrival-rate executors)" ([k6 metrics reference](https://grafana.com/docs/k6/latest/using-k6/metrics/reference/)). With `maxVUs: 600` at 300 a second it trips when the mean reserve latency passes about 2 s, which can happen before `P99_MS` does: **if CI fails, check this first.** |
@@ -47,6 +47,8 @@ The thresholds, and what failing each one means:
 `compose.load.yaml` shortens Inventory's reservation TTL to 30 seconds and its sweep interval to 1 second, so the expiry scenario takes about half a minute, not 10 minutes. The TTL has one source, `RESERVATION_TTL_SECONDS` (default 30, below 60 because Compose writes it as `00:00:SS`): Compose gives it to Inventory and to k6, which computes the expiry wait and the steady start from it. It also switches on FakePay's test endpoints and lets the client `k6` in at the gateway, Orders and Inventory. It is for this test only; a stack started without it keeps the 10-minute TTL.
 
 **Why not 3 s (#102).** The overlay used to set 3 s, on the reasoning that a winner has 3 s between its `201` and its Pay (Pay's first step is a Hold) and that no run had shown a winner refused as expired. Then CI did: Orders reserves in Inventory first and saves its own order after, so a winner's `201` arrives later than Inventory's commit, by the reserve's own latency. On a slow runner the burst's reserve had a median of 4.5 to 5.3 s (p99 4.7 to 5.6 s) in the two failing runs (#112 and #123), against 2.2 to 2.5 s (p99 2.3 to 2.7 s) in passing runs. The hold was swept before Pay, the order became `Expired`, Pay answered `409 order-expired`, and the winners' `pay is 200` and copy-number checks failed. Production keeps a 10-minute TTL and was not affected. The test now keeps the TTL several times above the slowest reserve it has seen: 30 s. Slowing Orders, Inventory and the gateway to 0.1 CPU on the Mac makes the burst's reserve about 11 s: with 3 s the failure reproduces, with 30 s every check passes (see the pull request for the runs). A TTL is a configuration of the test, so it needs its own margin, like any timeout.
+
+CI's `BURST_P99_MS` is 8000 (and its `P99_MS` stays 3500). The burst's bound is soft by design (1,000 buyers within 0.3 s queue at every hop), and CI's burst p99 ranged 2.3 to 5.6 s on the same code; the bound only guards against gross regressions. The CI job prints the runner's CPU model and count (`lscpu`) before k6, so #102 can check whether the slow runs come from slower runners.
 
 ## The rule, and what the fixes changed (fix round 1, 2026-11-13)
 
