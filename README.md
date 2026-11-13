@@ -264,6 +264,7 @@ newstore/
 │       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
 │       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
 ├── web/              the Angular app
+│   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it
 ├── compose.load.yaml overlay for the k6 load test: a short reservation TTL and the k6 service
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
