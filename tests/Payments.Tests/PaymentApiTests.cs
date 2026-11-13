@@ -73,6 +73,32 @@ public class PaymentApiTests(PaymentsFixture fixture)
         Assert.Single(fixture.Provider.SessionRequestsFor(orderId));
     }
 
+    [Theory]
+    [InlineData("100000000")]
+    [InlineData("99999999.995")] // rounds to 100000000.00 in numeric(10,2)
+    public async Task An_amount_that_does_not_fit_the_column_is_400(string amount)
+    {
+        var orderId = Guid.NewGuid();
+        using var client = fixture.CreateOrdersClient();
+        using var content = new StringContent(
+            $$"""{"orderId":"{{orderId}}","amount":{{amount}},"returnUrl":"http://shop.test/orders"}""",
+            System.Text.Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/payments", content, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(0, await fixture.QueryAsync(db => db.PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)));
+    }
+
+    [Fact]
+    public async Task The_largest_amount_that_fits_the_column_is_accepted()
+    {
+        var payment = await fixture.CreatePaymentAsync(amount: 99_999_999.99m);
+
+        Assert.Equal(99_999_999.99m, payment.Amount);
+    }
+
     [Fact]
     public async Task Only_the_orders_client_may_create_a_payment()
     {

@@ -7,6 +7,9 @@ namespace NewStore.Payments.Payments;
 
 public static class PaymentEndpoints
 {
+    /// <summary>The largest amount <c>numeric(10,2)</c> holds: eight digits before the point, two after.</summary>
+    private const decimal MaxAmount = 99_999_999.99m;
+
     public static IEndpointRouteBuilder MapPaymentEndpoints(this IEndpointRouteBuilder routes)
     {
         // Only Orders asks for payments. The gateway never routes here, and Inventory's token is refused by the policy.
@@ -28,6 +31,12 @@ public static class PaymentEndpoints
         if (request.Amount <= 0)
         {
             errors["amount"] = ["amount must be positive."];
+        }
+        else if (Math.Round(request.Amount, 2, MidpointRounding.AwayFromZero) > MaxAmount)
+        {
+            // The column is numeric(10,2). A larger value would reach PostgreSQL and come back as a 500 (numeric field overflow).
+            // The rounding is the database's: a value that rounds up past the maximum overflows too.
+            errors["amount"] = [$"amount must not be more than {MaxAmount}."];
         }
 
         if (!Uri.TryCreate(request.ReturnUrl, UriKind.Absolute, out var returnUrl) || returnUrl.Scheme is not ("http" or "https"))
