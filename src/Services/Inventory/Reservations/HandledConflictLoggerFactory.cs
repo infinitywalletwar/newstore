@@ -6,7 +6,7 @@ namespace NewStore.Inventory;
 
 /// <summary>
 /// The logger factory EF Core writes to. It hides the two Error records that EF logs for the unique violation
-/// the reserve strategies handle (<see cref="ReserveSupport.IsReservationConflict"/>: answered as a 409, or as the 200 of
+/// the reserve strategies handle (<see cref="ReserveSupport.IsReservationConflict(DbUpdateException)"/>: answered as a 409, or as the 200 of
 /// a parallel request with the same id) and
 /// passes every other record on unchanged. Register it as a singleton: EF Core asks for one factory used by every context.
 /// </summary>
@@ -16,7 +16,10 @@ namespace NewStore.Inventory;
 /// <item><c>SaveChangesFailed</c> (Microsoft.EntityFrameworkCore.Update) carries the <see cref="DbUpdateException"/>,
 /// so the exact violation is checked.</item>
 /// <item><c>CommandError</c> (Microsoft.EntityFrameworkCore.Database.Command) carries no exception, only the SQL. It is
-/// hidden for the reservation INSERT, whose failed save is logged by <c>SaveChangesFailed</c> unless it is the handled one.</item>
+/// hidden for every command that inserts into <c>reservations</c>. ConcurrencyToken inserts with SaveChanges, so its other
+/// failures are still logged by <c>SaveChangesFailed</c>. ConditionalUpdate inserts in its one reserve statement, which is
+/// not a save: any failure other than the handled violation leaves the strategy as an exception, and the exception handler
+/// middleware (<c>UseExceptionHandler</c> in ServiceDefaults) logs it.</item>
 /// </list>
 /// </remarks>
 internal sealed class HandledConflictLoggerFactory(ILoggerFactory inner) : ILoggerFactory
