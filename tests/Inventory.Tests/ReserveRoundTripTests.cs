@@ -1,3 +1,8 @@
+using System.Diagnostics;
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace NewStore.Inventory.Tests;
 
 /// <summary>
@@ -55,6 +60,52 @@ public sealed class ReserveRoundTripTests(ConditionalUpdateFixture fixture) : IC
         // The reserve statement breaks the primary key, so it is undone with its decrement; the lookup finds the reservation;
         // the endpoint reads the copy number and the edition. Only a real retry pays for the lookup.
         Assert.Equal("WITH, SELECT, SELECT, SELECT", StatementsOf(retry));
+    }
+
+    [Fact]
+    public async Task A_deadlock_on_the_reserve_statement_is_resent_once()
+    {
+        using var setup = fixture.CreateClient();
+        var edition = await setup.CreateEditionAsync(copies: 1);
+
+        using var buyer = fixture.CreateClient();
+        fixture.Deadlocks.FailNext(1);
+        var response = await buyer.ReserveAsync(edition.Id, Guid.NewGuid());
+
+        // Answers as if nothing had failed, and the statement went out twice: the failed one, then the resend.
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("WITH, WITH, SELECT", StatementsOf(buyer));
+        Assert.Equal(0, (await setup.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task A_second_deadlock_is_not_resent()
+    {
+        using var setup = fixture.CreateClient();
+        var edition = await setup.CreateEditionAsync(copies: 1);
+
+        using var buyer = fixture.CreateClient();
+        fixture.Deadlocks.FailNext(2);
+        var response = await buyer.ReserveAsync(edition.Id, Guid.NewGuid());
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("WITH, WITH", StatementsOf(buyer));
+        Assert.Equal(1, (await setup.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task The_capture_counts_synchronous_calls()
+    {
+        using var activity = new Activity("sync-capture").Start();
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+
+        db.Database.ExecuteSqlRaw("SELECT 1");
+        using (db.Database.BeginTransaction())
+        {
+        }
+
+        Assert.Equal(["SELECT 1", "BEGIN"], fixture.Statements.Of(activity.TraceId));
     }
 
     /// <summary>

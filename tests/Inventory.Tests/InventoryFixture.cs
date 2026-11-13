@@ -30,6 +30,9 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
     /// <summary>Every statement the app's <see cref="InventoryDbContext"/> sends, with the trace of the request that sent it.</summary>
     public StatementCapture Statements { get; } = new();
 
+    /// <summary>Fails the next reserve statements with a deadlock, so a test can check the resend.</summary>
+    public DeadlockInjector Deadlocks { get; } = new();
+
     /// <summary>How often the background sweeper ticks on <see cref="Clock"/>. A subclass sets a long one to keep the sweeper out.</summary>
     protected virtual string SweepInterval => "00:00:01";
 
@@ -53,7 +56,7 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
             services.AddLogging(logging => logging.AddProvider(Logs));
 
             // Composed with the app's own AddDbContext configuration (EF Core 9 and later).
-            services.ConfigureDbContext<InventoryDbContext>(options => options.AddInterceptors(Statements));
+            services.ConfigureDbContext<InventoryDbContext>(options => options.AddInterceptors(Statements, Deadlocks));
         });
     }
 }

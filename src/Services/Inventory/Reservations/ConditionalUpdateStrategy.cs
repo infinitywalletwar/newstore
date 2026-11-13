@@ -12,7 +12,7 @@ namespace NewStore.Inventory;
 /// PostgreSQL locks the edition row for the update, so concurrent reserves of one edition queue on the row, and each one
 /// sees the count the one before it left. The statement is its own transaction, so the decrement and the reservation
 /// commit together or not at all, and the row lock is held for one statement, not for several round trips. There is
-/// nothing to retry. ADR 0013, "Amendment, 2026-11", has the statement sequence and why each guarantee holds.
+/// no retry loop to tune; the one resend, on a deadlock, is in <see cref="InsertTakenAsync"/>. ADR 0013, "Amendment, 2026-11", has the statement sequence and why each guarantee holds.
 /// </summary>
 public sealed class ConditionalUpdateStrategy(
     InventoryDbContext db, TimeProvider time, IOptions<InventoryOptions> options, InventoryMetrics metrics)
@@ -32,17 +32,7 @@ public sealed class ConditionalUpdateStrategy(
         int inserted;
         try
         {
-            // The INSERT reads only the UPDATE's RETURNING, so it inserts a row only when a copy was taken. The first
-            // reserve sets locked_at; later ones keep it.
-            inserted = await db.Database.ExecuteSqlAsync($"""
-                WITH taken AS (
-                    UPDATE editions SET copies_left = copies_left - 1, locked_at = COALESCE(locked_at, {reservation.ReservedAt})
-                    WHERE id = {editionId} AND copies_left > 0 AND ended_at IS NULL
-                    RETURNING id)
-                INSERT INTO reservations (id, edition_id, buyer_id, status, reserved_at, expires_at)
-                SELECT {reservation.Id}, id, {reservation.BuyerId}, 'Pending', {reservation.ReservedAt}, {reservation.ExpiresAt}
-                FROM taken
-                """, ct);
+            inserted = await InsertTakenAsync(reservation, ct);
         }
         catch (PostgresException ex) when (ReserveSupport.IsReservationConflict(ex))
         {
@@ -55,6 +45,37 @@ public sealed class ConditionalUpdateStrategy(
             ? new ReserveOutcome.Reserved(reservation)
             : await WhyNoCopyAsync(reservationId, editionId, buyerId, ct);
     }
+
+    /// <summary>
+    /// Sends the reserve statement; on a deadlock (SQLSTATE 40P01) sends it once more. The statement is its own transaction,
+    /// so PostgreSQL rolled all of it back, and the caller's id makes the resend safe. A second 40P01 propagates. ADR 0013,
+    /// "Amendment, 2026-11", names the two cycles this covers (the sweep expiring the buyer's reservation while they reserve
+    /// the edition again, with a new id or the same one).
+    /// </summary>
+    private async Task<int> InsertTakenAsync(Reservation reservation, CancellationToken ct)
+    {
+        try
+        {
+            return await SendReserveStatementAsync(reservation, ct);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            return await SendReserveStatementAsync(reservation, ct);
+        }
+    }
+
+    private async Task<int> SendReserveStatementAsync(Reservation reservation, CancellationToken ct) =>
+        // The INSERT reads only the UPDATE's RETURNING, so it inserts a row only when a copy was taken. The first
+        // reserve sets locked_at; later ones keep it.
+        await db.Database.ExecuteSqlAsync($"""
+            WITH taken AS (
+                UPDATE editions SET copies_left = copies_left - 1, locked_at = COALESCE(locked_at, {reservation.ReservedAt})
+                WHERE id = {reservation.EditionId} AND copies_left > 0 AND ended_at IS NULL
+                RETURNING id)
+            INSERT INTO reservations (id, edition_id, buyer_id, status, reserved_at, expires_at)
+            SELECT {reservation.Id}, id, {reservation.BuyerId}, {reservation.Status.ToString()}, {reservation.ReservedAt}, {reservation.ExpiresAt}
+            FROM taken
+            """, ct);
 
     /// <summary>
     /// The statement took no copy: sold out, sale ended or no such edition, or a request with this id took the last copy
