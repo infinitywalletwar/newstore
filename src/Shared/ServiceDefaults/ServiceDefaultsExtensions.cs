@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -22,6 +23,14 @@ public static class ServiceDefaultsExtensions
             .AddCheck("self", () => HealthCheckResult.Healthy(), [HealthCheckExtensions.LiveTag]);
 
         builder.AddDefaultTelemetry();
+
+        // Kestrel's listen backlog, the queue of connections the kernel has accepted but the app has not, is 512 by default
+        // (SocketTransportOptions.Backlog: "Defaults to 512 pending connections",
+        // https://github.com/dotnet/aspnetcore/blob/v10.0.14/src/Servers/Kestrel/Transport.Sockets/src/SocketTransportOptions.cs).
+        // When a burst fills it, the kernel drops the SYN and the client retries after about 1 s: the load test measured 78 to 483
+        // `ListenOverflows` per run at Orders. The kernel also caps the value at net.core.somaxconn, which is 4096 in the
+        // OrbStack containers on the Mac (`docker run ... cat /proc/sys/net/core/somaxconn`), so 4096 is the most that has an effect there.
+        builder.Services.Configure<SocketTransportOptions>(options => options.Backlog = 4096);
 
         builder.Services.AddProblemDetails();
         builder.Services.AddOpenApi();
