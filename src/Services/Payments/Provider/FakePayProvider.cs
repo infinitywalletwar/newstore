@@ -1,21 +1,113 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+
 using Microsoft.Extensions.Options;
 
+using NewStore.Messaging;
 using NewStore.Payments.Payments;
+
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace NewStore.Payments.Provider;
 
-/// <summary>Step 2 stub: the constructor has its final shape, the members do nothing yet.</summary>
-public sealed class FakePayProvider : IPaymentProvider
+/// <summary>
+/// <see cref="IPaymentProvider"/> for FakePay. The <see cref="HttpClient"/> carries the base address, the API key and the
+/// resilience pipeline (see <c>Program.cs</c>). When that pipeline gives up without an answer, Polly throws
+/// <see cref="BrokenCircuitException"/> (the circuit is open) or <see cref="TimeoutRejectedException"/>. Messaging does not know
+/// those types, so this class turns them into <see cref="TransientFailureException"/>: a handler that calls the provider is then
+/// retried while the provider is down, not dead-lettered. An answer with a bad status is an <see cref="HttpRequestException"/>,
+/// which Messaging classifies itself.
+/// </summary>
+public sealed class FakePayProvider(HttpClient http, IOptions<PaymentsOptions> options, TimeProvider time) : IPaymentProvider
 {
-    public FakePayProvider(HttpClient http, IOptions<PaymentsOptions> options, TimeProvider time)
+    public async Task<ProviderSession> CreateSessionAsync(PaymentAttempt attempt, string successUrl, string cancelUrl, CancellationToken ct)
     {
-        _ = (http, options, time);
+        ArgumentNullException.ThrowIfNull(attempt);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/checkout/sessions")
+        {
+            Content = JsonContent.Create(new
+            {
+                amount = attempt.Amount,
+                successUrl,
+                cancelUrl,
+                expiresAt = time.GetUtcNow() + options.Value.SessionLifetime,
+                metadata = new { paymentId = attempt.Id, orderId = attempt.OrderId },
+            }),
+        };
+
+        // The key is the attempt's id: if the reply is lost and this is called again, FakePay returns the first session.
+        request.Headers.Add("Idempotency-Key", attempt.Id.ToString());
+
+        using var response = await SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var session = await response.Content.ReadFromJsonAsync<SessionBody>(ct)
+            ?? throw new InvalidOperationException("FakePay answered a session request with an empty body.");
+        return new ProviderSession(session.Id, session.Url, session.ExpiresAt);
     }
 
-    public Task<ProviderSession> CreateSessionAsync(PaymentAttempt attempt, string successUrl, string cancelUrl, CancellationToken ct) =>
-        throw new NotImplementedException();
+    public async Task RefundAsync(PaymentAttempt attempt, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
 
-    public Task RefundAsync(PaymentAttempt attempt, CancellationToken ct) => throw new NotImplementedException();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/refunds")
+        {
+            Content = JsonContent.Create(new { sessionId = attempt.ProviderSessionId }),
+        };
+        request.Headers.Add("Idempotency-Key", attempt.Id.ToString());
 
-    public ProviderEvent? ReadWebhook(string body, IHeaderDictionary headers) => throw new NotImplementedException();
+        using var response = await SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public ProviderEvent? ReadWebhook(string body, IHeaderDictionary headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+
+        var settings = options.Value.Provider;
+        if (!FakePaySignature.IsValid(settings.WebhookSecret, body, headers[FakePaySignature.HeaderName], time.GetUtcNow(), settings.WebhookTolerance))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+            var type = root.GetProperty("type").GetString() switch
+            {
+                "checkout.session.completed" => ProviderEventType.SessionCompleted,
+                "checkout.session.expired" => ProviderEventType.SessionExpired,
+                _ => (ProviderEventType?)null,
+            };
+
+            // A signed event of a type this provider never sends is treated like a bad one.
+            return type is { } known
+                ? new ProviderEvent(root.GetProperty("id").GetString()!, known, root.GetProperty("data").GetProperty("sessionId").GetString()!)
+                : null;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        try
+        {
+            return await http.SendAsync(request, ct);
+        }
+        catch (BrokenCircuitException ex)
+        {
+            throw new TransientFailureException("FakePay's circuit breaker is open.", ex);
+        }
+        catch (TimeoutRejectedException ex)
+        {
+            throw new TransientFailureException("FakePay did not answer in time.", ex);
+        }
+    }
+
+    private sealed record SessionBody(string Id, string Url, DateTimeOffset ExpiresAt);
 }
