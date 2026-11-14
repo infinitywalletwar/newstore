@@ -45,7 +45,10 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
     /// <summary>How often the background sweeper ticks on <see cref="Clock"/>. A subclass sets a long one to keep the sweeper out.</summary>
     protected virtual string SweepInterval => "00:00:01";
 
-    /// <summary>PostgreSQL startup options (<c>-c name=value</c>) for every connection the app opens. Empty by default.</summary>
+    /// <summary>
+    /// PostgreSQL startup options (<c>-c name=value</c>) for every connection the app opens and every connection a test builds
+    /// from <c>Settings</c>. Empty by default.
+    /// </summary>
     protected virtual string? ConnectionOptions => null;
 
     public async ValueTask InitializeAsync()
@@ -101,12 +104,22 @@ public sealed class NoSweepFixture(PostgresServer postgres, KafkaServer kafka)
     : InventoryFixture(postgres, kafka, ReserveStrategy.ConditionalUpdate)
 {
     protected override string SweepInterval => "1.00:00:00";
+}
 
+/// <summary>
+/// <see cref="NoSweepFixture"/> for <see cref="ReserveDeadlockTests"/> only: the app's connections check for a deadlock after
+/// <see cref="RetryDeadlockTimeout"/> instead of PostgreSQL's 1 s, so no other test class runs with that setting.
+/// </summary>
+public sealed class ReserveDeadlockFixture(PostgresServer postgres, KafkaServer kafka)
+    : InventoryFixture(postgres, kafka, ReserveStrategy.ConditionalUpdate)
+{
     /// <summary>
-    /// How long a backend of the app waits on a lock before it looks for a deadlock. <see cref="ReserveDeadlockTests"/> needs the
-    /// retry's one check to run after the test's sweep has started waiting too, so it is far above PostgreSQL's 1 s default.
+    /// How long a backend of the app waits on a lock before it looks for a deadlock. The retry's one check must run after the
+    /// test's sweep has started waiting too: the sweep has this long, counted from when the retry started waiting, to reach its UPDATE.
     /// </summary>
     public static readonly TimeSpan RetryDeadlockTimeout = TimeSpan.FromSeconds(5);
+
+    protected override string SweepInterval => "1.00:00:00";
 
     protected override string? ConnectionOptions => $"-c deadlock_timeout={(int)RetryDeadlockTimeout.TotalMilliseconds}";
 }
