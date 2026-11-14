@@ -22,10 +22,11 @@ public static class MediaExtensions
         return builder;
     }
 
-    /// <summary>The upload endpoints' service.</summary>
+    /// <summary>The upload endpoints' service and the expiry service.</summary>
     public static IHostApplicationBuilder AddUploads(this IHostApplicationBuilder builder)
     {
         builder.Services.AddScoped<UploadService>();
+        builder.Services.AddHostedService<UploadExpiryService>();
         return builder;
     }
 }

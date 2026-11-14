@@ -562,7 +562,7 @@ Run `dotnet test --project tests/Media.Tests`. Expected: the new tests fail.
 
 If ADR 0018 found that listed ETags cannot complete an upload, add `POST /uploads/{id}/parts` with `{ partNumber, eTag }` and a `upload_parts` table to the `Initial` migration (it is not merged yet). `GET` then answers from that table, and complete uses it. Say so in the walkthrough. Expected: Media.Tests pass. Commit: `feat(media): resumable uploads with presigned multipart URLs`.
 
-- [ ] **Step 4: Abandoned uploads**
+- [x] **Step 4: Abandoned uploads**
 
 `ExpiryTests`, with a `FakeTimeProvider`:
 - `Abandoned_upload_expires_after_24_hours`: after 24 hours and a tick it is `Expired`, `abandoned`, and `ListParts` throws `NoSuchUpload`.

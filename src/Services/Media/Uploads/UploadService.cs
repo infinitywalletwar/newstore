@@ -322,6 +322,40 @@ public sealed partial class UploadService(
         return CancelOutcome.Done;
     }
 
+    /// <summary>
+    /// The expiry pass: moves up to 100 abandoned <c>Uploading</c> rows to <c>Expired</c> first, so a complete that races it sees
+    /// Expired; then aborts the S3 upload of every Expired row that has not been aborted yet (these and earlier failures).
+    /// Returns how many rows it expired.
+    /// </summary>
+    public async Task<int> ExpireAbandonedAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNowToMicrosecond();
+        var cutoff = now - Options.AbandonAfter;
+        var expired = await db.Database.ExecuteSqlAsync($"""
+            UPDATE uploads SET status = 'Expired', failure_reason = 'abandoned', updated_at = {now}
+            WHERE status = 'Uploading'
+              AND id IN (SELECT id FROM uploads WHERE status = 'Uploading' AND created_at < {cutoff}
+                         ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED)
+            """, ct);
+
+        var toAbort = await db.Uploads.AsNoTracking()
+            .Where(u => u.Status == UploadStatus.Expired && u.S3AbortedAt == null)
+            .OrderBy(u => u.UpdatedAt)
+            .Take(100)
+            .Select(u => new { u.Id, u.ObjectKey, u.S3UploadId })
+            .ToListAsync(ct);
+
+        foreach (var upload in toAbort)
+        {
+            if (await TryAbortAsync(upload.ObjectKey, upload.S3UploadId, ct))
+            {
+                await MarkAbortedAsync(upload.Id, ct);
+            }
+        }
+
+        return expired;
+    }
+
     private Task<int> MarkAbortedAsync(Guid id, CancellationToken ct)
     {
         var now = time.GetUtcNowToMicrosecond();

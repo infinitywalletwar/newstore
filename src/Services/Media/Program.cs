@@ -30,7 +30,7 @@ if (role is MediaRole.All or MediaRole.Api)
     builder.AddNewStoreAuth();
     builder.AddServiceClient<CatalogClient>("Services:Catalog");
     builder.AddReadinessWarmUp(WarmUpExtensions.WarmUpAuthAsync);
-    builder.AddUploads();                // UploadService
+    builder.AddUploads();                // UploadService, UploadExpiryService
     // Task 6: builder.AddDownloads();
 }
 

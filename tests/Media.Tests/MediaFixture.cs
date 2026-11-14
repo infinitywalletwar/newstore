@@ -41,6 +41,10 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
     /// <summary>The address Media's own requests go to. A subclass points it at a closed port.</summary>
     protected virtual Uri ServiceUrl => s3.InternalUrl;
 
+    protected virtual void OnBucketChosen(string bucket)
+    {
+    }
+
     /// <summary>False when S3 is not reachable, so the bucket cannot be set up.</summary>
     protected virtual bool SetUpBucket => true;
 
@@ -60,6 +64,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         // 3 to 63 lower-case letters, digits and hyphens: "media-", the fixture class (at most 24 characters here) and 32 hex digits.
         Bucket = $"media-{GetType().Name.ToLowerInvariant()}-{Guid.NewGuid():N}";
         Settings["Media:Storage:Bucket"] = Bucket;
+        OnBucketChosen(Bucket);
         Settings["Media:Storage:ServiceUrl"] = ServiceUrl.ToString().TrimEnd('/');
         Settings["Media:Storage:PublicServiceUrl"] = s3.PublicUrl.ToString().TrimEnd('/');
         Settings["Media:Storage:AccessKey"] = S3Server.AccessKey;
@@ -110,6 +115,33 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
 public sealed class ShortLifetimeFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : MediaFixture(postgres, kafka, s3)
 {
     protected override string PartUrlLifetime => "00:00:02";
+}
+
+/// <summary>The expiry service ticks every hour of the fake clock, so a test moves time a day and sees it work.</summary>
+public sealed class ExpiryFixture : MediaFixture
+{
+    public ExpiryFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : base(postgres, kafka, s3)
+    {
+        // Before the app builds its S3 clients, so the refuser's handler is in their request pipeline.
+        Refuser.Register();
+    }
+
+    /// <summary>Makes S3 refuse aborts of this fixture's bucket while armed.</summary>
+    internal AbortRefuser Refuser { get; } = new($"abort-refuser-{Guid.NewGuid():N}");
+
+    protected override string ExpirySweepInterval => "01:00:00";
+
+    protected override void OnBucketChosen(string bucket) => Refuser.Bucket = bucket;
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Refuser.Unregister();
+        }
+
+        base.Dispose(disposing);
+    }
 }
 
 /// <summary>Media's S3 address is a port nothing listens on.</summary>
