@@ -14,6 +14,7 @@ namespace NewStore.Gateway.Tests;
 public sealed class ProxyTests(GatewayKeycloak keycloak)
 {
     private static readonly Guid EditionId = Guid.Parse("00000000-0000-7000-8000-0000000000e1");
+    private static readonly Guid UploadId = Guid.Parse("00000000-0000-7000-8000-0000000000a1");
 
     private static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
@@ -146,9 +147,9 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
         { "POST", "/api/videos", "catalog.test" },
         { "GET", "/api/me/videos", "catalog.test" },
         { "POST", "/api/uploads", "media.test" },
-        { "GET", $"/api/uploads/{EditionId}", "media.test" },
-        { "POST", $"/api/uploads/{EditionId}/complete", "media.test" },
-        { "DELETE", $"/api/uploads/{EditionId}", "media.test" },
+        { "GET", $"/api/uploads/{UploadId}", "media.test" },
+        { "POST", $"/api/uploads/{UploadId}/complete", "media.test" },
+        { "DELETE", $"/api/uploads/{UploadId}", "media.test" },
         { "GET", "/api/me/uploads", "media.test" },
         { "POST", "/api/downloads", "media.test" },
     };
@@ -171,11 +172,24 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
         Assert.False(forwarded.Headers.Contains("Cookie"), "The session cookie must stop at the gateway.");
     }
 
-    [Theory]
-    [MemberData(nameof(NewRoutes))]
-    public async Task New_routes_need_a_signed_in_user(string method, string path, string host)
+    public static TheoryData<string, string> NewRoutePaths
     {
-        _ = host;
+        get
+        {
+            var data = new TheoryData<string, string>();
+            foreach (var row in NewRoutes)
+            {
+                data.Add(row.Data.Item1, row.Data.Item2);
+            }
+
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(NewRoutePaths))]
+    public async Task New_routes_need_a_signed_in_user(string method, string path)
+    {
         await using var gateway = await GatewayHarness.StartAsync(keycloak);
 
         var response = await gateway.Browser.SendAsync(new HttpMethod(method), path);
@@ -191,7 +205,7 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
     [InlineData("GET", "/api/editions/00000000-0000-7000-8000-0000000000e1/reservations")]
     [InlineData("POST", "/api/reservations/00000000-0000-7000-8000-0000000000e1/confirm")]
     [InlineData("GET", "/api/videos/00000000-0000-7000-8000-0000000000e1/owner")]
-    [InlineData("PUT", "/api/uploads/00000000-0000-7000-8000-0000000000e1")]
+    [InlineData("PUT", "/api/uploads/00000000-0000-7000-8000-0000000000a1")]
     [InlineData("GET", "/api/downloads")]
     public async Task Internal_paths_are_not_routed(string method, string path)
     {
