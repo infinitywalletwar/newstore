@@ -85,6 +85,25 @@ services:
     ports: ["127.0.0.1:4317:4317", "127.0.0.1:4318:4318"]
     deploy: { resources: { limits: { memory: 256m } } }
 
+  # The local S3 (ADR 0018). Signature checks are on, so a presigned URL is verified as AWS would verify it. The credentials are
+  # Floci's own: access key test, secret test.
+  floci:
+    image: floci/floci:2.4.0
+    environment:
+      FLOCI_STORAGE_MODE: persistent
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_SERVICES_S3_ENFORCE_AUTH: "true"
+      FLOCI_SERVICES_UI_ENABLED: "false"
+    volumes: [floci-data:/app/data]
+    ports: ["127.0.0.1:4566:4566"]
+    healthcheck:
+      # No curl or grep in the image: bash reads the status line. $$ stops Compose from interpolating.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4566 && printf 'GET /_floci/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ $$status == *' 200 '* ]]"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { memory: 512m } } }
+
   # One-shot job: applies Catalog's migrations, seeds the sample catalog and exits (ADR 0005). The image's entrypoint is
   # `dotnet NewStore.Catalog.dll`, so `command` supplies the argument.
   catalog-migrate:
@@ -371,3 +390,4 @@ services:
 
 volumes:
   postgres-data:
+  floci-data:

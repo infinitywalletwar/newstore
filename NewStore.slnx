@@ -58,4 +58,7 @@
   <Folder Name="/tests/Orders.Tests/">
     <Project Path="tests/Orders.Tests/NewStore.Orders.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Media.Tests/">
+    <Project Path="tests/Media.Tests/NewStore.Media.Tests.csproj" />
+  </Folder>
 </Solution>

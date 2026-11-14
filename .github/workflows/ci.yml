@@ -62,6 +62,8 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8105/health/ready
       - name: Gateway is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8100/health/ready
+      - name: Floci is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:4566/_floci/health
       - name: Keycloak issues a service token
         # The secret comes from the realm file Keycloak imported, so the file and the running server cannot disagree unnoticed.
         run: |
