@@ -194,10 +194,16 @@ public class SagaTests
         await _fixture.WaitForStatusAsync(paying.Id, OrderStatus.Refunding);
 
         // A second PaymentSucceeded (a different message) while Refunding: no second refund request.
+        var refunding = await _fixture.GetOrderAsync(paying.Id);
+        var confirms = Calls(refunding, "confirm");
         var again = Succeeded(paying);
         await PublishAsync(paying, again);
         await _fixture.WaitHandledAsync(again.EventId);
-        Assert.Equal(OrderStatus.Refunding, (await _fixture.GetOrderAsync(paying.Id)).Status);
+        var afterRepeat = await _fixture.GetOrderAsync(paying.Id);
+        Assert.Equal(OrderStatus.Refunding, afterRepeat.Status);
+        // The repeat asked Inventory for nothing and wrote nothing to the order.
+        Assert.Equal(confirms, Calls(refunding, "confirm"));
+        Assert.Equal(refunding.UpdatedAt, afterRepeat.UpdatedAt);
         Assert.Equal(1, await _fixture.CountOutboxAsync<RefundRequested>(paying.Id));
 
         var refunded = new PaymentRefunded

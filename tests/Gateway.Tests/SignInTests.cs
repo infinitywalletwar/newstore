@@ -158,6 +158,10 @@ public sealed class SignInTests(GatewayKeycloak keycloak)
         var user = await gateway.Browser.GetAsync("/auth/user", csrf: true);
         var body = await user.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         Assert.True(body.GetProperty("isAuthenticated").GetBoolean());
+
+        // The restarted gateway could read the cookie because the key ring is shared, so it must be in Redis and not in a file.
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(gateway.Redis.GetConnectionString());
+        Assert.True(await redis.GetDatabase().KeyExistsAsync("newstore:data-protection-keys"));
     }
 
     [Fact]

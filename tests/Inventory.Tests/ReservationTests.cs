@@ -195,6 +195,19 @@ public abstract class ReservationTests(InventoryFixture fixture)
         }
 
         Assert.Equal(10, (await client.GetEditionAsync(other.Id)).CopiesLeft);
+        Assert.Equal(9, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
+    }
+
+    [Fact]
+    public async Task Reserving_with_an_empty_reservation_id_is_400()
+    {
+        using var client = fixture.CreateClient();
+        var edition = await client.CreateEditionAsync(copies: 3);
+
+        var response = await client.ReserveAsync(edition.Id, Guid.NewGuid(), Guid.Empty);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(3, (await client.GetEditionAsync(edition.Id)).CopiesLeft);
     }
 
     [Fact]
@@ -544,7 +557,7 @@ public abstract class ReservationTests(InventoryFixture fixture)
         await using (var scope = fixture.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<ReservationService>()
-                .SweepAsync(fixture.Clock.GetUtcNow(), Ct);
+                .SweepAsync(fixture.Clock.GetUtcNowToMicrosecond(), Ct);
         }
 
         Assert.Equal("Expired", (await client.GetReservationAsync(reservation.Id)).Status);
