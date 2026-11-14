@@ -39,7 +39,7 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
     /// <summary>Fails the next reserve statements with a deadlock, so a test can check the resend.</summary>
     public DeadlockInjector Deadlocks { get; } = new();
 
-    /// <summary>Holds back the app's second reserve statement until a test releases it (see <see cref="ResendGate"/>).</summary>
+    /// <summary>Holds back the app's next reserve statement after arming until a test releases it (see <see cref="ResendGate"/>).</summary>
     public ResendGate Gate { get; } = new();
 
     /// <summary>How often the background sweeper ticks on <see cref="Clock"/>. A subclass sets a long one to keep the sweeper out.</summary>

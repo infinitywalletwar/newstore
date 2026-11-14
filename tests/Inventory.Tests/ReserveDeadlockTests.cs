@@ -28,7 +28,7 @@ public sealed class ReserveDeadlockTests(ReserveDeadlockFixture fixture) : IClas
         await observer.OpenAsync(Ct);
         await ExecuteAsync(sweep, "SET deadlock_timeout = '30s'");
         // Fails the sweep's UPDATE fast, and with a clear message, when it waited longer than the budget allows (see below).
-        await ExecuteAsync(sweep, "SET lock_timeout = '20s'");
+        await ExecuteAsync(sweep, "SET lock_timeout = '12s'");
 
         // The sweep's first step: the reservation row, replaced by an Expired version that is not committed yet.
         await using var transaction = await sweep.BeginTransactionAsync(Ct);
@@ -44,7 +44,8 @@ public sealed class ReserveDeadlockTests(ReserveDeadlockFixture fixture) : IClas
         // checks for a deadlock once, deadlock_timeout after it starts waiting (ProcSleep arms the timer once, proc.c L1388-L1403),
         // and the one that checks while the cycle exists is the victim. The retry waits first, so it is the victim as long as the
         // sweep's UPDATE below starts waiting within RetryDeadlockTimeout (5 s) of the retry: a timing budget, not a guarantee.
-        // The sweep's own check is at 30 s, and its lock_timeout (20 s) is under the retry's 30 s command timeout.
+        // The sweep's own check is at 30 s. Its lock_timeout (12 s) fires before the retry's 30 s command timeout as long as the
+        // sweep's UPDATE starts within 18 s of the retry, so a stalled machine fails with the message below, not a 500.
         //
         // The resend is held until the sweep owns the edition row. Without that, once the retry is aborted the resend can reach
         // the edition row before the woken sweep (heap_update sees an aborted xmax and does not queue; the sweep restarts its
