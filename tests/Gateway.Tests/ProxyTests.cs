@@ -141,12 +141,58 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
         Assert.Empty(gateway.Stub.Requests);
     }
 
+    public static TheoryData<string, string, string> NewRoutes => new()
+    {
+        { "POST", "/api/videos", "catalog.test" },
+        { "GET", "/api/me/videos", "catalog.test" },
+        { "POST", "/api/uploads", "media.test" },
+        { "GET", $"/api/uploads/{EditionId}", "media.test" },
+        { "POST", $"/api/uploads/{EditionId}/complete", "media.test" },
+        { "DELETE", $"/api/uploads/{EditionId}", "media.test" },
+        { "GET", "/api/me/uploads", "media.test" },
+        { "POST", "/api/downloads", "media.test" },
+    };
+
+    [Theory]
+    [MemberData(nameof(NewRoutes))]
+    public async Task New_routes_reach_their_service_with_the_users_token(string method, string path, string host)
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        var verb = new HttpMethod(method);
+        gateway.Stub.On(verb, path["/api".Length..], _ => Json("{}"));
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var response = await gateway.Browser.SendAsync(verb, path, csrf: true);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var forwarded = Assert.Single(gateway.Stub.Requests);
+        Assert.Equal($"http://{host}{path["/api".Length..]}", forwarded.RequestUri!.ToString());
+        Assert.Equal("Bearer", forwarded.Headers.Authorization!.Scheme);
+        Assert.False(forwarded.Headers.Contains("Cookie"), "The session cookie must stop at the gateway.");
+    }
+
+    [Theory]
+    [MemberData(nameof(NewRoutes))]
+    public async Task New_routes_need_a_signed_in_user(string method, string path, string host)
+    {
+        _ = host;
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+
+        var response = await gateway.Browser.SendAsync(new HttpMethod(method), path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Empty(gateway.Stub.Requests);
+    }
+
     [Theory]
     [InlineData("GET", "/api/health/ready")]
     [InlineData("GET", "/api/openapi/v1.json")]
     [InlineData("GET", "/api/editions/00000000-0000-7000-8000-0000000000e1/reservations")]
     [InlineData("POST", "/api/reservations/00000000-0000-7000-8000-0000000000e1/confirm")]
     [InlineData("GET", "/api/videos/00000000-0000-7000-8000-0000000000e1/owner")]
+    [InlineData("PUT", "/api/uploads/00000000-0000-7000-8000-0000000000e1")]
+    [InlineData("GET", "/api/downloads")]
     public async Task Internal_paths_are_not_routed(string method, string path)
     {
         await using var gateway = await GatewayHarness.StartAsync(keycloak);

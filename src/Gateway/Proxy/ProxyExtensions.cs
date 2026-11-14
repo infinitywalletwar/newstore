@@ -11,8 +11,8 @@ public static class ProxyExtensions
 
     /// <summary>
     /// Every route is listed here, so a path that is not listed is not forwarded (an internal endpoint such as a service's
-    /// <c>/health/ready</c> stays internal). The destinations come from <c>Services:Catalog</c>, <c>Services:Inventory</c> and
-    /// <c>Services:Orders</c>. The services hold every business rule; the gateway only asks for a signed-in caller.
+    /// <c>/health/ready</c> stays internal). The destinations come from <c>Services:Catalog</c>, <c>Services:Inventory</c>,
+    /// <c>Services:Orders</c> and <c>Services:Media</c>. The services hold every business rule; the gateway only asks for a signed-in caller.
     /// </summary>
     public static IHostApplicationBuilder AddGatewayProxy(this IHostApplicationBuilder builder)
     {
@@ -33,12 +33,21 @@ public static class ProxyExtensions
             Route("orders-read", "orders", Policies.SignedIn, "GET", "/api/orders/{id}"),
             Route("orders-pay", "orders", Policies.SignedIn, "POST", "/api/orders/{id}/pay"),
             Route("my-copies", "orders", Policies.SignedIn, "GET", "/api/me/copies"),
+            Route("videos-create", "catalog", Policies.SignedIn, "POST", "/api/videos"),
+            Route("my-videos", "catalog", Policies.SignedIn, "GET", "/api/me/videos"),
+            Route("uploads-create", "media", Policies.SignedIn, "POST", "/api/uploads"),
+            Route("uploads-read", "media", Policies.SignedIn, "GET", "/api/uploads/{id}"),
+            Route("uploads-complete", "media", Policies.SignedIn, "POST", "/api/uploads/{id}/complete"),
+            Route("uploads-abort", "media", Policies.SignedIn, "DELETE", "/api/uploads/{id}"),
+            Route("my-uploads", "media", Policies.SignedIn, "GET", "/api/me/uploads"),
+            Route("downloads-create", "media", Policies.SignedIn, "POST", "/api/downloads"),
         ];
         ClusterConfig[] clusters =
         [
             Cluster("catalog", services["Catalog"]),
             Cluster("inventory", services["Inventory"]),
             Cluster("orders", services["Orders"]),
+            Cluster("media", services["Media"]),
         ];
 
         builder.Services.AddReverseProxy()
