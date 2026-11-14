@@ -1,7 +1,7 @@
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -12,13 +12,13 @@ namespace NewStore.Media.Tests;
 /// What this phase relies on in S3, checked against the emulator. A Floci upgrade that changes one of these fails here
 /// (ADR 0018). Each test makes its own bucket and talks to it the way a browser will: a plain HttpClient, no AWS credentials.
 /// </summary>
-public sealed class EmulatorContractTests(S3Server s3)
+public sealed partial class EmulatorContractTests(S3Server s3)
 {
     private const int MiB = 1024 * 1024;
     private const string Origin = "http://localhost:8100";
 
-    // No redirects and no cookies: what the browser's fetch would see.
-    private static readonly HttpClient Browser = new(new SocketsHttpHandler { AllowAutoRedirect = false });
+    // Redirects off, so a test sees S3's own answer; cookies off, so nothing is sent that a browser would not send here.
+    private static readonly HttpClient Browser = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -59,24 +59,26 @@ public sealed class EmulatorContractTests(S3Server s3)
             },
         }, Ct);
 
-        var policy = JsonSerializer.Serialize(new
-        {
-            Version = "2012-10-17",
-            Statement = new[]
-            {
-                new
-                {
-                    Effect = "Allow",
-                    Principal = "*",
-                    Action = "s3:GetObject",
-                    Resource = $"arn:aws:s3:::{bucket}/hls/*",
-                },
-            },
-        });
-        await client.PutBucketPolicyAsync(new PutBucketPolicyRequest { BucketName = bucket, Policy = policy }, Ct);
+        await client.PutBucketPolicyAsync(new PutBucketPolicyRequest { BucketName = bucket, Policy = HlsReadPolicy(bucket) }, Ct);
 
         return bucket;
     }
+
+    /// <summary>The policy from Global Constraints: anyone may read <c>hls/*</c>, nothing else.</summary>
+    private static string HlsReadPolicy(string bucket) => JsonSerializer.Serialize(new
+    {
+        Version = "2012-10-17",
+        Statement = new[]
+        {
+            new
+            {
+                Effect = "Allow",
+                Principal = "*",
+                Action = "s3:GetObject",
+                Resource = $"arn:aws:s3:::{bucket}/hls/*",
+            },
+        },
+    });
 
     private static string PartUrl(IAmazonS3 signer, string bucket, string key, string uploadId, int partNumber,
         TimeSpan? lifetime = null, long? contentLength = null)
@@ -116,6 +118,17 @@ public sealed class EmulatorContractTests(S3Server s3)
         headers?.Invoke(request.Headers);
         return await Browser.SendAsync(request, Ct);
     }
+
+    /// <summary>Asserts the status and the S3 error code in the body, so a test fails for the reason it names, not for any 403.</summary>
+    private static async Task AssertS3ErrorAsync(HttpResponseMessage response, HttpStatusCode status, string code)
+    {
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Equal(status, response.StatusCode);
+        Assert.Equal(code, ErrorCode().Match(body).Groups[1].Value);
+    }
+
+    [GeneratedRegex("<Code>([^<]*)</Code>")]
+    private static partial Regex ErrorCode();
 
     private static byte[] RandomBytes(int length) => RandomNumberGenerator.GetBytes(length);
 
@@ -172,9 +185,13 @@ public sealed class EmulatorContractTests(S3Server s3)
         var uploadId = await StartUploadAsync(server, bucket, key);
 
         var signedFor127 = PartUrl(server, bucket, key, uploadId, 1);
-        using var response = await PutAsync(WithHost(signedFor127, "localhost"), RandomBytes(5 * MiB));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // Control: the same URL, rebuilt through Uri, still works on the host it was signed for.
+        using var control = await PutAsync(WithHost(signedFor127, "127.0.0.1"), RandomBytes(5 * MiB));
+        Assert.Equal(HttpStatusCode.OK, control.StatusCode);
+
+        using var response = await PutAsync(WithHost(signedFor127, "localhost"), RandomBytes(5 * MiB));
+        await AssertS3ErrorAsync(response, HttpStatusCode.Forbidden, "SignatureDoesNotMatch");
     }
 
     [Fact]
@@ -190,7 +207,8 @@ public sealed class EmulatorContractTests(S3Server s3)
         await Task.Delay(TimeSpan.FromSeconds(4), Ct);
         using var response = await PutAsync(url, RandomBytes(5 * MiB));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await AssertS3ErrorAsync(response, HttpStatusCode.Forbidden, "AccessDenied");
+        Assert.Contains("expired", await response.Content.ReadAsStringAsync(Ct), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -217,10 +235,24 @@ public sealed class EmulatorContractTests(S3Server s3)
             Assert.Equal(Origin, Assert.Single(allowed.Headers.GetValues("Access-Control-Allow-Origin")));
         }
 
+        // A preflight is never authenticated (floci-io/floci#2412): a URL with a zeroed signature still gets its answer.
+        var zeroed = Regex.Replace(url, "X-Amz-Signature=[0-9a-f]+", "X-Amz-Signature=" + new string('0', 64));
+        Assert.NotEqual(url, zeroed);
+        using (var unsigned = new HttpRequestMessage(HttpMethod.Options, zeroed))
+        {
+            unsigned.Headers.Add("Origin", Origin);
+            unsigned.Headers.Add("Access-Control-Request-Method", "PUT");
+            using var answer = await Browser.SendAsync(unsigned, Ct);
+            Assert.True(answer.StatusCode is HttpStatusCode.OK or HttpStatusCode.NoContent, $"Preflight was {(int)answer.StatusCode}.");
+        }
+
         using (var put = await PutAsync(url, RandomBytes(5 * MiB), Origin))
         {
             Assert.Equal(HttpStatusCode.OK, put.StatusCode);
-            Assert.Contains("ETag", string.Join(',', put.Headers.GetValues("Access-Control-Expose-Headers")), StringComparison.OrdinalIgnoreCase);
+            // The browser needs both: the origin to let the script see the response, the exposed header to read the ETag.
+            Assert.Equal(Origin, Assert.Single(put.Headers.GetValues("Access-Control-Allow-Origin")));
+            var exposed = string.Join(',', put.Headers.GetValues("Access-Control-Expose-Headers")).Split(',', StringSplitOptions.TrimEntries);
+            Assert.Contains("ETag", exposed, StringComparer.OrdinalIgnoreCase);
         }
 
         using var denied = await PreflightAsync("http://evil.test");
@@ -237,14 +269,17 @@ public sealed class EmulatorContractTests(S3Server s3)
         var uploadId = await StartUploadAsync(server, bucket, key);
 
         var sizes = new[] { 5 * MiB, 5 * MiB, 2 * MiB };
+        var putEtags = new List<string>();
         for (var i = 0; i < sizes.Length; i++)
         {
             using var response = await PutAsync(PartUrl(signer, bucket, key, uploadId, i + 1), RandomBytes(sizes[i]));
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode); // the PUT's ETag is ignored on purpose
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            putEtags.Add(Etag(response)); // kept only to compare: the completion below uses the listed ones
         }
 
         var listed = await server.ListPartsAsync(new ListPartsRequest { BucketName = bucket, Key = key, UploadId = uploadId }, Ct);
         Assert.Equal([1, 2, 3], listed.Parts.Select(p => p.PartNumber!.Value));
+        Assert.Equal(putEtags, listed.Parts.Select(p => p.ETag));
 
         await server.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
         {
@@ -256,6 +291,28 @@ public sealed class EmulatorContractTests(S3Server s3)
 
         var head = await server.GetObjectMetadataAsync(bucket, key, Ct);
         Assert.Equal(12L * MiB, head.ContentLength);
+    }
+
+    [Fact]
+    public async Task Complete_with_a_wrong_etag_is_refused()
+    {
+        var bucket = await CreateConfiguredBucketAsync();
+        using var server = s3.CreateClient(s3.InternalUrl);
+        using var signer = s3.CreateClient(s3.PublicUrl);
+        const string key = "originals/v1/u1";
+        var uploadId = await StartUploadAsync(server, bucket, key);
+        using var put = await PutAsync(PartUrl(signer, bucket, key, uploadId, 1), RandomBytes(5 * MiB));
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        // InvalidPart: "One or more of the specified parts could not be found. The part might not have been uploaded, or the specified ETag might not have matched the uploaded part's ETag." (CompleteMultipartUpload, "Special errors")
+        var refused = await Assert.ThrowsAsync<AmazonS3Exception>(() => server.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = bucket,
+            Key = key,
+            UploadId = uploadId,
+            PartETags = [new PartETag(1, "\"00000000000000000000000000000000\"")],
+        }, Ct));
+        Assert.Equal("InvalidPart", refused.ErrorCode);
     }
 
     [Fact]
@@ -274,7 +331,7 @@ public sealed class EmulatorContractTests(S3Server s3)
         Assert.Equal(["content-length", "host"], signedHeaders.Split(';'));
 
         using var shorter = await PutAsync(url, RandomBytes((5 * MiB) - 1));
-        Assert.Equal(HttpStatusCode.Forbidden, shorter.StatusCode);
+        await AssertS3ErrorAsync(shorter, HttpStatusCode.Forbidden, "SignatureDoesNotMatch");
         using var exact = await PutAsync(url, RandomBytes(5 * MiB));
         Assert.Equal(HttpStatusCode.OK, exact.StatusCode);
     }
@@ -290,7 +347,7 @@ public sealed class EmulatorContractTests(S3Server s3)
         using var open = await GetAsync($"{s3.PublicUrl}{bucket}/hls/x/master.m3u8");
         Assert.Equal(HttpStatusCode.OK, open.StatusCode);
         using var closed = await GetAsync($"{s3.PublicUrl}{bucket}/originals/x/y");
-        Assert.Equal(HttpStatusCode.Forbidden, closed.StatusCode);
+        await AssertS3ErrorAsync(closed, HttpStatusCode.Forbidden, "AccessDenied");
     }
 
     [Fact]
@@ -337,14 +394,63 @@ public sealed class EmulatorContractTests(S3Server s3)
     {
         var bucket = await CreateConfiguredBucketAsync();
         using var server = s3.CreateClient(s3.InternalUrl);
+        using var signer = s3.CreateClient(s3.PublicUrl);
         const string key = "originals/v1/u1";
         var uploadId = await StartUploadAsync(server, bucket, key);
+        using var put = await PutAsync(PartUrl(signer, bucket, key, uploadId, 1), RandomBytes(5 * MiB));
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+        // Control: before the abort the upload is there and lists its part.
+        var before = await server.ListPartsAsync(new ListPartsRequest { BucketName = bucket, Key = key, UploadId = uploadId }, Ct);
+        Assert.Single(before.Parts);
 
         await server.AbortMultipartUploadAsync(new AbortMultipartUploadRequest { BucketName = bucket, Key = key, UploadId = uploadId }, Ct);
 
         var error = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
             server.ListPartsAsync(new ListPartsRequest { BucketName = bucket, Key = key, UploadId = uploadId }, Ct));
         Assert.Equal("NoSuchUpload", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Public_access_block_refuses_a_public_policy()
+    {
+        // What Task 2's bucket setup relies on: the block is set first, and only then is the public policy accepted.
+        // Here the block forbids public policies, so the same policy that CreateConfiguredBucketAsync installs is refused.
+        var bucket = await s3.CreateBucketAsync("contract", Ct);
+        using var server = s3.CreateClient(s3.InternalUrl);
+        await server.PutPublicAccessBlockAsync(new PutPublicAccessBlockRequest
+        {
+            BucketName = bucket,
+            PublicAccessBlockConfiguration = new PublicAccessBlockConfiguration
+            {
+                BlockPublicAcls = true,
+                IgnorePublicAcls = true,
+                BlockPublicPolicy = true,
+                RestrictPublicBuckets = false,
+            },
+        }, Ct);
+
+        var refused = await Assert.ThrowsAsync<AmazonS3Exception>(() =>
+            server.PutBucketPolicyAsync(new PutBucketPolicyRequest { BucketName = bucket, Policy = HlsReadPolicy(bucket) }, Ct));
+
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Equal("AccessDenied", refused.ErrorCode);
+    }
+
+    [Fact]
+    public async Task New_bucket_accepts_a_public_policy_unlike_S3()
+    {
+        // A GAP in Floci 2.4.0, pinned so that it is noticed. On S3 a new bucket blocks public policies, so this PutBucketPolicy
+        // would be refused (Block Public Access docs). Floci reports the default block but does not enforce it for a new bucket
+        // ("default bucket-level enforcement remains a gap": https://github.com/floci-io/floci/blob/2.4.0/docs/services/s3.md#block-public-access).
+        // When Floci closes the gap this test fails: flip it to expect AccessDenied, as Public_access_block_refuses_a_public_policy does.
+        var bucket = await s3.CreateBucketAsync("contract", Ct);
+        using var server = s3.CreateClient(s3.InternalUrl);
+
+        var block = (await server.GetPublicAccessBlockAsync(new GetPublicAccessBlockRequest { BucketName = bucket }, Ct)).PublicAccessBlockConfiguration;
+        Assert.True(block.BlockPublicPolicy); // reported as on ...
+
+        await server.PutBucketPolicyAsync(new PutBucketPolicyRequest { BucketName = bucket, Policy = HlsReadPolicy(bucket) }, Ct); // ... and not enforced
     }
 
     [Fact(Explicit = true)]
@@ -375,6 +481,5 @@ public sealed class EmulatorContractTests(S3Server s3)
 
         var head = await server.GetObjectMetadataAsync(bucket, key, Ct);
         Assert.Equal(1024L * MiB, head.ContentLength);
-        TestContext.Current.SendDiagnosticMessage(string.Create(CultureInfo.InvariantCulture, $"floci-container={s3.ContainerId}"));
     }
 }
