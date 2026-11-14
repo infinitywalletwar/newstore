@@ -527,7 +527,7 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
 - `Media:Uploads:PartSize` 5 MiB and `WarmUp:Enabled=false`;
 - a `StubHttpHandler` behind `CatalogClient` (`FakeCatalog`), which by default says the video is the caller's `Draft`;
 - a `Role` property (default `Api`, so no worker runs) that Tasks 5 and 6 set in fixtures of their own;
-- `Messaging:ClientId` set to `media-<fixture class>`, so two fixtures in one test run never share a consumer group (as Orders' warm-up fixture does).
+- `Messaging:ClientId` set to `media-<fixture class>-<a new GUID>`, so no two app instances in one test run share a consumer group (a fixture class is used by several test classes, so the class name alone is not enough; see `tests/Catalog.Tests/KafkaSettings.cs`).
 
 `MediaStartupTests`:
 - `Media_is_ready_with_its_tables`: `/health/ready` is 200, and the migration made `uploads`, `processing_jobs`, `digital_copies`, `outbox_messages` and `inbox_messages`.
