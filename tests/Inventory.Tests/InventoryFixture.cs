@@ -7,6 +7,8 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
+using Npgsql;
+
 namespace NewStore.Inventory.Tests;
 
 /// <summary>
@@ -37,13 +39,24 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
     /// <summary>Fails the next reserve statements with a deadlock, so a test can check the resend.</summary>
     public DeadlockInjector Deadlocks { get; } = new();
 
+    /// <summary>Holds back the app's next reserve statement after arming until a test releases it (see <see cref="ResendGate"/>).</summary>
+    public ResendGate Gate { get; } = new();
+
     /// <summary>How often the background sweeper ticks on <see cref="Clock"/>. A subclass sets a long one to keep the sweeper out.</summary>
     protected virtual string SweepInterval => "00:00:01";
 
+    /// <summary>
+    /// PostgreSQL startup options (<c>-c name=value</c>) for every connection the app opens and every connection a test builds
+    /// from <c>Settings</c>. Empty by default.
+    /// </summary>
+    protected virtual string? ConnectionOptions => null;
+
     public async ValueTask InitializeAsync()
     {
-        Settings["ConnectionStrings:Inventory"] =
-            await postgres.CreateDatabaseAsync("inventory", TestContext.Current.CancellationToken);
+        var connectionString = await postgres.CreateDatabaseAsync("inventory", TestContext.Current.CancellationToken);
+        Settings["ConnectionStrings:Inventory"] = ConnectionOptions is null
+            ? connectionString
+            : new NpgsqlConnectionStringBuilder(connectionString) { Options = ConnectionOptions }.ConnectionString;
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         // Inventory calls Catalog as client "inventory"; the stub below answers, so the address and the secret are never used.
         Settings["Services:Catalog"] = "http://catalog.test";
@@ -72,7 +85,7 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
             });
 
             // Composed with the app's own AddDbContext configuration (EF Core 9 and later).
-            services.ConfigureDbContext<InventoryDbContext>(options => options.AddInterceptors(Statements, Deadlocks));
+            services.ConfigureDbContext<InventoryDbContext>(options => options.AddInterceptors(Statements, Deadlocks, Gate));
         });
     }
 }
@@ -91,4 +104,22 @@ public sealed class NoSweepFixture(PostgresServer postgres, KafkaServer kafka)
     : InventoryFixture(postgres, kafka, ReserveStrategy.ConditionalUpdate)
 {
     protected override string SweepInterval => "1.00:00:00";
+}
+
+/// <summary>
+/// <see cref="NoSweepFixture"/> for <see cref="ReserveDeadlockTests"/> only: the app's connections check for a deadlock after
+/// <see cref="RetryDeadlockTimeout"/> instead of PostgreSQL's 1 s, so no other test class runs with that setting.
+/// </summary>
+public sealed class ReserveDeadlockFixture(PostgresServer postgres, KafkaServer kafka)
+    : InventoryFixture(postgres, kafka, ReserveStrategy.ConditionalUpdate)
+{
+    /// <summary>
+    /// How long a backend of the app waits on a lock before it looks for a deadlock. The retry's one check must run after the
+    /// test's sweep has started waiting too: the sweep has this long, counted from when the retry started waiting, to reach its UPDATE.
+    /// </summary>
+    public static readonly TimeSpan RetryDeadlockTimeout = TimeSpan.FromSeconds(5);
+
+    protected override string SweepInterval => "1.00:00:00";
+
+    protected override string? ConnectionOptions => $"-c deadlock_timeout={(int)RetryDeadlockTimeout.TotalMilliseconds}";
 }
