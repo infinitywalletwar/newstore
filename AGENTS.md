@@ -105,7 +105,7 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 
 - Every container image runs on arm64, because the owner's Mac is Apple Silicon. Pin exact image tags in `compose.yaml`.
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
-- Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
+- Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, `test`/`test` for Floci, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - FakePay's local credentials: API key `fakepay`, webhook secret `fakepay-webhook`. Payments and FakePay both read them from Compose or `appsettings.Development.json`, never from `appsettings.json`.
 - Host ports:
 
@@ -114,6 +114,7 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
   | 5432 | PostgreSQL |
   | 9094 | Kafka for the Mac. Containers use `kafka:9092`. |
   | 6379 | Redis |
+  | 4566 | Floci, the local S3. Containers use `floci:4566`. |
   | 8180 | Keycloak |
   | 4317, 4318 | OpenTelemetry Collector (gRPC, HTTP) |
   | 8101 | Catalog in Compose |

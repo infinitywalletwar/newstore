@@ -306,7 +306,7 @@ For a failing check, try only the knob named for it, then rerun:
 
 Anything else that fails is a stop. Expected: every contract test passes. Commit: `test(media): S3 contract tests against Floci 2.4.0`.
 
-- [ ] **Step 3: Measure on the Mac**
+- [x] **Step 3: Measure on the Mac**
 
 1. **Floci in Compose:** add the service, `docker compose up -d --wait floci`. Record `docker image inspect floci/floci:2.4.0 --format '{{.Architecture}}'` (expected `arm64`) and idle memory from `docker stats --no-stream`.
 2. **Floci under load:** run `Floci_takes_a_1_GiB_multipart_upload` (`dotnet test --project tests/Media.Tests --explicit only --filter-method "*Floci_takes_a_1_GiB_multipart_upload"`), then read the test container's peak with `docker exec <container> cat /sys/fs/cgroup/memory.peak`. If the peak is over 70% of 512m, raise the limit and say why.
@@ -324,7 +324,7 @@ Anything else that fails is a stop. Expected: every contract test passes. Commit
 
 Commit: `chore(compose): Floci as the local S3`.
 
-- [ ] **Step 4: ADR 0018, CI, AGENTS.md, pull request**
+- [x] **Step 4: ADR 0018, CI, AGENTS.md, pull request**
 
 1. **ADR 0018, local S3 and the upload path.**
    - The decision: Floci 2.4.0 behind AWSSDK.S3 (`ServiceURL`, path style), with signature checks on; presigned multipart with 64 MiB parts; part URLs signed for the host the browser uses, by a second client that never sends a request; the browser calls complete; after a reload the creator picks the file again, and Media lists the parts with `ListParts`.
