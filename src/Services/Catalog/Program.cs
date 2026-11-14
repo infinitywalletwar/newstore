@@ -7,6 +7,7 @@ using NewStore.Catalog.Editions;
 using NewStore.Catalog.Seed;
 using NewStore.Catalog.Videos;
 using NewStore.Contracts.Inventory;
+using NewStore.Contracts.Media;
 using NewStore.Messaging;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
@@ -27,7 +28,9 @@ builder.AddPostgresDatabase<CatalogDbContext>("Catalog");
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.AddMessaging<CatalogDbContext>(m => m
     .AddTopic(EditionSnapshot.Topic, EditionSnapshot.Partitions)
-    .AddHandler<EditionSnapshot, EditionSnapshotHandler>(EditionSnapshot.Topic));
+    .AddHandler<EditionSnapshot, EditionSnapshotHandler>(EditionSnapshot.Topic)
+    .AddTopic(VideoPublished.Topic, VideoPublished.Partitions)
+    .AddHandler<VideoPublished, VideoPublishedHandler>(VideoPublished.Topic));
 builder.AddCatalogCache();
 builder.Services.AddScoped<IDatabaseSeeder<CatalogDbContext>, CatalogSeeder>();
 

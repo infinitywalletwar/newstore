@@ -662,7 +662,7 @@ Every Catalog test factory sets `Catalog:MediaBaseUrl` to `http://media.test/new
 
 Expected: they fail. Then implement, generate `VideoDrafts`, and check it adds the columns and the fill. Expected: Catalog.Tests pass. Commit: `feat(catalog): videos start as drafts, with playback and thumbnail URLs`.
 
-- [ ] **Step 2: The `VideoPublished` handler, failing tests, then code**
+- [x] **Step 2: The `VideoPublished` handler, failing tests, then code**
 
 The tests use `KafkaServer.PublishAsync`:
 - `VideoPublished_publishes_the_draft_with_its_urls`: the video is listed, and `GET /videos/{id}` has both URLs and the duration.
