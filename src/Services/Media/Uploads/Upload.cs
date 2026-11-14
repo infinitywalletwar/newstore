@@ -34,6 +34,9 @@ public sealed class Upload
     /// <summary>When the S3 multipart upload was aborted, for an upload that ended without completing. Null until then.</summary>
     public DateTimeOffset? S3AbortedAt { get; set; }
 
-    /// <summary>PostgreSQL's <c>xmin</c>: EF checks it on every update.</summary>
+    /// <summary>
+    /// PostgreSQL's <c>xmin</c> as EF's concurrency token: <c>SaveChanges</c> checks it on an update. This service changes the status with
+    /// guarded <c>ExecuteUpdate</c> statements instead (<c>WHERE status = ...</c>), which ignore the token.
+    /// </summary>
     public uint Version { get; set; }
 }

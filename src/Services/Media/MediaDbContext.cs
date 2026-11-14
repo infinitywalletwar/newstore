@@ -18,7 +18,9 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options) : DbContex
             upload.Property(u => u.FileName).HasMaxLength(255);
             upload.Property(u => u.ContentType).HasMaxLength(100);
             upload.Property(u => u.ObjectKey).HasMaxLength(200);
-            upload.Property(u => u.S3UploadId).HasMaxLength(512);
+            // Explicit snake_case: the naming convention would make s3upload_id and s3aborted_at, and the worker writes raw SQL against these.
+            upload.Property(u => u.S3UploadId).HasColumnName("s3_upload_id").HasMaxLength(512);
+            upload.Property(u => u.S3AbortedAt).HasColumnName("s3_aborted_at");
             upload.Property(u => u.Status).HasConversion<string>().HasMaxLength(16);
             upload.Property(u => u.FailureReason).HasMaxLength(200);
 
@@ -35,6 +37,12 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options) : DbContex
 
             // The expiry sweep's lookup.
             upload.HasIndex(u => new { u.Status, u.CreatedAt });
+
+            // The abort-retry query: Expired rows whose S3 upload is not aborted yet, oldest first. Expired rows are never deleted, so
+            // without this the pass would read all of them every 5 minutes. The index holds only the few rows still waiting.
+            upload.HasIndex(u => u.UpdatedAt)
+                .HasFilter("status = 'Expired' AND s3_aborted_at IS NULL")
+                .HasDatabaseName("ix_uploads_abort_pending");
         });
 
         modelBuilder.Entity<ProcessingJob>(job =>

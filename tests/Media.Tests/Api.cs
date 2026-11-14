@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 
 namespace NewStore.Media.Tests;
 
-public sealed record ProblemDto(string? Type, int Status, string? Title, Dictionary<string, string[]>? Errors, Guid? UploadId);
+public sealed record ProblemDto(string? Type, int Status, string? Title, Dictionary<string, string[]>? Errors, Guid? UploadId, string? Detail = null);
 
 /// <summary>The service's endpoints, and the browser's part of the upload, as the tests use them.</summary>
 internal static class Api
@@ -59,6 +59,17 @@ internal static class Api
         this HttpClient client, Guid creatorId, Guid uploadId, IEnumerable<(int PartNumber, string ETag)> parts) =>
         client.SendAsUserAsync(creatorId, HttpMethod.Post, $"/uploads/{uploadId}/complete",
             new { parts = parts.Select(p => new { partNumber = p.PartNumber, eTag = p.ETag }) });
+
+    /// <summary>The raw JSON body of a complete request, for bodies the typed helper cannot build (a missing or null list).</summary>
+    public static Task<HttpResponseMessage> PostRawCompleteAsync(this HttpClient client, Guid creatorId, Guid uploadId, string json)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/uploads/{uploadId}/complete")
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", UserToken(creatorId));
+        return client.SendAsync(request, Ct);
+    }
 
     public static async Task<ProblemDto> ProblemAsync(this HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<ProblemDto>(Ct))!;

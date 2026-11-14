@@ -31,6 +31,13 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
         {
             Assert.Contains(table, tables);
         }
+
+        // Task 5 writes raw SQL against these names, so they are spelled out in the model and not left to the naming convention.
+        var columns = await media.WithDbAsync(db => db.Database
+            .SqlQuery<string>($"SELECT column_name AS \"Value\" FROM information_schema.columns WHERE table_name = 'uploads'")
+            .ToListAsync(Ct));
+        Assert.Contains("s3_upload_id", columns);
+        Assert.Contains("s3_aborted_at", columns);
     }
 
     [Fact]
@@ -122,5 +129,73 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
         Assert.Equal(UploadStatus.Uploading, (await storageDown.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
+    }
+
+    private async Task<Upload> InsertUploadingRowAsync(Guid creator)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var upload = new Upload
+        {
+            Id = Guid.CreateVersion7(),
+            VideoId = Guid.NewGuid(),
+            CreatorId = creator,
+            FileName = "a.mp4",
+            ContentType = "video/mp4",
+            SizeBytes = 5 * 1024 * 1024,
+            ObjectKey = "originals/x/y",
+            S3UploadId = "gone",
+            PartSize = MediaFixture.PartSize,
+            PartCount = 1,
+            Status = UploadStatus.Uploading,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        await storageDown.WithDbAsync(async db =>
+        {
+            db.Uploads.Add(upload);
+            return await db.SaveChangesAsync(Ct);
+        });
+        return upload;
+    }
+
+    [Fact]
+    public async Task State_with_storage_down_is_503_and_changes_nothing()
+    {
+        var creator = Guid.NewGuid();
+        var upload = await InsertUploadingRowAsync(creator);
+        using var client = storageDown.CreateClient();
+
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Get, $"/uploads/{upload.Id}");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
+        Assert.Equal("urn:newstore:problem:storage-unavailable", (await response.ProblemAsync()).Type);
+        Assert.Equal(UploadStatus.Uploading, (await storageDown.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
+    }
+
+    [Fact]
+    public async Task Create_with_storage_down_is_503_and_leaves_no_row()
+    {
+        var creator = Guid.NewGuid();
+        var video = Api.NewVideo(creator);
+        using var client = storageDown.CreateClient();
+
+        var response = await client.PostCreateAsync(creator, video);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
+        Assert.Equal(0, await storageDown.WithDbAsync(db => db.Uploads.CountAsync(u => u.VideoId == video, Ct)));
+    }
+
+    [Fact]
+    public async Task Download_file_name_is_made_safe()
+    {
+        // Task 6's rule: every character outside [A-Za-z0-9._-] becomes an underscore.
+        var storage = media.Services.GetRequiredService<MediaStorage>();
+
+        var url = await storage.PresignDownloadAsync("originals/x/y", "my \"trip\" é.mp4", TimeSpan.FromMinutes(15));
+
+        var disposition = System.Web.HttpUtility.ParseQueryString(new Uri(url).Query)["response-content-disposition"];
+        Assert.Equal("attachment; filename=\"my__trip___.mp4\"", disposition);
     }
 }

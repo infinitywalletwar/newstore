@@ -56,9 +56,9 @@ public sealed class MediaStorage : IDisposable
     /// <summary>A URL that downloads the original with <paramref name="fileName"/> as the saved name (used by Task 6).</summary>
     public Task<string> PresignDownloadAsync(string key, string fileName, TimeSpan lifetime)
     {
-        // The header value is built from text a creator typed: keep it to printable ASCII without quote or backslash,
-        // so it cannot end the quoted string or add a header parameter.
-        var safe = new string([.. fileName.Select(c => c is >= ' ' and <= '~' and not '"' and not '\\' ? c : '_')]);
+        // The header value is built from text a creator typed. Every character outside [A-Za-z0-9._-] becomes "_" (the plan's rule for
+        // downloads), so the name cannot end the quoted string, add a header parameter or carry a control character.
+        var safe = string.Concat(fileName.Select(c => c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '_' or '-' ? c : '_'));
         return PublicSigner.GetPreSignedURLAsync(new GetPreSignedUrlRequest
         {
             BucketName = Bucket,

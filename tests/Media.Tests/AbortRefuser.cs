@@ -12,6 +12,10 @@ namespace NewStore.Media.Tests;
 /// pipeline of every S3 client built after <see cref="Register"/>, and the handler answers only for its own bucket, so other test
 /// classes that share the process (and Floci) are not affected.
 /// </summary>
+// This depends on the SDK's internal-by-name pipeline types (RuntimePipeline, PipelineHandler, IExecutionContext, Marshaller in
+// Amazon.Runtime.Internal), because the only public hook for a per-client fault is the HttpClientFactory seam that MediaStorage does
+// not offer, and a seam added only for tests would be production code. A Dependabot bump of AWSSDK.S3 can break this file: if it does,
+// give MediaStorage an HttpClientFactory hook and answer 403 to DELETE ...?uploadId= in a DelegatingHandler instead.
 internal sealed class AbortRefuser(string uniqueName) : IRuntimePipelineCustomizer
 {
     private int _attempts;

@@ -14,8 +14,9 @@ internal static class Problems
     public static IResult Forbidden(string slug, string title) =>
         Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: title, type: Type(slug));
 
-    public static IResult BadRequest(string slug, string title) =>
-        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: title, type: Type(slug));
+    /// <summary>The title is the same for every occurrence (RFC 9457); text about this one goes in <paramref name="detail"/>.</summary>
+    public static IResult BadRequest(string slug, string title, string? detail = null) =>
+        Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: title, detail: detail, type: Type(slug));
 
     public static IResult Unavailable(string slug, string title) =>
         Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: title, type: Type(slug));

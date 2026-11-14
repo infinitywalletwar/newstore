@@ -6,6 +6,15 @@ public abstract record CreateOutcome
 
     /// <summary>The video already has a live upload.</summary>
     public sealed record Exists(Guid UploadId) : CreateOutcome;
+
+    public sealed record StorageUnavailable : CreateOutcome;
+}
+
+public abstract record StateOutcome
+{
+    public sealed record Ok(UploadResponse Response) : StateOutcome;
+    public sealed record NotFound : StateOutcome;
+    public sealed record StorageUnavailable : StateOutcome;
 }
 
 public abstract record CompleteOutcome

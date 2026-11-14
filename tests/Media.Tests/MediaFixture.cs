@@ -21,7 +21,13 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
     /// Every "now" of the service, including the expiry timer. It starts a few 100 ns ticks past a whole microsecond: PostgreSQL
     /// keeps microseconds, so a service that returns an unrounded time answers differently before and after a round trip.
     /// </summary>
-    public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(DateTimeOffset.UtcNow.UtcTicks - (DateTimeOffset.UtcNow.UtcTicks % 10), TimeSpan.Zero).AddTicks(3));
+    public FakeTimeProvider Clock { get; } = new(StartOfClock());
+
+    private static DateTimeOffset StartOfClock()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(now.UtcTicks - (now.UtcTicks % 10), TimeSpan.Zero).AddTicks(3);
+    }
 
     /// <summary>Catalog, as a table of videos (<see cref="FakeCatalog"/>).</summary>
     internal StubHttpHandler Catalog { get; } = FakeCatalog.Create();
@@ -53,8 +59,9 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         var ct = TestContext.Current.CancellationToken;
         Settings["ConnectionStrings:Media"] = await postgres.CreateDatabaseAsync("media", ct);
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
-        // Two fixtures in one test run must never share a consumer group.
-        Settings["Messaging:ClientId"] = $"media-{GetType().Name}";
+        // Two fixtures in one test run must never share a consumer group, and a fixture class can be used by several test classes
+        // (UploadTests and MediaStartupTests both use MediaFixture), so the class name is not enough: every instance gets its own.
+        Settings["Messaging:ClientId"] = $"media-{GetType().Name}-{Guid.NewGuid():N}";
         Settings["WarmUp:Enabled"] = "false";
         Settings["Media:Role"] = Role.ToString();
         Settings["Media:Uploads:PartSize"] = PartSize.ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -39,8 +39,16 @@ public sealed partial class UploadService(
 
         var id = Guid.CreateVersion7();
         var key = ObjectKeys.Original(request.VideoId, id);
-        var started = await storage.Client.InitiateMultipartUploadAsync(
-            new InitiateMultipartUploadRequest { BucketName = storage.Bucket, Key = key, ContentType = request.ContentType }, ct);
+        InitiateMultipartUploadResponse started;
+        try
+        {
+            started = await storage.Client.InitiateMultipartUploadAsync(
+                new InitiateMultipartUploadRequest { BucketName = storage.Bucket, Key = key, ContentType = request.ContentType }, ct);
+        }
+        catch (Exception ex) when (IsStorageDown(ex))
+        {
+            return new CreateOutcome.StorageUnavailable();
+        }
 
         var now = time.GetUtcNowToMicrosecond();
         var upload = new Upload
@@ -89,17 +97,54 @@ public sealed partial class UploadService(
 
     /// <summary>
     /// The upload as the API shows it. While <c>Uploading</c> it asks S3 which parts it already has (<c>ListParts</c>) and signs
-    /// fresh URLs for the others, so a browser that reloaded the page needs only this call to carry on.
+    /// fresh URLs for the others, so a browser that reloaded the page needs only this call to carry on. If S3 no longer has the
+    /// upload, the row is first brought up to date (<see cref="ReconcileLostUploadAsync"/>) and the answer is its new state.
     /// </summary>
-    public async Task<UploadResponse> ToResponseAsync(Upload upload, CancellationToken ct)
+    public async Task<StateOutcome> GetStateAsync(Guid creatorId, Guid id, CancellationToken ct)
     {
-        IReadOnlyList<UploadedPart> uploaded = [];
+        var upload = await FindAsync(creatorId, id, ct);
+        if (upload is null)
+        {
+            return new StateOutcome.NotFound();
+        }
+
+        if (upload.Status != UploadStatus.Uploading)
+        {
+            return new StateOutcome.Ok(await ResponseAsync(upload, [], ct));
+        }
+
+        try
+        {
+            return new StateOutcome.Ok(await ResponseAsync(upload, await ListPartsAsync(upload, ct), ct));
+        }
+        catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchUpload")
+        {
+            try
+            {
+                return new StateOutcome.Ok(await ResponseAsync(await ReconcileLostUploadAsync(upload, ct), [], ct));
+            }
+            catch (Exception e) when (IsStorageDown(e))
+            {
+                return new StateOutcome.StorageUnavailable();
+            }
+        }
+        catch (Exception ex) when (IsStorageDown(ex))
+        {
+            return new StateOutcome.StorageUnavailable();
+        }
+    }
+
+    /// <summary>
+    /// The response for <paramref name="upload"/>, given the parts S3 has. While <c>Uploading</c> it signs a URL for every part that is
+    /// not in <paramref name="uploaded"/>; in any other status there is nothing to send.
+    /// </summary>
+    public async Task<UploadResponse> ResponseAsync(Upload upload, IReadOnlyList<UploadedPart> uploaded, CancellationToken ct)
+    {
         PartUrl[] urls = [];
         DateTimeOffset? urlsExpireAt = null;
 
         if (upload.Status == UploadStatus.Uploading)
         {
-            uploaded = await ListPartsAsync(upload, ct);
             var have = uploaded.Select(p => p.PartNumber).ToHashSet();
             var missing = Enumerable.Range(1, upload.PartCount).Where(n => !have.Contains(n));
             urls = await Task.WhenAll(missing.Select(async n => new PartUrl(
@@ -107,6 +152,10 @@ public sealed partial class UploadService(
                 await storage.PresignPartAsync(upload.ObjectKey, upload.S3UploadId, n, PartSizeOf(upload, n), Options.PartUrlLifetime),
                 PartSizeOf(upload, n))));
             urlsExpireAt = urls.Length > 0 ? time.GetUtcNowToMicrosecond() + Options.PartUrlLifetime : null;
+        }
+        else
+        {
+            uploaded = [];
         }
 
         return new UploadResponse(
@@ -164,62 +213,116 @@ public sealed partial class UploadService(
 
         try
         {
-            await storage.Client.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
-            {
-                BucketName = storage.Bucket,
-                Key = upload.ObjectKey,
-                UploadId = upload.S3UploadId,
-                PartETags = [.. request.Parts.OrderBy(p => p.PartNumber).Select(p => new PartETag(p.PartNumber, p.ETag))],
-            }, ct);
-        }
-        catch (AmazonS3Exception ex) when (ex.ErrorCode is "InvalidPart" or "InvalidPartOrder" or "EntityTooSmall")
-        {
-            return new CompleteOutcome.InvalidParts(ex.Message);
-        }
-        catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchUpload")
-        {
-            // S3 no longer knows the upload. Either an earlier complete worked (a retry, or a parallel request: the object exists)
-            // or the upload is gone for good.
             try
             {
-                await storage.Client.GetObjectMetadataAsync(storage.Bucket, upload.ObjectKey, ct);
+                await storage.Client.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+                {
+                    BucketName = storage.Bucket,
+                    Key = upload.ObjectKey,
+                    UploadId = upload.S3UploadId,
+                    PartETags = [.. request.Parts.OrderBy(p => p.PartNumber).Select(p => new PartETag(p.PartNumber, p.ETag))],
+                }, ct);
             }
-            catch (AmazonS3Exception head) when (head.StatusCode == System.Net.HttpStatusCode.NotFound)
+            catch (AmazonS3Exception ex) when (ex.ErrorCode is "InvalidPart" or "InvalidPartOrder" or "EntityTooSmall")
             {
-                return new CompleteOutcome.Expired();
+                return new CompleteOutcome.InvalidParts(ex.Message);
             }
-            catch (Exception e) when (IsStorageDown(e))
+            catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchUpload")
             {
-                return new CompleteOutcome.StorageUnavailable();
+                // S3 no longer knows the upload id: an earlier complete worked (a retry, or a parallel request), or it is gone for good.
+                return ToOutcome(await ReconcileLostUploadAsync(upload, ct));
             }
+
+            if (await ObjectSizeAsync(upload.ObjectKey, ct) is not { } size)
+            {
+                // Complete said yes and the object is not there: treat it as lost, like the NoSuchUpload case.
+                return ToOutcome(await ReconcileLostUploadAsync(upload, ct));
+            }
+
+            return new CompleteOutcome.Done(await FinishAsync(upload, size, ct));
         }
         catch (Exception ex) when (IsStorageDown(ex))
         {
             return new CompleteOutcome.StorageUnavailable();
         }
+    }
 
+    private static CompleteOutcome ToOutcome(Upload upload) =>
+        upload.Status == UploadStatus.Expired ? new CompleteOutcome.Expired() : new CompleteOutcome.Done(upload);
+
+    /// <summary>The size of the stored object, or null when there is none (HeadObject answers 404).</summary>
+    private async Task<long?> ObjectSizeAsync(string key, CancellationToken ct)
+    {
         try
         {
-            var head = await storage.Client.GetObjectMetadataAsync(storage.Bucket, upload.ObjectKey, ct);
-            if (head.ContentLength != upload.SizeBytes)
-            {
-                // The creator declared one size and sent another (or used another upload's parts). Nothing will process this.
-                await storage.Client.DeleteObjectAsync(storage.Bucket, upload.ObjectKey, ct);
-                await FailAsync(upload.Id, "size-mismatch", ct);
-                return new CompleteOutcome.Done(await ReloadAsync(upload.Id, ct));
-            }
+            return (await storage.Client.GetObjectMetadataAsync(storage.Bucket, key, ct)).ContentLength;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The object exists, so S3 finished the upload. A size other than the declared one fails the upload (and the object is deleted,
+    /// after the row says so: a leftover private original costs less than a wrong status). Otherwise the guarded move to Processing.
+    /// Returns the row as it is afterwards, whoever changed it.
+    /// </summary>
+    private async Task<Upload> FinishAsync(Upload upload, long size, CancellationToken ct)
+    {
+        if (size == upload.SizeBytes)
+        {
+            return await MoveToProcessingAsync(upload.Id, ct);
+        }
+
+        // The creator declared one size and sent another (or used another upload's parts). Nothing will process this.
+        await FailAsync(upload.Id, "size-mismatch", ct);
+        try
+        {
+            await storage.Client.DeleteObjectAsync(storage.Bucket, upload.ObjectKey, ct);
         }
         catch (Exception ex) when (IsStorageDown(ex))
         {
-            return new CompleteOutcome.StorageUnavailable();
+            DeleteFailed(logger, ex, upload.ObjectKey);
         }
 
-        return new CompleteOutcome.Done(await MoveToProcessingAsync(upload.Id, ct));
+        return await ReloadAsync(upload.Id, ct);
+    }
+
+    /// <summary>
+    /// S3 answered NoSuchUpload for an <c>Uploading</c> row, so the row is behind the truth. If the object exists, an earlier complete
+    /// reached S3 and its answer was lost: finish as complete would. Otherwise the upload is lost (a storage restart, an abort by
+    /// someone else, a lifecycle rule) and the row becomes <c>Expired</c> with <c>upload-lost</c>, so the video takes a new upload.
+    /// Every write is guarded by <c>status = 'Uploading'</c>; the answer is the row as it is afterwards.
+    /// </summary>
+    private async Task<Upload> ReconcileLostUploadAsync(Upload upload, CancellationToken ct)
+    {
+        if (await ObjectSizeAsync(upload.ObjectKey, ct) is { } size)
+        {
+            return await FinishAsync(upload, size, ct);
+        }
+
+        // Nothing is left on S3, so there is nothing to abort: S3AbortedAt is set too.
+        var now = time.GetUtcNowToMicrosecond();
+        await db.Uploads
+            .Where(u => u.Id == upload.Id && u.Status == UploadStatus.Uploading)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(u => u.Status, UploadStatus.Expired)
+                .SetProperty(u => u.FailureReason, "upload-lost")
+                .SetProperty(u => u.S3AbortedAt, now)
+                .SetProperty(u => u.UpdatedAt, now), ct);
+        return await ReloadAsync(upload.Id, ct);
     }
 
     /// <summary>Null when the parts are exactly 1 to PartCount, each once; otherwise a message naming what is wrong.</summary>
-    private static string? CheckParts(Upload upload, IReadOnlyList<CompletedPart> parts)
+    private static string? CheckParts(Upload upload, IReadOnlyList<CompletedPart>? parts)
     {
+        // System.Text.Json does not enforce nullable annotations: {} and {"parts": null} arrive as null, {"parts": [null]} as a null item.
+        if (parts is null || parts.Any(p => p is null))
+        {
+            return "parts must be a list of { partNumber, eTag }.";
+        }
+
         var numbers = parts.Select(p => p.PartNumber).ToList();
         var repeated = numbers.GroupBy(n => n).Where(g => g.Count() > 1).Select(g => g.Key).Order().ToList();
         var missing = Enumerable.Range(1, upload.PartCount).Except(numbers).ToList();
@@ -317,8 +420,11 @@ public sealed partial class UploadService(
         }
 
         // The row says Expired now. If S3 cannot be reached, S3AbortedAt stays null and the expiry service retries the abort.
-        await TryAbortAsync(upload.ObjectKey, upload.S3UploadId, ct);
-        await MarkAbortedAsync(id, ct);
+        if (await TryAbortAsync(upload.ObjectKey, upload.S3UploadId, ct))
+        {
+            await MarkAbortedAsync(id, ct);
+        }
+
         return CancelOutcome.Done;
     }
 
@@ -387,6 +493,9 @@ public sealed partial class UploadService(
         ex is HttpRequestException
         || (ex is AmazonServiceException service
             && ((int)service.StatusCode >= 500 || service.InnerException is HttpRequestException or IOException));
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not delete the wrong-sized object {Key}; the row says Failed.")]
+    private static partial void DeleteFailed(ILogger logger, Exception exception, string key);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not abort the S3 upload of {Key}; the expiry service tries again.")]
     private static partial void AbortFailed(ILogger logger, Exception exception, string key);

@@ -6,6 +6,8 @@ using Amazon.S3.Model;
 
 using Microsoft.EntityFrameworkCore;
 
+using Npgsql;
+
 using static NewStore.Media.Tests.Api;
 
 namespace NewStore.Media.Tests;
@@ -113,6 +115,11 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         using var old = await PutPartAsync(upload.PartUrls[0].Url, upload.PartUrls[0].Size);
         Assert.Equal(HttpStatusCode.Forbidden, old.StatusCode);
 
+        // Refused because it ran out, not because of a wrong signature or host (ADR 0018: 403 AccessDenied, "Request has expired.").
+        var body = await old.Content.ReadAsStringAsync(Ct);
+        Assert.Contains("<Code>AccessDenied</Code>", body);
+        Assert.Contains("expired", body, StringComparison.OrdinalIgnoreCase);
+
         var state = await client.GetAsync(creator, upload.Id);
         var fresh = state.PartUrls.Single(p => p.PartNumber == 1);
         using var again = await PutPartAsync(fresh.Url, fresh.Size);
@@ -142,6 +149,10 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
     public async Task Complete_twice_creates_one_job()
     {
         // Review Focus 5: two parallel completes. Both answer 200, one moves the row, and only that one creates the job.
+        // The race is forced: the test holds the row's lock, so both requests get past their checks and the S3 calls and then both
+        // wait on the guarded UPDATE. When the lock is released one changes the row, and the other's WHERE no longer matches
+        // (READ COMMITTED re-checks it against the new row version). Without the barrier the second request could start after the
+        // first had finished and simply see Processing, and the guard would never be tested.
         var creator = Guid.NewGuid();
         var client = Client;
         var upload = await client.CreateAsync(creator);
@@ -151,7 +162,31 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
             etags.Add(await PutPartOkAsync(part));
         }
 
-        var responses = await Task.WhenAll(client.PostCompleteAsync(creator, upload.Id, etags), client.PostCompleteAsync(creator, upload.Id, etags));
+        await using var connection = new NpgsqlConnection(media.Settings["ConnectionStrings:Media"]);
+        await connection.OpenAsync(Ct);
+        var lockTransaction = await connection.BeginTransactionAsync(Ct);
+        await using (var lockRow = new NpgsqlCommand("SELECT 1 FROM uploads WHERE id = @id FOR UPDATE", connection, lockTransaction))
+        {
+            lockRow.Parameters.AddWithValue("id", upload.Id);
+            await lockRow.ExecuteNonQueryAsync(Ct);
+        }
+
+        var both = Task.WhenAll(client.PostCompleteAsync(creator, upload.Id, etags), client.PostCompleteAsync(creator, upload.Id, etags));
+
+        // Wait until both requests are blocked on the row.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var waiting = 0L;
+        while (waiting < 2 && DateTime.UtcNow < deadline)
+        {
+            await using var count = new NpgsqlCommand(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", connection, lockTransaction);
+            waiting = (long)(await count.ExecuteScalarAsync(Ct))!;
+            await Task.Delay(TimeSpan.FromMilliseconds(50), Ct);
+        }
+
+        Assert.Equal(2, waiting);
+        await lockTransaction.RollbackAsync(Ct);
+        var responses = await both;
 
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
         foreach (var r in responses)
@@ -212,8 +247,26 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
     {
         var creator = Guid.NewGuid();
         var client = Client;
-        var upload = await client.CreateAsync(creator);
+        var video = NewVideo(creator);
+        var upload = await client.CreateAsync(creator, videoId: video);
         var one = await PutPartOkAsync(upload.PartUrls[0]);
+        await AbortOnS3Async(upload);
+
+        var response = await client.PostCompleteAsync(creator, upload.Id, [one, (2, "\"x\""), (3, "\"x\"")]);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:upload-expired", (await response.ProblemAsync()).Type);
+
+        // The 409 is written down: the row is Expired, so the video takes a new upload instead of staying stuck on this one.
+        var row = await media.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct));
+        Assert.Equal(UploadStatus.Expired, row.Status);
+        Assert.Equal("upload-lost", row.FailureReason);
+        Assert.NotNull(row.S3AbortedAt);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostCreateAsync(creator, video)).StatusCode);
+    }
+
+    private async Task AbortOnS3Async(UploadResponse upload)
+    {
         using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
         await s3.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
         {
@@ -221,11 +274,56 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
             Key = ObjectKeys.Original(upload.VideoId, upload.Id),
             UploadId = await UploadIdAsync(upload.Id),
         }, Ct);
+    }
 
-        var response = await client.PostCompleteAsync(creator, upload.Id, [one, (2, "\"x\""), (3, "\"x\"")]);
+    [Fact]
+    public async Task State_of_an_upload_s3_no_longer_has_is_expired()
+    {
+        // A Floci restart, an abort by someone else, or a lifecycle rule: S3 has forgotten the upload. GET answers with the truth
+        // (200 Expired, upload-lost, nothing to send) and writes it, so the video is free for a new upload.
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var video = NewVideo(creator);
+        var upload = await client.CreateAsync(creator, videoId: video);
+        await PutPartOkAsync(upload.PartUrls[0]);
+        await AbortOnS3Async(upload);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("urn:newstore:problem:upload-expired", (await response.ProblemAsync()).Type);
+        var state = await client.GetAsync(creator, upload.Id);
+
+        Assert.Equal("Expired", state.Status);
+        Assert.Equal("upload-lost", state.FailureReason);
+        Assert.Empty(state.PartUrls);
+        Assert.Empty(state.UploadedParts);
+        Assert.Equal(UploadStatus.Expired, (await media.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostCreateAsync(creator, video)).StatusCode);
+    }
+
+    [Fact]
+    public async Task State_after_s3_assembled_the_object_is_processing()
+    {
+        // A complete reached S3 but its answer was lost, so the row still says Uploading. The reload finishes it, as complete would.
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+        var etags = new List<(int, string)>();
+        foreach (var part in upload.PartUrls)
+        {
+            etags.Add(await PutPartOkAsync(part));
+        }
+
+        using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
+        await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = await UploadIdAsync(upload.Id),
+            PartETags = [.. etags.Select(e => new PartETag(e.Item1, e.Item2))],
+        }, Ct);
+
+        var state = await client.GetAsync(creator, upload.Id);
+
+        Assert.Equal("Processing", state.Status);
+        Assert.Equal(1, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
     }
 
     [Fact]
@@ -245,6 +343,22 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         Assert.Contains("repeated parts: 2", message);
     }
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"parts\": null}")]
+    [InlineData("{\"parts\": [null]}")]
+    public async Task Complete_without_a_parts_list_is_400_not_500(string json)
+    {
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+
+        var response = await client.PostRawCompleteAsync(creator, upload.Id, json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("parts", (await response.ProblemAsync()).Errors!.Keys);
+    }
+
     [Fact]
     public async Task Complete_with_a_wrong_etag_is_400_invalid_parts()
     {
@@ -261,7 +375,11 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         var response = await client.PostCompleteAsync(creator, upload.Id, etags);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("urn:newstore:problem:invalid-parts", (await response.ProblemAsync()).Type);
+        var problem = await response.ProblemAsync();
+        Assert.Equal("urn:newstore:problem:invalid-parts", problem.Type);
+        // RFC 9457: the title is the same for every occurrence; what S3 said about this one is the detail.
+        Assert.Equal("Storage refused the parts.", problem.Title);
+        Assert.False(string.IsNullOrWhiteSpace(problem.Detail));
     }
 
     [Fact]
@@ -295,6 +413,39 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         Assert.Equal(0, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
         var gone = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.GetObjectMetadataAsync(media.Bucket, key, Ct));
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+    }
+
+    [Fact]
+    public async Task Size_mismatch_in_parallel_completes_answers_failed_to_both()
+    {
+        // Whichever request deletes the object first, the other must answer the same Failed row and not an error (a 404 on its HeadObject).
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+        var one = await PutPartOkAsync(upload.PartUrls[0]);
+        var two = await PutPartOkAsync(upload.PartUrls[1]);
+        using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
+        var shortPart = await s3.UploadPartAsync(new UploadPartRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = await UploadIdAsync(upload.Id),
+            PartNumber = 3,
+            PartSize = 1 * MiB,
+            InputStream = new MemoryStream(new byte[1 * MiB]),
+        }, Ct);
+
+        var responses = await Task.WhenAll(
+            client.PostCompleteAsync(creator, upload.Id, [one, two, (3, shortPart.ETag)]),
+            client.PostCompleteAsync(creator, upload.Id, [one, two, (3, shortPart.ETag)]));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        foreach (var r in responses)
+        {
+            var body = (await r.Content.ReadFromJsonAsync<UploadResponse>(Ct))!;
+            Assert.Equal("Failed", body.Status);
+            Assert.Equal("size-mismatch", body.FailureReason);
+        }
     }
 
     private Task<string> UploadIdAsync(Guid uploadId) =>

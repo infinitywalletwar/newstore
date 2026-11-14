@@ -72,7 +72,10 @@ public static partial class UploadEndpoints
         switch (await uploads.CreateAsync(creatorId, request, ct))
         {
             case CreateOutcome.Created created:
-                return Results.Created($"/uploads/{created.Upload.Id}", await uploads.ToResponseAsync(created.Upload, ct));
+                // A brand-new upload has no parts on S3 yet, so there is nothing to list.
+                return Results.Created($"/uploads/{created.Upload.Id}", await uploads.ResponseAsync(created.Upload, [], ct));
+            case CreateOutcome.StorageUnavailable:
+                return StorageUnavailable(http);
             case CreateOutcome.Exists exists:
                 return Problems.Conflict("upload-exists", "This video already has an upload.", new Dictionary<string, object?> { ["uploadId"] = exists.UploadId });
             default:
@@ -105,10 +108,19 @@ public static partial class UploadEndpoints
         return errors;
     }
 
-    private static async Task<IResult> GetAsync(Guid id, ClaimsPrincipal user, UploadService uploads, CancellationToken ct) =>
-        await uploads.FindAsync(user.UserId(), id, ct) is { } upload
-            ? Results.Ok(await uploads.ToResponseAsync(upload, ct))
-            : Problems.NotFound("Upload");
+    private static async Task<IResult> GetAsync(Guid id, ClaimsPrincipal user, UploadService uploads, HttpContext http, CancellationToken ct) =>
+        await uploads.GetStateAsync(user.UserId(), id, ct) switch
+        {
+            StateOutcome.Ok ok => Results.Ok(ok.Response),
+            StateOutcome.StorageUnavailable => StorageUnavailable(http),
+            _ => Problems.NotFound("Upload"),
+        };
+
+    private static IResult StorageUnavailable(HttpContext http)
+    {
+        http.Response.Headers.RetryAfter = "5";
+        return Problems.Unavailable("storage-unavailable", "Storage is not reachable. Send the same request again shortly.");
+    }
 
     private static async Task<IResult> CompleteAsync(
         Guid id, CompleteUploadRequest request, ClaimsPrincipal user, UploadService uploads, HttpContext http, CancellationToken ct)
@@ -116,16 +128,15 @@ public static partial class UploadEndpoints
         switch (await uploads.CompleteAsync(user.UserId(), id, request, ct))
         {
             case CompleteOutcome.Done done:
-                return Results.Ok(await uploads.ToResponseAsync(done.Upload, ct));
+                return Results.Ok(await uploads.ResponseAsync(done.Upload, [], ct));
             case CompleteOutcome.Expired:
                 return Problems.Conflict("upload-expired", "The upload expired. Start a new one.");
             case CompleteOutcome.BadParts bad:
                 return Problems.Validation(new() { ["parts"] = [bad.Message] });
             case CompleteOutcome.InvalidParts invalid:
-                return Problems.BadRequest("invalid-parts", $"Storage refused the parts: {invalid.Message}");
+                return Problems.BadRequest("invalid-parts", "Storage refused the parts.", invalid.Message);
             case CompleteOutcome.StorageUnavailable:
-                http.Response.Headers.RetryAfter = "5";
-                return Problems.Unavailable("storage-unavailable", "Storage is not reachable. Send the same request again shortly.");
+                return StorageUnavailable(http);
             default:
                 return Problems.NotFound("Upload");
         }
