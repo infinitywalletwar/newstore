@@ -672,7 +672,7 @@ The tests use `KafkaServer.PublishAsync`:
 
 Expected: they pass after the handler is written. Commit: `feat(catalog): publish a draft when Media publishes its video`.
 
-- [ ] **Step 3: ADR 0019, Compose, pull request**
+- [x] **Step 3: ADR 0019, Compose, pull request**
 
 1. **ADR 0019, who owns a video's state.**
    - Media owns the upload and its processing; Catalog owns what viewers see. They share one event, through the outbox.
