@@ -112,9 +112,13 @@ public static partial class UploadEndpoints
         await uploads.GetStateAsync(user.UserId(), id, ct) switch
         {
             StateOutcome.Ok ok => Results.Ok(ok.Response),
+            StateOutcome.Lost => UploadLost(),
             StateOutcome.StorageUnavailable => StorageUnavailable(http),
             _ => Problems.NotFound("Upload"),
         };
+
+    private static IResult UploadLost() =>
+        Problems.Conflict("upload-lost", "Storage lost this upload.", detail: "Delete this upload and start a new one.");
 
     private static IResult StorageUnavailable(HttpContext http)
     {
@@ -129,6 +133,8 @@ public static partial class UploadEndpoints
         {
             case CompleteOutcome.Done done:
                 return Results.Ok(await uploads.ResponseAsync(done.Upload, [], ct));
+            case CompleteOutcome.Lost:
+                return UploadLost();
             case CompleteOutcome.Expired:
                 return Problems.Conflict("upload-expired", "The upload expired. Start a new one.");
             case CompleteOutcome.BadParts bad:

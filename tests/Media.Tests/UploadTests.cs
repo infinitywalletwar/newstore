@@ -243,7 +243,7 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
     }
 
     [Fact]
-    public async Task Complete_after_the_s3_upload_is_gone_is_409_upload_expired()
+    public async Task Complete_after_the_s3_upload_is_gone_is_409_upload_lost()
     {
         var creator = Guid.NewGuid();
         var client = Client;
@@ -255,9 +255,9 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         var response = await client.PostCompleteAsync(creator, upload.Id, [one, (2, "\"x\""), (3, "\"x\"")]);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("urn:newstore:problem:upload-expired", (await response.ProblemAsync()).Type);
+        Assert.Equal("urn:newstore:problem:upload-lost", (await response.ProblemAsync()).Type);
 
-        // The 409 is written down: the row is Expired, so the video takes a new upload instead of staying stuck on this one.
+        // Complete is the creator's own request, so it writes the truth down: the row is Expired, so the video takes a new upload instead of staying stuck on this one.
         var row = await media.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct));
         Assert.Equal(UploadStatus.Expired, row.Status);
         Assert.Equal("upload-lost", row.FailureReason);
@@ -276,32 +276,37 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         }, Ct);
     }
 
+    private Task<Upload> RowAsync(Guid id) => media.WithDbAsync(db => db.Uploads.AsNoTracking().SingleAsync(u => u.Id == id, Ct));
+
     [Fact]
-    public async Task State_of_an_upload_s3_no_longer_has_is_expired()
+    public async Task State_of_a_lost_upload_is_409_and_writes_nothing()
     {
-        // A Floci restart, an abort by someone else, or a lifecycle rule: S3 has forgotten the upload. GET answers with the truth
-        // (200 Expired, upload-lost, nothing to send) and writes it, so the video is free for a new upload.
+        // S3 has forgotten the upload (a Floci restart, an abort by someone else, a lifecycle rule) and there is no object. GET says so
+        // (409 upload-lost) but never writes: a complete may be running on S3 right now, and a GET that expired the row would lose it.
         var creator = Guid.NewGuid();
         var client = Client;
-        var video = NewVideo(creator);
-        var upload = await client.CreateAsync(creator, videoId: video);
+        var upload = await client.CreateAsync(creator);
         await PutPartOkAsync(upload.PartUrls[0]);
         await AbortOnS3Async(upload);
+        var before = await RowAsync(upload.Id);
 
-        var state = await client.GetAsync(creator, upload.Id);
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Get, $"/uploads/{upload.Id}");
 
-        Assert.Equal("Expired", state.Status);
-        Assert.Equal("upload-lost", state.FailureReason);
-        Assert.Empty(state.PartUrls);
-        Assert.Empty(state.UploadedParts);
-        Assert.Equal(UploadStatus.Expired, (await media.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
-        Assert.Equal(HttpStatusCode.Created, (await client.PostCreateAsync(creator, video)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.ProblemAsync();
+        Assert.Equal("urn:newstore:problem:upload-lost", problem.Type);
+        Assert.Contains("delete", problem.Detail ?? "", StringComparison.OrdinalIgnoreCase);
+        var after = await RowAsync(upload.Id);
+        Assert.Equal(UploadStatus.Uploading, after.Status);
+        Assert.Equal(before.UpdatedAt, after.UpdatedAt);
+        Assert.Equal(before.Version, after.Version);
     }
 
     [Fact]
-    public async Task State_after_s3_assembled_the_object_is_processing()
+    public async Task State_after_s3_assembled_the_object_reports_every_part_and_writes_nothing()
     {
-        // A complete reached S3 but its answer was lost, so the row still says Uploading. The reload finishes it, as complete would.
+        // A complete reached S3 and the row still says Uploading. GET reports every part as uploaded with no URLs left, so the client
+        // calls complete, whose "already assembled" branch finishes the job. GET itself writes nothing.
         var creator = Guid.NewGuid();
         var client = Client;
         var upload = await client.CreateAsync(creator);
@@ -319,11 +324,45 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
             UploadId = await UploadIdAsync(upload.Id),
             PartETags = [.. etags.Select(e => new PartETag(e.Item1, e.Item2))],
         }, Ct);
+        var before = await RowAsync(upload.Id);
 
         var state = await client.GetAsync(creator, upload.Id);
 
-        Assert.Equal("Processing", state.Status);
+        Assert.Equal("Uploading", state.Status);
+        Assert.Equal([1, 2, 3], state.UploadedParts.Select(p => p.PartNumber));
+        Assert.Equal([5 * MiB, 5 * MiB, 2 * MiB], state.UploadedParts.Select(p => p.Size));
+        Assert.Empty(state.PartUrls);
+        var after = await RowAsync(upload.Id);
+        Assert.Equal(UploadStatus.Uploading, after.Status);
+        Assert.Equal(before.UpdatedAt, after.UpdatedAt);
+        Assert.Equal(before.Version, after.Version);
+        Assert.Equal(0, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
+
+        // The client does what GET told it: complete with the parts it was given. That finishes the upload.
+        var complete = await client.PostCompleteAsync(creator, upload.Id, state.UploadedParts.Select(p => (p.PartNumber, p.ETag)));
+        Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
+        Assert.Equal("Processing", (await complete.Content.ReadFromJsonAsync<UploadResponse>(Ct))!.Status);
         Assert.Equal(1, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
+    }
+
+    [Fact]
+    public async Task Cancel_of_a_lost_upload_works()
+    {
+        // The way out of upload-lost: an abort that gets NoSuchUpload counts as confirmed, so the row ends as for any cancel.
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var video = NewVideo(creator);
+        var upload = await client.CreateAsync(creator, videoId: video);
+        await AbortOnS3Async(upload);
+
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Delete, $"/uploads/{upload.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var row = await RowAsync(upload.Id);
+        Assert.Equal(UploadStatus.Expired, row.Status);
+        Assert.Equal("cancelled", row.FailureReason);
+        Assert.NotNull(row.S3AbortedAt);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostCreateAsync(creator, video)).StatusCode);
     }
 
     [Fact]
@@ -419,6 +458,9 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
     public async Task Size_mismatch_in_parallel_completes_answers_failed_to_both()
     {
         // Whichever request deletes the object first, the other must answer the same Failed row and not an error (a 404 on its HeadObject).
+        // This does not force the race (the delete cannot be held between the two HeadObject calls without a seam in production code), so a
+        // run may never hit it. That is acceptable: it cannot fail when the code is right, and it still checks the end state (both answer
+        // Failed) when the requests do overlap.
         var creator = Guid.NewGuid();
         var client = Client;
         var upload = await client.CreateAsync(creator);

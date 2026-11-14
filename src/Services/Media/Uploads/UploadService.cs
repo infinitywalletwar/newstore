@@ -97,8 +97,8 @@ public sealed partial class UploadService(
 
     /// <summary>
     /// The upload as the API shows it. While <c>Uploading</c> it asks S3 which parts it already has (<c>ListParts</c>) and signs
-    /// fresh URLs for the others, so a browser that reloaded the page needs only this call to carry on. If S3 no longer has the
-    /// upload, the row is first brought up to date (<see cref="ReconcileLostUploadAsync"/>) and the answer is its new state.
+    /// fresh URLs for the others, so a browser that reloaded the page needs only this call to carry on. It never writes. If S3 no
+    /// longer has the upload it answers from what S3 shows: the object exists (every part is reported as uploaded) or it is lost.
     /// </summary>
     public async Task<StateOutcome> GetStateAsync(Guid creatorId, Guid id, CancellationToken ct)
     {
@@ -119,14 +119,27 @@ public sealed partial class UploadService(
         }
         catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchUpload")
         {
+            // GET never writes (see the walkthrough): a complete may be running on S3 right now, and a GET that expired the row would
+            // lose that upload. It only reports what it sees.
             try
             {
-                return new StateOutcome.Ok(await ResponseAsync(await ReconcileLostUploadAsync(upload, ct), [], ct));
+                if (await ObjectSizeAsync(upload.ObjectKey, ct) is null)
+                {
+                    return new StateOutcome.Lost();
+                }
             }
             catch (Exception e) when (IsStorageDown(e))
             {
                 return new StateOutcome.StorageUnavailable();
             }
+
+            // The object exists: S3 has assembled the parts. Say every part is uploaded, so the client calls complete, whose "already
+            // assembled" branch finishes the job. The ETags are placeholders: S3 no longer lists parts, and complete ignores them there.
+            UploadedPart[] all =
+            [
+                .. Enumerable.Range(1, upload.PartCount).Select(n => new UploadedPart(n, "\"assembled\"", PartSizeOf(upload, n))),
+            ];
+            return new StateOutcome.Ok(await ResponseAsync(upload, all, ct));
         }
         catch (Exception ex) when (IsStorageDown(ex))
         {
@@ -200,7 +213,7 @@ public sealed partial class UploadService(
         switch (upload.Status)
         {
             case UploadStatus.Expired:
-                return new CompleteOutcome.Expired();
+                return ToOutcome(upload);
             case not UploadStatus.Uploading:
                 // Processing, Published or Failed: the earlier complete (or the failure) already decided. Say so, change nothing.
                 return new CompleteOutcome.Done(upload);
@@ -247,8 +260,12 @@ public sealed partial class UploadService(
         }
     }
 
-    private static CompleteOutcome ToOutcome(Upload upload) =>
-        upload.Status == UploadStatus.Expired ? new CompleteOutcome.Expired() : new CompleteOutcome.Done(upload);
+    private static CompleteOutcome ToOutcome(Upload upload) => upload switch
+    {
+        { Status: UploadStatus.Expired, FailureReason: "upload-lost" } => new CompleteOutcome.Lost(),
+        { Status: UploadStatus.Expired } => new CompleteOutcome.Expired(),
+        _ => new CompleteOutcome.Done(upload),
+    };
 
     /// <summary>The size of the stored object, or null when there is none (HeadObject answers 404).</summary>
     private async Task<long?> ObjectSizeAsync(string key, CancellationToken ct)
@@ -290,7 +307,7 @@ public sealed partial class UploadService(
     }
 
     /// <summary>
-    /// S3 answered NoSuchUpload for an <c>Uploading</c> row, so the row is behind the truth. If the object exists, an earlier complete
+    /// Complete's own request met NoSuchUpload for an <c>Uploading</c> row, so the row is behind the truth (GET does not do this: it never writes). If the object exists, an earlier complete
     /// reached S3 and its answer was lost: finish as complete would. Otherwise the upload is lost (a storage restart, an abort by
     /// someone else, a lifecycle rule) and the row becomes <c>Expired</c> with <c>upload-lost</c>, so the video takes a new upload.
     /// Every write is guarded by <c>status = 'Uploading'</c>; the answer is the row as it is afterwards.

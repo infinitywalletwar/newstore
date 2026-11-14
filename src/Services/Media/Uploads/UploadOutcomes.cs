@@ -14,6 +14,9 @@ public abstract record StateOutcome
 {
     public sealed record Ok(UploadResponse Response) : StateOutcome;
     public sealed record NotFound : StateOutcome;
+
+    /// <summary>S3 has forgotten the upload and there is no object. Nothing was written.</summary>
+    public sealed record Lost : StateOutcome;
     public sealed record StorageUnavailable : StateOutcome;
 }
 
@@ -24,6 +27,9 @@ public abstract record CompleteOutcome
 
     public sealed record NotFound : CompleteOutcome;
     public sealed record Expired : CompleteOutcome;
+
+    /// <summary>S3 has forgotten the upload and there is no object. The row is <c>Expired</c> with <c>upload-lost</c>.</summary>
+    public sealed record Lost : CompleteOutcome;
 
     /// <summary>The parts list does not name 1 to PartCount once each; the message names what is missing or repeated.</summary>
     public sealed record BadParts(string Message) : CompleteOutcome;

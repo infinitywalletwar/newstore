@@ -8,8 +8,8 @@ internal static class Problems
     public static IResult NotFound(string what) =>
         Results.Problem(statusCode: StatusCodes.Status404NotFound, title: $"{what} not found.", type: Type("not-found"));
 
-    public static IResult Conflict(string slug, string title, IDictionary<string, object?>? extensions = null) =>
-        Results.Problem(statusCode: StatusCodes.Status409Conflict, title: title, type: Type(slug), extensions: extensions);
+    public static IResult Conflict(string slug, string title, IDictionary<string, object?>? extensions = null, string? detail = null) =>
+        Results.Problem(statusCode: StatusCodes.Status409Conflict, title: title, detail: detail, type: Type(slug), extensions: extensions);
 
     public static IResult Forbidden(string slug, string title) =>
         Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: title, type: Type(slug));
