@@ -167,6 +167,68 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
     }
 
     [Fact]
+    public async Task Complete_after_s3_already_assembled_the_object_still_succeeds()
+    {
+        // A complete whose answer was lost: S3 assembled the object, Media's row still says Uploading. The retry meets NoSuchUpload,
+        // finds the object with HeadObject and carries on.
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+        var etags = new List<(int, string)>();
+        foreach (var part in upload.PartUrls)
+        {
+            etags.Add(await PutPartOkAsync(part));
+        }
+
+        var s3UploadId = await UploadIdAsync(upload.Id);
+        using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
+        await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = s3UploadId,
+            PartETags = [.. etags.Select(e => new PartETag(e.Item1, e.Item2))],
+        }, Ct);
+
+        // The premise: after a complete, Floci no longer knows the upload id (so Media's call below does meet NoSuchUpload).
+        var again = await Assert.ThrowsAsync<AmazonS3Exception>(() => s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = s3UploadId,
+            PartETags = [.. etags.Select(e => new PartETag(e.Item1, e.Item2))],
+        }, Ct));
+        Assert.Equal("NoSuchUpload", again.ErrorCode);
+
+        var response = await client.PostCompleteAsync(creator, upload.Id, etags);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Processing", (await response.Content.ReadFromJsonAsync<UploadResponse>(Ct))!.Status);
+        Assert.Equal(1, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
+    }
+
+    [Fact]
+    public async Task Complete_after_the_s3_upload_is_gone_is_409_upload_expired()
+    {
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+        var one = await PutPartOkAsync(upload.PartUrls[0]);
+        using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
+        await s3.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = await UploadIdAsync(upload.Id),
+        }, Ct);
+
+        var response = await client.PostCompleteAsync(creator, upload.Id, [one, (2, "\"x\""), (3, "\"x\"")]);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:upload-expired", (await response.ProblemAsync()).Type);
+    }
+
+    [Fact]
     public async Task Complete_with_a_missing_part_is_400()
     {
         var creator = Guid.NewGuid();
