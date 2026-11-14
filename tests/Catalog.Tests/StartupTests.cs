@@ -9,6 +9,7 @@ public class StartupTests
     public void Startup_fails_when_connection_string_is_missing_or_empty(string? value)
     {
         using var factory = new NewStoreAppFactory<Program>();
+        factory.UseMediaBaseUrl();
         if (value is not null)
         {
             factory.Settings["ConnectionStrings:Catalog"] = value;

@@ -7,4 +7,7 @@ public static class Policies
 
     /// <summary>A service's token: <c>azp</c> is <paramref name="clientId"/>.</summary>
     public static string Client(string clientId) => $"client:{clientId}";
+
+    /// <summary>A service's token: <c>azp</c> is any of <paramref name="clientIds"/>. The name lists them: <c>client:a|b</c>.</summary>
+    public static string Clients(params string[] clientIds) => $"client:{string.Join('|', clientIds)}";
 }

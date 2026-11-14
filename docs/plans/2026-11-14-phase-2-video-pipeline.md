@@ -648,7 +648,7 @@ Branch `phase-2/catalog-drafts`. Issue #117. Advances V-1, V-3 and V-4. Read: St
   - Registered with `AddTopic(VideoPublished.Topic, VideoPublished.Partitions)` and `AddHandler<VideoPublished, VideoPublishedHandler>(VideoPublished.Topic)`.
 - **Seed:** sample videos are `Published`, with `CreatedAt = PublishedAt` and the sample paths. Compose sets `Catalog__MediaBaseUrl: http://localhost:4566/newstore-media`; `appsettings.Development.json` the same.
 
-- [ ] **Step 1: Failing tests for drafts and the owner endpoint**
+- [x] **Step 1: Failing tests for drafts and the owner endpoint**
 
 Every Catalog test factory sets `Catalog:MediaBaseUrl` to `http://media.test/newstore-media`, since Catalog no longer starts without it. In `tests/Security.Tests/PolicyTests`: `Clients_policy_accepts_each_named_client_only` (`inventory` and `media` get 200, `orders` gets 403). In Catalog.Tests:
 - `Creator_creates_a_draft_video`
