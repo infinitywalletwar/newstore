@@ -2,7 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
+
+using NewStore.ServiceDefaults.Security;
 
 namespace NewStore.Gateway.Tests;
 
@@ -30,6 +34,26 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
         var token = new JsonWebTokenHandler().ReadJsonWebToken(forwarded.Headers.Authorization.Parameter);
         Assert.Equal(Users.OrbitalKitchenId.ToString(), token.GetClaim("sub").Value);
         Assert.False(forwarded.Headers.Contains("Cookie"), "The session cookie must stop at the gateway.");
+    }
+
+    [Fact]
+    public async Task Signed_in_user_who_fails_the_routes_policy_gets_403_and_not_a_redirect()
+    {
+        // Every real route asks only for "signed in", and the user always passes. The test makes the policy ask for a claim the
+        // user lacks, so the cookie scheme's forbid path (OnRedirectToAccessDenied) is the one that answers.
+        await using var gateway = await GatewayHarness.StartAsync(keycloak, app => app.TestServices.Add(services =>
+            services.Configure<AuthorizationOptions>(o => o.AddPolicy(
+                Policies.SignedIn, policy => policy.RequireAuthenticatedUser().RequireClaim("role", "admin")))));
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var response = await gateway.Browser.GetAsync($"/api/editions/{EditionId}", csrf: true);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("urn:newstore:problem:forbidden", problem.GetProperty("type").GetString());
+        Assert.Empty(gateway.Stub.Requests);
     }
 
     [Fact]

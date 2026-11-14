@@ -164,6 +164,35 @@ public class WebhookTests(PaymentsFixture fixture)
         Assert.Equal(PaymentStatus.Created, (await fixture.GetAttemptAsync(payment.Id)).Status);
     }
 
+    [Theory]
+    [InlineData("wrong,right", HttpStatusCode.OK)]
+    [InlineData("right,wrong", HttpStatusCode.OK)]
+    [InlineData("wrong,wrong", HttpStatusCode.BadRequest)]
+    [InlineData("notHex,right", HttpStatusCode.OK)]
+    public async Task Webhook_is_accepted_when_any_v1_value_matches(string order, HttpStatusCode expected)
+    {
+        var (payment, sessionId) = await NewPaymentAsync();
+        using var client = fixture.CreateClient();
+        var body = TestWebhooks.Body($"evt_{Guid.NewGuid():N}", TestWebhooks.Completed, sessionId);
+        // "t=<unix>,v1=<hex>" from the test signer; the header then carries two v1 values.
+        var signed = TestWebhooks.Sign(body, DateTimeOffset.UtcNow).Split(',');
+        var right = signed[1];
+        var wrong = "v1=" + new string('0', 64);
+        var v1Values = order.Split(',').Select(name => name switch { "right" => right, "notHex" => "v1=zz", _ => wrong });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/webhooks/fakepay")
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("FakePay-Signature", string.Join(',', v1Values.Prepend(signed[0])));
+
+        var response = await client.SendAsync(request, Ct);
+
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(
+            expected == HttpStatusCode.OK ? PaymentStatus.Succeeded : PaymentStatus.Created,
+            (await fixture.GetAttemptAsync(payment.Id)).Status);
+    }
+
     [Fact]
     public async Task Webhook_without_a_signature_is_400()
     {

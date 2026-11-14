@@ -27,6 +27,9 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
 
     internal PaymentsStub Payments { get; } = new(Calls);
 
+    /// <summary>Makes a pay request's saves lose to a parallel writer (see <see cref="ConflictInjector"/>).</summary>
+    internal ConflictInjector Conflicts { get; } = new();
+
     public KafkaServer Kafka => kafka;
 
     /// <summary>Runs Orders' startup warm-up (off by default, see <see cref="InitializeAsync"/>).</summary>
@@ -35,6 +38,7 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
     public async ValueTask InitializeAsync()
     {
         Settings["ConnectionStrings:Orders"] = await postgres.CreateDatabaseAsync("orders", TestContext.Current.CancellationToken);
+        Conflicts.ConnectionString = Settings["ConnectionStrings:Orders"]!;
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         Settings["Messaging:RelayInterval"] = "00:00:00.100";
         // Retries after a transient failure start quickly, so a test about them does not take minutes.
@@ -91,6 +95,8 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
                     o.CircuitBreaker.MinimumThroughput = int.MaxValue;
                 });
             }
+
+            services.ConfigureDbContext<OrdersDbContext>(options => options.AddInterceptors(Conflicts));
 
             // Every "now" ends in a few 100 ns ticks. PostgreSQL keeps microseconds, so an order that stored or returned an
             // unrounded time would show it. Timers and delays still use the system clock.

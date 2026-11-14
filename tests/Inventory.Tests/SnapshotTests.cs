@@ -145,7 +145,7 @@ public sealed class SnapshotTests(ConditionalUpdateFixture fixture) : IClassFixt
         return await EditionSnapshots.PublishAsync(
             scope.ServiceProvider.GetRequiredService<InventoryDbContext>(),
             scope.ServiceProvider.GetRequiredService<IOutbox>(),
-            fixture.Clock.GetUtcNow(),
+            fixture.Clock.GetUtcNowToMicrosecond(),
             batchSize,
             Ct);
     }

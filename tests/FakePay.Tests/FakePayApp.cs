@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 using NewStore.FakePay.Webhooks;
@@ -40,6 +41,9 @@ internal sealed class FakePayApp : NewStoreAppFactory<Program>
     /// <summary>Stands in for Payments' webhook endpoint and records what it receives. Its answer is <see cref="ReceiverReply"/>.</summary>
     public StubHttpHandler Receiver { get; } = new();
 
+    /// <summary>Every log record the app writes.</summary>
+    public LogCapture Logs { get; } = new();
+
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -47,6 +51,7 @@ internal sealed class FakePayApp : NewStoreAppFactory<Program>
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
+            services.AddLogging(logging => logging.AddProvider(Logs));
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
             services.UseStubHandler<WebhookClient>(Receiver);
