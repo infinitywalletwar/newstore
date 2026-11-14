@@ -4,7 +4,7 @@ newstore is a video platform with a store built in. Creators upload videos, and 
 
 It's a home practice project, not a business. Its purpose is hands-on practice with the skills a senior ASP.NET Core backend developer is expected to have, and a chance to learn new ones.
 
-> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) is next: its Stage 2 topics come first, then its plan. To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
+> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) in progress, following [its plan](docs/plans/2026-11-14-phase-2-video-pipeline.md). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Goals
 
@@ -68,9 +68,10 @@ Requirements are written as user stories with acceptance criteria. They are the 
 ### Videos
 
 - **V-1** As a creator, I can upload a video.
+  - I first give the video a title and a description. Until it is published, it is a draft that only I see.
   - MP4, MOV and WebM files up to 2 GB are accepted.
-  - The upload goes straight from the browser to S3 and can resume after a dropped connection.
-  - The video shows a status: Uploading, then Processing, then Published or Failed.
+  - The upload goes straight from the browser to S3 and can resume after a dropped connection. After a page reload, I choose the same file again and only the missing parts are sent.
+  - The video shows a status: Uploading, then Processing, then Published or Failed, with the reason for a failure. An upload nobody finishes within 24 hours shows as Expired.
 - **V-2** As the system, I convert each upload into a streaming format.
   - Output is HLS at 360p and 720p, plus a thumbnail.
   - Processing runs in the background and survives a service restart.
@@ -114,7 +115,7 @@ Requirements are written as user stories with acceptance criteria. They are the 
 
 - **L-1** As a buyer, I can see all my copies, with each copy's number and delivery status.
 - **L-2** As the owner of a digital copy, I can download the original video file.
-  - The download link works only for the owner and expires after 15 minutes.
+  - Only the owner can get a download link. The link expires after 15 minutes; until then it works for whoever holds it, like any presigned URL.
 
 ### Delivery
 
@@ -137,12 +138,14 @@ flowchart LR
     Gateway --> Catalog & Media & Inventory & Orders & Delivery
     Orders --> Inventory & Payments
     Inventory --> Catalog
+    Media --> Catalog
     Payments --> Provider[Payment provider: FakePay, Stripe in Phase 7]
     Browser -. sign-in page .-> Keycloak
     Gateway -. tokens .-> Keycloak
     Catalog & Media & Inventory & Orders & Payments & Delivery <--> Kafka[(Kafka)]
     Courier[Courier simulator] --> Kafka
-    Media --> S3[(S3)]
+    Media & Worker[Media worker: FFmpeg] --> S3[(S3)]
+    Browser -. upload parts, playback, downloads .-> S3
 ```
 
 ### Services
@@ -152,8 +155,8 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 | Service | Owns | Job |
 |---------|------|-----|
 | Gateway (YARP) | user sessions, in Redis | The backend-for-frontend: signs the browser in, keeps its tokens on the server and forwards API calls with the user's access token. From Phase 4 it also limits request rates and adds correlation IDs. |
-| Catalog | channels, video details, a read copy of editions | Browsing, search and channel pages. |
-| Media | uploads, processing jobs, files in S3 | Upload links, FFmpeg conversion to HLS, download links. |
+| Catalog | channels, video details and whether each video is a draft or published, a read copy of editions | Browsing, search and channel pages. |
+| Media | uploads, processing jobs, files in S3, the owners of digital copies (from Inventory's events) | Upload links, FFmpeg conversion to HLS in a worker container of its own, download links. |
 | Inventory | editions, stock, reservations, copies | Reservations and copy numbers. This is where the last copy is decided. |
 | Orders | orders | Runs the checkout saga. |
 | Payments | payment attempts | Talks to the payment provider and handles its callbacks idempotently. |
@@ -173,6 +176,15 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 
 Every event is published through a transactional outbox, and every consumer ignores messages it has already handled. Orders' calls to Inventory and Payments are commands that are safe to repeat: each carries an id Orders chose, so a retry after a lost reply still takes effect only once. A consumer retries a call that failed because the other service was down, without a limit, so a payment is never dropped while Inventory restarts.
 
+### The video flow
+
+1. The creator gives the video a title. Catalog keeps it as a draft that only the creator sees.
+2. The creator picks a file. Media checks with Catalog that the video is the creator's draft, starts a multipart upload in S3 and returns a presigned URL for each 64 MiB part. The browser sends the parts straight to S3; the file never passes through the gateway or Media. After a dropped connection or a reload it sends only the parts S3 doesn't have yet.
+3. The browser tells Media the upload is complete. Media completes it in S3, checks the size, and in one transaction marks it Processing and adds a job to its own database.
+4. The Media worker, a second container of the same service, claims the job with a lease, so a job whose worker dies is taken over. It runs FFmpeg to make HLS at 360p and 720p and a thumbnail, writes them to a public prefix of the bucket, marks the upload Published and publishes "video published" through the outbox. A file FFmpeg can't read fails at once; a failure that may pass is tried three times.
+5. Catalog makes the video public. Anyone plays it from S3 with hls.js, and CloudFront serves the same files in Phase 6.
+6. "Copy assigned" for a digital copy records its owner in Media, and Media signs a 15-minute download link to the private original for that owner only.
+
 ### Cross-cutting
 
 - **Sign-in and permissions:** the gateway is a backend-for-frontend (BFF). It signs the browser in to Keycloak with the authorization code flow and PKCE, keeps the tokens on the server, and gives the browser only an HttpOnly session cookie. It adds the user's access token to each API call it forwards. Each service checks the token itself and enforces its own permissions with ASP.NET Core authorization policies, for example "a creator can change only their own editions". A service that calls another sends its own token, from the client credentials grant, and the callee names the callers it accepts.
@@ -189,7 +201,7 @@ Every event is published through a transactional outbox, and every consumer igno
 | Frontend | Angular, Angular Material, Leaflet with OpenStreetMap, hls.js |
 | Sign-in | Keycloak. AWS Cognito is an option once the system runs in AWS. |
 | Gateway | Nginx reverse proxy, then the YARP API gateway |
-| Storage | S3: LocalStack on the Mac, real S3 and CloudFront in AWS |
+| Storage | S3: Floci on the Mac, real S3 and CloudFront in AWS. Not LocalStack, which now needs an account token and whose repository is archived, and not MinIO, whose repository is archived with no published images. |
 | Cache | Redis |
 | Monitoring | OpenTelemetry, Prometheus, Loki, Tempo, Grafana |
 | Testing | xUnit, Testcontainers, PactNet contract tests, k6 load tests, Playwright browser tests |
@@ -202,7 +214,7 @@ Every event is published through a transactional outbox, and every consumer igno
 - **Cost:** everything runs free on the Mac, using Docker Compose for daily work and kind for Kubernetes practice. Real AWS is used only in short sessions. Each session runs `terraform apply`, deploys, tries things out, then runs `terraform destroy`. An AWS Budgets alert warns at $20 a month. To keep sessions cheap, Kafka runs inside the EKS cluster instead of on Amazon MSK.
 - **Machine:** an Apple Silicon Mac with 32 GB of RAM. Every container image must run on arm64, and the full stack should fit in about 12 GB of Docker memory. Locally, one PostgreSQL server holds a separate database for each service.
 - **SDK:** a .NET 11 preview SDK is also installed and `dotnet` uses it by default, so the repository pins .NET 10 with `global.json`.
-- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it. Node 26 is installed, for the Angular app. Playwright's browser is installed only in CI (the owner chose not to download Chromium on the Mac).
+- **Tools still to install:** kind, Helm, Terraform and k6. Each one is installed in the phase that first needs it. Node 26 is installed, for the Angular app, and FFmpeg (Homebrew), for Media's tests. Playwright's browser is installed only in CI (the owner chose not to download Chromium on the Mac).
 - **Repository:** newstore is its own git repository on GitHub, with its own CI, issues and board.
 
 ## Phases
@@ -340,3 +352,16 @@ newstore/
   - A $20 budget alert.
 - Ways of working: two-week sprints, a work-in-progress limit of three, and a hand-written outbox.
 - Phase 1 is split into 1a, the last copy, and 1b, checkout, so each has a "done when" of its own.
+- Phase 2, decided 2026-11-13. The owner asked Claude to choose ("давай сам решай как лучше"); any of these can change in the Phase 2 plan's pull request:
+  - Local S3 is Floci (`floci/floci:2.4.0`) behind the ordinary AWS SDK, after a spike that checks every S3 feature the phase relies on. If Floci fails it, the fallback is LocalStack with the owner's token. MinIO is out.
+  - Uploads are presigned multipart with 64 MiB parts. The browser calls "complete", and after a reload the creator picks the same file again while Media lists the parts S3 already has.
+  - Processing runs in a worker container built from the Media project, from a jobs table with a lease in Media's database. Kafka carries only the outgoing event. A transient failure is tried three times; a permanent one fails at once.
+  - Media owns the upload and its processing; Catalog owns visibility. The statuses are Uploading, Processing, Published, Failed and Expired, and Removed waits for V-5. Catalog creates the video as a draft, Media checks the owner through Catalog as a new client, `media`, and publishes "video published" through the outbox. There is no "video failed" event: the creator reads the reason from Media. The seed puts one small HLS sample in S3 for every sample video.
+  - Playback reads a public `hls/` prefix through a base URL from configuration (CloudFront in Phase 6), and originals stay private. A download is a 15-minute presigned GET, and Media checks ownership against its own table built from "copy assigned".
+  - The bytes go between the browser and S3; Kestrel's request limits are not raised.
+  - FFmpeg is the distribution's package in the worker image; the license is recorded in an ADR.
+  - Fast tests run on every pull request; a 1 GB upload runs in a separate nightly and manual job. FFmpeg makes the test samples.
+  - Media takes ports 8106 and 5106; the worker publishes no port.
+  - The worker gets 2 GB of memory and Floci about 0.5 GB; the spike measures both.
+  - Media aborts abandoned uploads itself and marks them Expired; an S3 lifecycle rule waits for Terraform.
+  - No files are deleted in Phase 2, V-5 included.
