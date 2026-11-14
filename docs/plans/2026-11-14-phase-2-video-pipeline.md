@@ -571,7 +571,7 @@ If ADR 0018 found that listed ETags cannot complete an upload, add `POST /upload
 
 Implement, run. Commit: `feat(media): expire uploads nobody finished`.
 
-- [ ] **Step 5: Compose, realm, CI, pull request**
+- [x] **Step 5: Compose, realm, CI, pull request**
 
 1. **Compose and realm:** the services from Interfaces, the `media` database in `init.sql`, and the realm's `media` client and `gateway` audience mapper. A Mac stack started before this change needs `docker compose down -v` (for `init.sql`) and a recreated Keycloak (for the realm); the walkthrough says so. Run `docker compose build media`, then `docker compose up -d --wait`. Check:
    - `curl -s http://localhost:8106/health/ready` is `Healthy`.
