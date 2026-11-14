@@ -83,7 +83,7 @@ Found while writing this plan, and checked:
   | HLS of an upload | `hls/{videoId}/{uploadId}/master.m3u8`, `…/v0/index.m3u8`, `…/v0/seg_000.ts`, `…/v1/…`, `…/thumbnail.jpg` | anyone |
   | The seed's sample | `originals/sample.mp4`, `hls/sample/master.m3u8`, `hls/sample/thumbnail.jpg` and its variants | as above |
 
-  - The bucket policy grants `s3:GetObject` to `"Principal": "*"` on `arn:aws:s3:::newstore-media/hls/*` only. Before it, `PutPublicAccessBlock` sets `BlockPublicAcls` and `IgnorePublicAcls` to true and `BlockPublicPolicy` and `RestrictPublicBuckets` to false: a new bucket blocks public policies, on AWS and in Floci (Floci docs, "Block Public Access").
+  - The bucket policy grants `s3:GetObject` to `"Principal": "*"` on `arn:aws:s3:::newstore-media/hls/*` only. Before it, `PutPublicAccessBlock` sets `BlockPublicAcls` and `IgnorePublicAcls` to true and `BlockPublicPolicy` and `RestrictPublicBuckets` to false: a new bucket blocks public policies on AWS ([Block Public Access](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html)). Floci 2.4.0 reports that default but does not enforce it on a new bucket; it does enforce an explicit block (ADR 0018, Task 1's contract tests). So the order (the block settings, then the policy) is proven only on S3, in Phase 6.
   - CORS: `AllowedOrigins` from `Media:Storage:CorsOrigins` (`http://localhost:8100`, `http://localhost:4200`, `http://localhost:5100`), methods `PUT`, `GET`, `HEAD`, headers `*`, `ExposeHeaders: ["ETag"]`, `MaxAgeSeconds` 3000. The browser can't read a part's ETag otherwise: ETag is not a CORS-safelisted response header ([MDN](https://developer.mozilla.org/en-US/docs/Glossary/CORS-safelisted_response_header)).
   - Content types: `.m3u8` `application/vnd.apple.mpegurl` ([RFC 8216](https://www.rfc-editor.org/rfc/rfc8216)), `.ts` `video/mp2t`, `.jpg` `image/jpeg`. `Cache-Control`: segments `public, max-age=31536000, immutable`, playlists and the thumbnail `public, max-age=300`. A new upload gets new keys, so nothing public is overwritten in Phase 2.
   - Catalog builds a public URL as `Catalog:MediaBaseUrl` + `/` + path. In Compose and `dotnet run` that base is `http://localhost:4566/newstore-media`; in Phase 6 it becomes the CloudFront domain.
@@ -532,7 +532,7 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
 `MediaStartupTests`:
 - `Media_is_ready_with_its_tables`: `/health/ready` is 200, and the migration made `uploads`, `processing_jobs`, `digital_copies`, `outbox_messages` and `inbox_messages`.
 - `Kestrel_body_limit_is_the_default`: `IOptions<KestrelServerOptions>` has `Limits.MaxRequestBodySize == 30_000_000`, the default the [file uploads page](https://learn.microsoft.com/aspnet/core/mvc/models/file-uploads?view=aspnetcore-10.0) gives. Nothing in Phase 2 may raise it.
-- `Seed_configures_the_bucket_and_can_run_twice`: after `seed` twice, the bucket's CORS rule and policy are as in Global Constraints.
+- `Seed_configures_the_bucket_and_can_run_twice`: after `seed` twice, the bucket's CORS rule, policy and `GetPublicAccessBlock` values (all four) are as in Global Constraints.
 - `Storage_down_makes_readiness_degraded`: a factory whose `ServiceUrl` points at a closed port answers `/health/ready` 200 `Degraded`.
 
 Write the project so these pass. Commit: `feat(media): the Media service with its database, roles and S3 clients`.
