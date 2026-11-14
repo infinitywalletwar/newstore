@@ -352,6 +352,8 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
   - `tests/Media.Tests/`: `MediaFixture.cs`, `FakeCatalog.cs`, `UploadTests.cs`, `ExpiryTests.cs`, `MediaStartupTests.cs`
 - **Modify, adding lines only:**
   - `NewStore.slnx` (no new package: Task 1 added AWSSDK.S3)
+  - `tests/Media.Tests/NewStore.Media.Tests.csproj`: the ProjectReference to the Media project and to `NewStore.TestSupport`
+  - `tests/Media.Tests/AssemblyFixtures.cs`: `PostgresServer` and `KafkaServer`, next to Task 1's `S3Server`, as in `tests/Catalog.Tests/AssemblyFixtures.cs`
   - `compose.yaml`: `media`, `media-migrate`
   - `init.sql`: the `media` role and database
   - `newstore-realm.json`: client `media`; the `gateway` client's `audience-media` mapper
@@ -386,8 +388,10 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
       public IAmazonS3 Client { get; }        // ServiceUrl: every request Media sends
       public IAmazonS3 PublicSigner { get; }  // PublicServiceUrl: presigns only, never sends a request
       public string Bucket { get; }
-      public Task<string> PresignPartAsync(string key, string s3UploadId, int partNumber, long partLength, DateTimeOffset expires);
-      public Task<string> PresignDownloadAsync(string key, string fileName, DateTimeOffset expires);   // used by Task 6
+      // The adapter sets the SDK's Expires from the real clock, because the SDK computes X-Amz-Expires from its own clock.
+      // The API's expiresAt still comes from TimeProvider.
+      public Task<string> PresignPartAsync(string key, string s3UploadId, int partNumber, long partLength, TimeSpan lifetime);
+      public Task<string> PresignDownloadAsync(string key, string fileName, TimeSpan lifetime);   // used by Task 6
   }
   public static class ObjectKeys { Original(Guid videoId, Guid uploadId); HlsPrefix(Guid videoId, Guid uploadId);
       const SampleOriginal, SampleHlsPrefix, Master = "master.m3u8", Thumbnail = "thumbnail.jpg"; }   // values in Global Constraints
@@ -536,7 +540,7 @@ Write the project so these pass. Commit: `feat(media): the Media service with it
 - [ ] **Step 2: Failing upload tests**
 
 In `UploadTests`. The test plays the browser: it PUTs to the part URLs with a plain `HttpClient`.
-- `Create_returns_a_url_for_every_part`: 12 MiB is 3 parts of 5, 5 and 2 MiB; every URL's host is the public one, and `X-Amz-Expires` is between 3590 and 3600 (the SDK counts from its own clock).
+- `Create_returns_a_url_for_every_part`: 12 MiB is 3 parts of 5, 5 and 2 MiB; every URL's host is the public one, and `X-Amz-Expires` is between 3590 and 3600 (the SDK counts from its own clock), and `expiresAt` is the fake clock's now plus 1 hour. The two are asserted independently: the fake clock need not start at the real time.
 - `Parts_put_and_complete_move_the_upload_to_processing_with_a_job`
 - `State_lists_uploaded_parts_and_urls_for_the_rest` (Review Focus 1): put parts 1 and 3; `GET` lists 1 and 3 with their ETags and has a URL for 2 only.
 - `State_returns_fresh_urls_for_the_missing_parts` (Review Focus 2): in a factory with `PartUrlLifetime` 2 s, create, wait 4 s. The old URL's PUT is 403, and the URL from `GET` takes the part.
@@ -688,7 +692,7 @@ Expected: they pass after the handler is written. Commit: `feat(catalog): publis
 Branch `phase-2/gateway-media`. Issue #118. Merges after Task 2. Read: Stage 1 topic 12 (YARP).
 
 **Files:**
-- Modify: `src/Gateway/Proxy/ProxyExtensions.cs`, `src/Gateway/appsettings.Development.json` (`Services:Media` = `http://localhost:5106`), `tests/Gateway.Tests/ProxyTests.cs`, `compose.yaml` (the gateway's `Services__Media: http://media:8080` and its dependency on `media`), `ci.yml`.
+- Modify: `src/Gateway/Proxy/ProxyExtensions.cs`, `src/Gateway/appsettings.Development.json` (`Services:Media` = `http://localhost:5106`), `tests/Gateway.Tests/ProxyTests.cs`, `tests/Gateway.Tests/GatewayApp.cs` (`Services:Media`, which `ProxyExtensions.cs` requires, so every gateway test would fail at startup without it; check `GatewayHarness.cs` for the same), `compose.yaml` (the gateway's `Services__Media: http://media:8080` and its dependency on `media`), `ci.yml`.
 
 **Interfaces:**
 - **New routes,** each with `PathRemovePrefix("/api")` like the others, and a `media` cluster from `Services:Media`:
@@ -698,6 +702,8 @@ Branch `phase-2/gateway-media`. Issue #118. Merges after Task 2. Read: Stage 1 t
   | POST `/api/videos`, GET `/api/me/videos` | catalog | signed-in |
   | POST `/api/uploads`, GET `/api/uploads/{id}`, POST `/api/uploads/{id}/complete`, DELETE `/api/uploads/{id}` | media | signed-in |
   | GET `/api/me/uploads`, POST `/api/downloads` | media | signed-in |
+
+  If Task 1's `Listed_etags_complete_the_upload` failed (ADR 0018 says so), Task 4 also routes `POST /api/uploads/{id}/parts` to media, signed-in. The main session states which case applies in the dispatch.
 
   The S3 traffic never goes through the gateway: part PUTs, playlists, segments and downloads go from the browser to `localhost:4566`.
 
@@ -832,14 +838,14 @@ public sealed class ProcessingWorker : BackgroundService;
 
 - [ ] **Step 1: FFmpeg, failing tests, then code**
 
-`SampleVideos` makes samples once per test run with the local `ffmpeg` and `lavfi` (8 s; 1280x720 with audio; no audio; 720x1280 portrait; MOV; WebM with VP9 and Opus; 200 KB of random bytes named `.mp4`; an HLS playlist naming `file:///etc/hosts`, named `.mp4`). Without `ffmpeg` on `PATH` it fails with "Media's tests need FFmpeg: brew install ffmpeg, or apt-get install ffmpeg".
+`SampleVideos` makes samples once per test run with the local `ffmpeg` and `lavfi` (8 s unless noted; 1280x720 with audio; a long one: 60 s, 1280x720, with audio; no audio; 720x1280 portrait; MOV; WebM with VP9 and Opus; 200 KB of random bytes named `.mp4`; an HLS playlist naming `file:///etc/hosts`, named `.mp4`). Without `ffmpeg` on `PATH` it fails with "Media's tests need FFmpeg: brew install ffmpeg, or apt-get install ffmpeg".
 
 `FfmpegTests`:
 - `Probe_reads_format_duration_audio_and_frame_rate`
 - `Probe_of_random_bytes_is_unreadable` and `Probe_of_a_disguised_playlist_is_refused` (`PermanentProcessingException`, reason `unreadable` or `unsupported-format`)
 - `Encode_arguments_match_the_plan`: `EncodeArguments` for a file without audio has `-var_stream_map` `v:0 v:1` and no `-c:a`, and for 25 fps has `-g 150`.
 - `Encode_makes_two_variants_and_a_thumbnail`: `RESOLUTION=640x360` and `1280x720`, and every segment of each variant is 6 seconds or less.
-- `Runner_kills_ffmpeg_when_cancelled`: cancelling a long encode after 1 s throws `OperationCanceledException` within 5 s.
+- `Runner_kills_ffmpeg_when_cancelled`: on the long sample, wait until the first segment file exists, then cancel. It throws `OperationCanceledException` within 5 s, so the kill lands during an encode.
 
 Commit: `feat(media): FFmpeg and ffprobe without a shell, killed on cancellation`.
 
@@ -856,7 +862,7 @@ Commit: `feat(media): a jobs table with a lease`.
 
 - [ ] **Step 3: The worker end to end, failing tests, then code**
 
-`ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status.
+`ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status. Production keeps one `WorkDirectory` per worker container. Tests give every host its own: each fixture or host that runs the worker sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose, because a starting host deletes whatever its directory holds, and xUnit runs classes in parallel.
 - `Uploaded_mp4_is_published_with_two_variants_and_a_thumbnail`: upload `Published`, the anonymous `master.m3u8` lists both variants, the thumbnail is 200, and one `VideoPublished` is in the outbox with these paths.
 - `Video_without_audio_is_published` and `Portrait_video_keeps_its_aspect_ratio` (Review Focus 4): the widths ffmpeg computes, 202x360 and 406x720.
 - `[Theory] Mov_and_webm_are_published`
@@ -864,8 +870,8 @@ Commit: `feat(media): a jobs table with a lease`.
 - `Disguised_playlist_fails`
 - `Transient_storage_failure_is_retried_then_published`: an `IObjectStore` decorator throws `AmazonS3Exception` with 503 on the first download. The second attempt publishes.
 - `Three_transient_failures_fail_the_upload`: `retries-exhausted`.
-- `Stopping_the_worker_releases_the_job` (Review Focus 3): stop the host while FFmpeg runs on a 60-second sample. The job is `Pending` with its attempts unchanged, and a new host publishes it.
-- `Job_over_the_timeout_fails`: in a factory of its own with `JobTimeout` 2 s, the 60-second sample gives `timed-out`.
+- `Stopping_the_worker_releases_the_job` (Review Focus 3): stop the host while FFmpeg runs on the long sample, once the first segment file exists. The job is `Pending` with its attempts unchanged, and a new host publishes it.
+- `Job_over_the_timeout_fails`: in a factory of its own with `JobTimeout` 2 s, the long sample gives `timed-out`. The test waits until the first segment file exists, so the kill lands during an encode.
 
 Expected: they pass after `JobRunner` and `ProcessingWorker` are written. Commit: `feat(media): the worker turns uploads into HLS and publishes them`.
 
@@ -930,7 +936,7 @@ Branch `phase-2/downloads`. Issue #120. Closes L-2. Read: topic 01 ("Ссылк�
 
 The tests use `KafkaServer.PublishAsync` and their own `Published` upload rows:
 - `Digital_copy_lets_the_owner_download_the_original`: after `CopyAssigned` (`Digital`), the link answers 200 with the original's bytes and `Content-Disposition: attachment; filename="trip.mp4"`.
-- `Link_lasts_15_minutes`: `X-Amz-Expires` is between 890 and 900, and `expiresAt` is 15 minutes after the clock's now.
+- `Link_lasts_15_minutes`: `X-Amz-Expires` is between 890 and 900, and `expiresAt` is the fake clock's now plus 15 minutes. The two are asserted independently: the SDK counts `X-Amz-Expires` from the real clock.
 - `Dvd_copy_gives_no_download` and `Someone_else_cannot_get_a_link`: 403 `no-digital-copy`.
 - `Duplicate_CopyAssigned_is_handled_once`
 - `Video_without_an_original_is_404`
@@ -981,13 +987,15 @@ Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser
   - A part that fails on the network is retried 3 times, 1, 2 and 4 s apart. A 403 (an expired URL) refreshes the URLs with `GET /api/uploads/{id}` once, then retries.
   - Then they post `/api/uploads/{id}/complete` with every part's ETag: those `GET` listed and those just sent.
 
+  If Task 1's `Listed_etags_complete_the_upload` failed, Task 7's `Uploader` also reports each part's ETag to Media with `POST /api/uploads/{id}/parts`, after each part's PUT. The main session states which case applies in the dispatch.
+
   The S3 requests are cross-origin: `csrfInterceptor` adds nothing to them, and `HttpClient` sends no cookie without `withCredentials`, so no session cookie reaches S3.
 - **The studio page** (`studio`):
   - A new-video form (`POST /api/videos`), then a file input.
   - A row per video from `/api/me/videos`, joined by `videoId` with `/api/me/uploads`. Each row shows the status: `Draft` without an upload, else the upload's status.
   - A readable reason for `Failed`, for example `unreadable` as "The file isn't a video FFmpeg can read".
   - "Resume" with a file input for `Uploading`, and a progress bar while sending.
-  - While a row is `Processing`, the page polls `/api/me/uploads` every 3 s, for at most 10 minutes.
+  - While a row is `Processing`, the page polls `/api/me/uploads` until a terminal status (`Published`, `Failed` or `Expired`), with no time cap: every 5 s for the first minute, then every 15 s. Polling stops when the component is destroyed and restarts when the page loads.
 - **`VideoPlayerComponent`** (`src` input):
   - If `Hls.isSupported()`, `new Hls()`, `loadSource(src)` and `attachMedia(video)`.
   - Else, if `video.canPlayType('application/vnd.apple.mpegurl')`, it sets `video.src`. The [hls.js README](https://github.com/video-dev/hls.js) advises checking `isSupported()` first.
@@ -1018,7 +1026,7 @@ Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `
 
 - `Studio_creates_a_video_and_lists_it_as_draft`
 - `Studio_shows_failed_with_its_reason`
-- `Studio_polls_while_processing_until_published`
+- `Studio_polls_while_processing_until_published`: every 5 s for the first minute, then every 15 s, with no cap, so it still polls after 10 minutes and stops at `Published`, `Failed` or `Expired` and when the component is destroyed.
 - `Player_loads_the_playback_url_with_hls_js_and_destroys_it`: mock `hls.js` with `vi.mock`.
 - `Quality_menu_lists_the_variants_and_switches`
 - `Video_list_shows_thumbnails`
@@ -1063,10 +1071,10 @@ Branch `phase-2/done-2`. Issue #122. Owns the Compose stack. Closes V-1, V-2 and
   1. Sign in as `orbital-kitchen` on Keycloak's form, then open `studio-link`.
   2. Create a video titled `E2E <timestamp>`, and set `upload-file` to `fixtures/sample.mp4`.
   3. Expect that video's row to show `upload-status` `Published` within 3 minutes.
-  4. Open the video's page. Expect responses with status 200 for `master.m3u8` and a `.ts` segment.
+  4. Wait until `GET /api/videos/{id}` answers 200, polling for up to 30 s (Playwright `expect.poll` or `toPass`), because Catalog publishes on `VideoPublished` and the page can be a 404 until then. Then open the video's page. Expect responses with status 200 for `master.m3u8` and a `.ts` segment.
   5. Mute and play `player`; expect `currentTime > 0.5` within 15 s.
   6. Create another video, upload `fixtures/broken.mp4`. Expect `Failed` and `failure-reason` within 3 minutes.
-- **`LargeUploadTests`:** `[Fact(Explicit = true)] A_1_GB_upload_becomes_playable`, on the Testcontainers fixture with `Media:Role` `All` and the production part size (64 MiB).
+- **`LargeUploadTests`:** `[Fact(Explicit = true)] A_1_GB_upload_becomes_playable`, on the Testcontainers fixture with `Media:Role` `All` and the production part size (64 MiB). The host sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose.
   1. Make the sample with ADR 0018's command, and assert its size is at least 1,073,741,824 bytes.
   2. Create the upload, then PUT the parts four at a time, each a `StreamContent` over its slice of the file, so the test never holds the file in memory.
   3. Complete, and wait up to 45 minutes for `Published`.
@@ -1085,7 +1093,7 @@ Write the spec, the projects and the CI steps. Run them in CI only. Expected: gr
 
 - [ ] **Step 2: The 1 GB test and the nightly job**
 
-Run it on the Mac: `dotnet test --project tests/Media.Tests --explicit only --filter-method "*A_1_GB_upload_becomes_playable"`. Then run the workflow: `gh workflow run nightly`, after the owner's go-ahead, since it runs on GitHub. Record both runs' stage times in ADR 0020's measurements. Commit: `test(media): a 1 GB upload becomes playable, nightly and on demand`.
+Run it on the Mac: `dotnet test --project tests/Media.Tests --explicit only --filter-method "*A_1_GB_upload_becomes_playable"`. Add `nightly.yml`, and record the Mac run's stage times in ADR 0020's measurements. A `workflow_dispatch` workflow can be dispatched only once it is on the default branch, so this PR cannot run it. After the merge, the main session dispatches `gh workflow run nightly` (after the owner's go-ahead, since it runs on GitHub) and opens a small docs PR with the CI run's times in ADR 0020. Commit: `test(media): a 1 GB upload becomes playable, nightly and on demand`.
 
 - [ ] **Step 3: CI, docs, pull request**
 
@@ -1101,10 +1109,10 @@ Run it on the Mac: `dotnet test --project tests/Media.Tests --explicit only --fi
 
 ## Phase 2 is done when
 
-1. **In CI:** on `main`, `build-test`, `web`, `compose-smoke` and `e2e` are green, and a manual run of `nightly` is green.
+1. **In CI:** on `main`, `build-test`, `web`, `compose-smoke` and `e2e` are green, and a manual run of `nightly`, dispatched after the merge because a `workflow_dispatch` workflow must be on the default branch first, is green.
    - `e2e` has a creator upload a video that becomes Published and plays in Chrome, and a broken file that shows as Failed.
    - `nightly`'s `large-upload` takes a file of at least 1 GiB through presigned multipart to Published, with both variants readable anonymously.
-2. **On the Mac:** `A_1_GB_upload_becomes_playable` passes, with its times recorded in ADR 0020.
+2. **On the Mac:** `A_1_GB_upload_becomes_playable` passes, with its times recorded in ADR 0020. The CI run's times follow in the small docs PR after the merge.
 3. **On a clean clone:** `docker compose up -d --wait`, then the owner, in their own browser:
    - signs in as `orbital-kitchen` at http://localhost:8100, creates a video in the studio and uploads a file of about 1 GB;
    - reloads the page partway through and resumes by choosing the same file;
