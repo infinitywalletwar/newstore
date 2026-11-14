@@ -34,6 +34,8 @@ The owner is learning, so every change comes with its reasoning:
 
 Keep it to a few sentences per decision. Every statement about how a framework or tool behaves is checked against its documentation or a command you ran, with the source linked. Unchecked, it stays out of the walkthrough.
 
+Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block, which GitHub renders) of the flow the change adds or changes: a sequence diagram for calls between services, a state diagram for statuses, a flowchart for a decision. When the change alters existing behaviour, the diagram shows what changes, as a before and after or with the new steps marked. A few sentences under each diagram walk through it. The owner asked for this at Sprint 3's retro: diagrams are how they learn the logic of a pull request.
+
 ## Git, pull requests and the board
 
 - Each task gets its own branch, `phase-<n>/<slug>`, for example `phase-0/catalog-health`, and becomes one pull request.

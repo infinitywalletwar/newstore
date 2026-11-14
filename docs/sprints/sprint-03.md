@@ -35,13 +35,74 @@ At the retro the owner asked for more weight on interview preparation: they lear
 
 ## Review
 
+The goal was reached on 2026-11-13. In CI, a new buyer signs up, buys and sees the copy in a real browser (`e2e`), and the last-copy test runs through the gateway (`compose-smoke`). The owner also bought a copy by hand on a stack started from a clean clone. The sprint ended early.
+
+How a purchase works now:
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant G as Gateway (BFF)
+    participant O as Orders
+    participant I as Inventory
+    participant P as Payments
+    participant F as FakePay
+    B->>G: Buy (session cookie and X-CSRF header)
+    G->>O: Buy, with the user's access token
+    O->>I: reserve, with an id Orders chose
+    I-->>O: 201, the copy is reserved
+    O-->>B: order Reserved
+    B->>G: Pay
+    G->>O: Pay
+    O->>I: hold the reservation, up to 45 minutes
+    O->>P: create the payment
+    P->>F: checkout session, 30 minutes
+    O-->>B: the FakePay page
+    B->>F: the buyer pays
+    F->>P: signed webhook
+    P--)O: PaymentSucceeded, through Kafka
+    O->>I: confirm
+    I-->>O: the copy number
+    Note over O: Completed. If confirm fails because the hold ran out, the saga refunds instead.
+```
+
+The browser only ever talks to the gateway and FakePay's page. The gateway keeps the tokens in Redis and gives the browser a cookie, so no token reaches JavaScript (ADR 0015). Orders runs the saga: the calls a person waits for are HTTP, and the payment's outcome comes back as an event (ADR 0017). Every step is safe to repeat, because the reservation id, the payment per order and every event handler are idempotent.
+
+The Phase 1b mock interview ran on 2026-11-13, as short round 10:
+
+| Question | Result |
+|---|---|
+| 1. A lost `201`, and the client retries the reserve with the same id | The right idea (the same id means it's already done), but the retry would have answered "sold out", the very bug Task 3's review found. |
+| 2. The BFF: why no token in the browser, CSRF, what `SameSite=Strict` protects | Didn't know. |
+| 3. Payment arrives after the hold ran out | Didn't know how this can happen. Explained: no shared transaction, events can be late, and the compensation is a refund, not a rollback. |
+| 4. Observability, a re-check: 1 % of purchases take 5 s | Better than round 9: average hides the tail, find the slow trace and its logs by `TraceId`. Missed metrics as the first step, and named the maximum instead of p99. |
+| 5. Testing, a re-check: how to test `POST /api/orders` | The right outline: three kinds, a real database for integration tests, parallel calls for the race. Missing the details: what each kind checks, why not InMemory, the exact invariant. |
+
+The pattern: the re-checked topics improve, from no answer to the right outline. The new Phase 1b topics are "don't know", because the owner hasn't read those pull requests yet. The gaps per topic are in the roadmap's `what-to-study.md`.
+
 ## Retro
 
 ### What I learned
 
+I didn't read the code closely this sprint.
+
 ### What was hard
 
+Auth: how authentication and authorization work, how sessions work, and how all of it works across microservices and in multi-tenant systems.
+
 ### Open questions
+
+How to build auth in microservices and in a multi-tenant system: which options there are, how to implement each, and their nuances.
+
+### What to change in Sprint 4
+
+More mock interviews. More diagrams (Mermaid) with explanations. Every pull request explains its logic with a diagram of what happens and what changes.
+
+### Changes after Sprint 3's retro (Claude)
+
+- **A diagram in every pull request.** `AGENTS.md`, "Teach while building", and the walkthrough list in `~/.claude/agents/code-writer.md` now ask for at least one Mermaid diagram of the flow the change adds or changes, with what changes marked and a few sentences that walk through it. The Review above has the first one.
+- **Auth in microservices and multi-tenant systems** goes to the roadmap's `what-to-study.md` as a short topic with diagrams: the options, how each is built and its trade-offs, tied to what newstore does.
+- **More mock interviews:** the next rounds re-ask the BFF and the saga, and observability every other round.
 
 ### What the sprint built (Claude)
 
