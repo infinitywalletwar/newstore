@@ -31,7 +31,7 @@ public sealed class LockOrderTests(ConditionalUpdateFixture fixture) : IClassFix
 
             // Past the TTL, and nobody has swept yet (the test calls SweepAsync itself).
             fixture.Clock.Advance(TimeSpan.FromMinutes(11));
-            var now = fixture.Clock.GetUtcNow();
+            var now = fixture.Clock.GetUtcNowToMicrosecond();
 
             // A deadlock would surface here as a PostgresException with SqlState 40P01.
             var confirms = reservationIds.Select(id => Task.Run(async () =>

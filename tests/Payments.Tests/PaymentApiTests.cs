@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 
 using Microsoft.EntityFrameworkCore;
@@ -71,6 +72,60 @@ public class PaymentApiTests(PaymentsFixture fixture)
         Assert.All(payments, p => Assert.NotNull(p!.CheckoutUrl));
         Assert.Equal(1, await fixture.QueryAsync(db => db.PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)));
         Assert.Single(fixture.Provider.SessionRequestsFor(orderId));
+    }
+
+    [Theory]
+    [InlineData("100000000")]
+    [InlineData("99999999.995")] // rounds to 100000000.00 in numeric(10,2)
+    public async Task An_amount_that_does_not_fit_the_column_is_400(string amount)
+    {
+        var orderId = Guid.NewGuid();
+        using var client = fixture.CreateOrdersClient();
+        using var content = new StringContent(
+            $$"""{"orderId":"{{orderId}}","amount":{{amount}},"returnUrl":"http://shop.test/orders"}""",
+            System.Text.Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/payments", content, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(0, await fixture.QueryAsync(db => db.PaymentAttempts.CountAsync(a => a.OrderId == orderId, Ct)));
+    }
+
+    [Fact]
+    public async Task The_amount_error_names_the_maximum_with_a_decimal_point_whatever_the_servers_culture()
+    {
+        // The test server does not carry the test's own culture into the request (it runs the app without the caller's execution
+        // context), so the culture is set for the threads that run the request.
+        var previous = CultureInfo.DefaultThreadCurrentCulture;
+        CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            using var client = fixture.CreateOrdersClient();
+            using var content = new StringContent(
+                $$"""{"orderId":"{{Guid.NewGuid()}}","amount":100000000,"returnUrl":"http://shop.test/orders"}""",
+                System.Text.Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync("/payments", content, Ct);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Ct);
+            Assert.Equal(
+                "amount must not be more than 99999999.99.",
+                problem.GetProperty("errors").GetProperty("amount")[0].GetString());
+        }
+        finally
+        {
+            CultureInfo.DefaultThreadCurrentCulture = previous;
+        }
+    }
+
+    [Fact]
+    public async Task The_largest_amount_that_fits_the_column_is_accepted()
+    {
+        var payment = await fixture.CreatePaymentAsync(amount: 99_999_999.99m);
+
+        Assert.Equal(99_999_999.99m, payment.Amount);
     }
 
     [Fact]
