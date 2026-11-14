@@ -361,6 +361,82 @@ services:
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 
+  # One-shot job: applies Media's migrations, then seeds: the bucket's public access block, policy and CORS (ADR 0005, 0018).
+  media-migrate:
+    build:
+      context: .
+      dockerfile: src/Services/Media/Dockerfile
+      target: api
+    image: newstore/media:local
+    pull_policy: build
+    command: ["migrate", "seed"]
+    restart: "no"
+    environment:
+      ConnectionStrings__Media: Host=postgres;Database=media;Username=media;Password=media
+      # Floci's own local credentials. ServiceUrl is the address inside the network; PublicServiceUrl is the browser's, which the part URLs are signed for.
+      Media__Storage__ServiceUrl: http://floci:4566
+      Media__Storage__PublicServiceUrl: http://localhost:4566
+      Media__Storage__AccessKey: test
+      Media__Storage__SecretKey: test
+      Media__Storage__CorsOrigins__0: http://localhost:8100
+      Media__Storage__CorsOrigins__1: http://localhost:4200
+      Media__Storage__CorsOrigins__2: http://localhost:5100
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: media
+    depends_on:
+      postgres: { condition: service_healthy }
+      floci: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  # Resumable uploads (ADR 0018): Media keeps the state and signs part URLs; the browser sends the bytes straight to Floci.
+  media:
+    build:
+      context: .
+      dockerfile: src/Services/Media/Dockerfile
+      target: api
+    image: newstore/media:local
+    pull_policy: build
+    environment:
+      Media__Role: Api
+      ConnectionStrings__Media: Host=postgres;Database=media;Username=media;Password=media
+      Messaging__BootstrapServers: kafka:9092
+      # Tokens carry the public issuer; the keys are fetched on the internal address (ADR 0012).
+      Auth__Issuer: http://localhost:8180/realms/newstore
+      Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
+      Auth__Audience: media
+      # Media's own client, for calls to Catalog.
+      Auth__ClientId: media
+      Auth__ClientSecret: media
+      Auth__TokenEndpoint: http://keycloak:8080/realms/newstore/protocol/openid-connect/token
+      Services__Catalog: http://catalog:8080
+      Media__Storage__ServiceUrl: http://floci:4566
+      Media__Storage__PublicServiceUrl: http://localhost:4566
+      Media__Storage__AccessKey: test
+      Media__Storage__SecretKey: test
+      Media__Storage__CorsOrigins__0: http://localhost:8100
+      Media__Storage__CorsOrigins__1: http://localhost:4200
+      Media__Storage__CorsOrigins__2: http://localhost:5100
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: media
+    ports: ["127.0.0.1:8106:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      media-migrate: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      catalog: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 512m } } }
+
   # A stand-in for a hosted payment page such as Stripe's (ADR 0014). Not a store service: no database, no outbox.
   # The browser reaches it on localhost:8105; it calls Payments' webhook on the Compose network.
   fakepay:
