@@ -18,6 +18,12 @@ namespace NewStore.Media;
 public sealed partial class UploadService(
     MediaDbContext db, MediaStorage storage, IOptions<UploadOptions> options, TimeProvider time, ILogger<UploadService> logger)
 {
+    /// <summary>
+    /// The ETag <c>GET</c> reports for every part once S3 has assembled the object (S3 no longer lists parts, so it has no real ones).
+    /// Complete recognises it and does not send it to S3.
+    /// </summary>
+    public const string AssembledETag = "\"assembled\"";
+
     private const string LiveVideoIndex = "ix_uploads_live_video";
 
     private static readonly UploadStatus[] LiveStatuses = [UploadStatus.Uploading, UploadStatus.Processing, UploadStatus.Published];
@@ -134,10 +140,10 @@ public sealed partial class UploadService(
             }
 
             // The object exists: S3 has assembled the parts. Say every part is uploaded, so the client calls complete, whose "already
-            // assembled" branch finishes the job. The ETags are placeholders: S3 no longer lists parts, and complete ignores them there.
+            // assembled" branch finishes the job. The ETags are the placeholder <see cref="AssembledETag"/>: S3 no longer lists parts, and complete does not send it to S3.
             UploadedPart[] all =
             [
-                .. Enumerable.Range(1, upload.PartCount).Select(n => new UploadedPart(n, "\"assembled\"", PartSizeOf(upload, n))),
+                .. Enumerable.Range(1, upload.PartCount).Select(n => new UploadedPart(n, AssembledETag, PartSizeOf(upload, n))),
             ];
             return new StateOutcome.Ok(await ResponseAsync(upload, all, ct));
         }
@@ -226,6 +232,19 @@ public sealed partial class UploadService(
 
         try
         {
+            // The parts GET reported for an assembled object carry the placeholder ETag. Real S3 may answer InvalidPart to a made-up
+            // ETag, so complete never sends them: all placeholders means "S3 is done, finish"; a mix is a client bug.
+            var assembled = request.Parts.Count(p => p.ETag == AssembledETag);
+            if (assembled == request.Parts.Count)
+            {
+                return ToOutcome(await ReconcileLostUploadAsync(upload, ct));
+            }
+
+            if (assembled > 0)
+            {
+                return new CompleteOutcome.InvalidParts("Parts reported as assembled cannot be mixed with parts that carry their own ETag.");
+            }
+
             try
             {
                 await storage.Client.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
@@ -252,7 +271,7 @@ public sealed partial class UploadService(
                 return ToOutcome(await ReconcileLostUploadAsync(upload, ct));
             }
 
-            return new CompleteOutcome.Done(await FinishAsync(upload, size, ct));
+            return ToOutcome(await FinishAsync(upload, size, ct));
         }
         catch (Exception ex) when (IsStorageDown(ex))
         {

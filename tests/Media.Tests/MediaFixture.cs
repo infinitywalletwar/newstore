@@ -47,8 +47,19 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
     /// <summary>The address Media's own requests go to. A subclass points it at a closed port.</summary>
     protected virtual Uri ServiceUrl => s3.InternalUrl;
 
-    protected virtual void OnBucketChosen(string bucket)
+    protected virtual void OnBucketChosen(string bucket) => Spy.Bucket = bucket;
+
+    /// <summary>Records the CompleteMultipartUpload calls that reach this fixture's bucket.</summary>
+    internal S3CallSpy Spy { get; } = new($"s3-call-spy-{Guid.NewGuid():N}");
+
+    protected override void Dispose(bool disposing)
     {
+        if (disposing)
+        {
+            Spy.Unregister();
+        }
+
+        base.Dispose(disposing);
     }
 
     /// <summary>False when S3 is not reachable, so the bucket cannot be set up.</summary>
@@ -57,6 +68,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
     public async ValueTask InitializeAsync()
     {
         var ct = TestContext.Current.CancellationToken;
+        Spy.Register(); // before the app builds its S3 clients, so the handler is in their request pipeline
         Settings["ConnectionStrings:Media"] = await postgres.CreateDatabaseAsync("media", ct);
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         // Two fixtures in one test run must never share a consumer group, and a fixture class can be used by several test classes
@@ -138,7 +150,11 @@ public sealed class ExpiryFixture : MediaFixture
 
     protected override string ExpirySweepInterval => "01:00:00";
 
-    protected override void OnBucketChosen(string bucket) => Refuser.Bucket = bucket;
+    protected override void OnBucketChosen(string bucket)
+    {
+        base.OnBucketChosen(bucket);
+        Refuser.Bucket = bucket;
+    }
 
     protected override void Dispose(bool disposing)
     {

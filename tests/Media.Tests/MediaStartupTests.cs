@@ -163,6 +163,7 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
     {
         var creator = Guid.NewGuid();
         var upload = await InsertUploadingRowAsync(creator);
+        var before = await storageDown.WithDbAsync(db => db.Uploads.AsNoTracking().SingleAsync(u => u.Id == upload.Id, Ct));
         using var client = storageDown.CreateClient();
 
         var response = await client.SendAsUserAsync(creator, HttpMethod.Get, $"/uploads/{upload.Id}");
@@ -170,7 +171,10 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
         Assert.Equal("urn:newstore:problem:storage-unavailable", (await response.ProblemAsync()).Type);
-        Assert.Equal(UploadStatus.Uploading, (await storageDown.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
+        var after = await storageDown.WithDbAsync(db => db.Uploads.AsNoTracking().SingleAsync(u => u.Id == upload.Id, Ct));
+        Assert.Equal(UploadStatus.Uploading, after.Status);
+        Assert.Equal(before.UpdatedAt, after.UpdatedAt);
+        Assert.Equal(before.Version, after.Version);
     }
 
     [Fact]

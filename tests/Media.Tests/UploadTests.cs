@@ -338,11 +338,45 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
         Assert.Equal(before.Version, after.Version);
         Assert.Equal(0, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
 
-        // The client does what GET told it: complete with the parts it was given. That finishes the upload.
+        // The client does what GET told it: complete with the parts it was given. That finishes the upload, and Media does not send
+        // those placeholder ETags to S3: S3 sees exactly one CompleteMultipartUpload for this upload, the test's own above.
+        var s3UploadId = await UploadIdAsync(upload.Id);
+        Assert.Equal(1, media.Spy.CompletesFor(s3UploadId));
         var complete = await client.PostCompleteAsync(creator, upload.Id, state.UploadedParts.Select(p => (p.PartNumber, p.ETag)));
         Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
         Assert.Equal("Processing", (await complete.Content.ReadFromJsonAsync<UploadResponse>(Ct))!.Status);
         Assert.Equal(1, await media.WithDbAsync(db => db.ProcessingJobs.CountAsync(j => j.UploadId == upload.Id, Ct)));
+        Assert.Equal(1, media.Spy.CompletesFor(s3UploadId));
+    }
+
+    [Fact]
+    public async Task Complete_mixing_assembled_and_real_etags_is_400_invalid_parts()
+    {
+        var creator = Guid.NewGuid();
+        var client = Client;
+        var upload = await client.CreateAsync(creator);
+        var etags = new List<(int, string)>();
+        foreach (var part in upload.PartUrls)
+        {
+            etags.Add(await PutPartOkAsync(part));
+        }
+
+        using var s3 = media.S3.CreateClient(media.S3.InternalUrl);
+        await s3.CompleteMultipartUploadAsync(new CompleteMultipartUploadRequest
+        {
+            BucketName = media.Bucket,
+            Key = ObjectKeys.Original(upload.VideoId, upload.Id),
+            UploadId = await UploadIdAsync(upload.Id),
+            PartETags = [.. etags.Select(e => new PartETag(e.Item1, e.Item2))],
+        }, Ct);
+        var state = await client.GetAsync(creator, upload.Id);
+        var mixed = state.UploadedParts.Select(p => (p.PartNumber, p.PartNumber == 1 ? etags[0].Item2 : p.ETag));
+
+        var response = await client.PostCompleteAsync(creator, upload.Id, mixed);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:invalid-parts", (await response.ProblemAsync()).Type);
+        Assert.Equal(UploadStatus.Uploading, (await RowAsync(upload.Id)).Status);
     }
 
     [Fact]
