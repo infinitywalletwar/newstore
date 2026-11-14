@@ -70,7 +70,7 @@ public static class VideoQueries
         var rows = await (from v in db.Videos
                           join c in db.Channels on v.ChannelId equals c.Id
                           where c.CreatorId == creatorId
-                          orderby v.CreatedAt descending, v.Id
+                          orderby v.CreatedAt descending, v.Id descending
                           select new
                           {
                               v.Id,

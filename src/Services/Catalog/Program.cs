@@ -21,6 +21,8 @@ builder.AddServiceDefaults();
 builder.AddNewStoreAuth().AddClientsPolicy("inventory", "media");
 builder.Services.AddOptions<CatalogOptions>()
     .BindConfiguration(CatalogOptions.SectionName)
+    // Once, here: every URL is the base, a slash and a path, so a trailing slash would double it.
+    .PostConfigure(o => o.MediaBaseUrl = o.MediaBaseUrl.TrimEnd('/'))
     .Validate(o => Uri.TryCreate(o.MediaBaseUrl, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https",
         "Catalog:MediaBaseUrl must be an absolute http or https URL: every playback and thumbnail URL starts with it.")
     .ValidateOnStart();

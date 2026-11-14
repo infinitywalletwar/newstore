@@ -124,7 +124,8 @@ public class VideoPublishedTests(SeededCatalogAppFactory factory, KafkaServer ka
     public async Task Second_VideoPublished_for_a_published_video_changes_nothing()
     {
         var (videoId, _) = await DraftAsync();
-        var first = Event(videoId, "hls/first/one/master.m3u8", seconds: 10);
+        // A whole-second time: PostgreSQL keeps microseconds, and a clock tick has finer resolution on Linux.
+        var first = Event(videoId, "hls/first/one/master.m3u8", at: new DateTimeOffset(2026, 3, 1, 10, 0, 0, TimeSpan.Zero), seconds: 10);
         var later = Event(videoId, "hls/later/two/master.m3u8", at: first.OccurredAt.AddMinutes(5), seconds: 20);
 
         await PublishAsync(first);

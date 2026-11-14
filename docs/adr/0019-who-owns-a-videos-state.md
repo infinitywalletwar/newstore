@@ -36,3 +36,4 @@ So one video has a status in two services. Who owns which, and how do the two st
 - The handler drops the cache tags `video:{id}` and `channel:{slug}` (ADR 0009). A page cached in the race between the update and the commit shows the old state until its 60 seconds pass.
 - A `VideoPublished` for a video Catalog does not have goes to `media.videos.dlt` after three attempts. Nothing reads that topic yet (ADR 0008).
 - The migration that adds the status marks every existing video `Published` and points it at the sample files, so a stack seeded in Phase 1 plays the sample without a reset.
+- Rolling the migration back (`Down`) deletes every draft: `published_at` is required again, and a draft has none. A draft holds only a title and a description that Media has not touched, so we accept losing them for a rollback that is not planned.

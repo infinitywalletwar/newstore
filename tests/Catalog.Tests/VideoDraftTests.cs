@@ -119,7 +119,7 @@ public class VideoDraftTests(SeededCatalogAppFactory factory) : IClassFixture<Se
     [Fact]
     public async Task My_videos_lists_drafts_and_published_newest_first()
     {
-        var (userId, client, _) = await CreatorAsync();
+        var (_, client, _) = await CreatorAsync();
         var first = await CreateVideoAsync(client, "First");
         var second = await CreateVideoAsync(client, "Second");
         // Publish the first one the way the handler does, so the list holds both statuses.
@@ -141,7 +141,6 @@ public class VideoDraftTests(SeededCatalogAppFactory factory) : IClassFixture<Se
         // Another user's list does not include them.
         using var other = ClientFor(Guid.NewGuid());
         Assert.Empty((await other.GetFromJsonAsync<MyVideo[]>("/me/videos", Ct))!);
-        Assert.NotEqual(Guid.Empty, userId);
     }
 
     [Fact]
