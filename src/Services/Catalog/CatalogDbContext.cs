@@ -35,6 +35,7 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
         modelBuilder.Entity<Video>(video =>
         {
             video.Property(v => v.Title).HasMaxLength(Video.TitleMaxLength);
+            video.Property(v => v.Status).HasConversion<string>();
             video.HasOne<Channel>().WithMany().HasForeignKey(v => v.ChannelId).OnDelete(DeleteBehavior.Cascade);
             // Channel pages and the newest-first browse both order by published_at.
             video.HasIndex(v => new { v.ChannelId, v.PublishedAt });

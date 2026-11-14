@@ -130,6 +130,10 @@ namespace NewStore.Catalog.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("channel_id");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("text")
@@ -139,7 +143,11 @@ namespace NewStore.Catalog.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("duration_seconds");
 
-                    b.Property<DateTimeOffset>("PublishedAt")
+                    b.Property<string>("PlaylistPath")
+                        .HasColumnType("text")
+                        .HasColumnName("playlist_path");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("published_at");
 
@@ -150,6 +158,15 @@ namespace NewStore.Catalog.Migrations
                         .HasColumnName("search_vector")
                         .HasAnnotation("Npgsql:TsVectorConfig", "simple")
                         .HasAnnotation("Npgsql:TsVectorProperties", new[] { "Title", "Description" });
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("ThumbnailPath")
+                        .HasColumnType("text")
+                        .HasColumnName("thumbnail_path");
 
                     b.Property<string>("Title")
                         .IsRequired()

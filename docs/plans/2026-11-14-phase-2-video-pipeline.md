@@ -648,7 +648,7 @@ Branch `phase-2/catalog-drafts`. Issue #117. Advances V-1, V-3 and V-4. Read: St
   - Registered with `AddTopic(VideoPublished.Topic, VideoPublished.Partitions)` and `AddHandler<VideoPublished, VideoPublishedHandler>(VideoPublished.Topic)`.
 - **Seed:** sample videos are `Published`, with `CreatedAt = PublishedAt` and the sample paths. Compose sets `Catalog__MediaBaseUrl: http://localhost:4566/newstore-media`; `appsettings.Development.json` the same.
 
-- [ ] **Step 1: Failing tests for drafts and the owner endpoint**
+- [x] **Step 1: Failing tests for drafts and the owner endpoint**
 
 Every Catalog test factory sets `Catalog:MediaBaseUrl` to `http://media.test/newstore-media`, since Catalog no longer starts without it. In `tests/Security.Tests/PolicyTests`: `Clients_policy_accepts_each_named_client_only` (`inventory` and `media` get 200, `orders` gets 403). In Catalog.Tests:
 - `Creator_creates_a_draft_video`
@@ -662,7 +662,7 @@ Every Catalog test factory sets `Catalog:MediaBaseUrl` to `http://media.test/new
 
 Expected: they fail. Then implement, generate `VideoDrafts`, and check it adds the columns and the fill. Expected: Catalog.Tests pass. Commit: `feat(catalog): videos start as drafts, with playback and thumbnail URLs`.
 
-- [ ] **Step 2: The `VideoPublished` handler, failing tests, then code**
+- [x] **Step 2: The `VideoPublished` handler, failing tests, then code**
 
 The tests use `KafkaServer.PublishAsync`:
 - `VideoPublished_publishes_the_draft_with_its_urls`: the video is listed, and `GET /videos/{id}` has both URLs and the duration.
@@ -672,7 +672,7 @@ The tests use `KafkaServer.PublishAsync`:
 
 Expected: they pass after the handler is written. Commit: `feat(catalog): publish a draft when Media publishes its video`.
 
-- [ ] **Step 3: ADR 0019, Compose, pull request**
+- [x] **Step 3: ADR 0019, Compose, pull request**
 
 1. **ADR 0019, who owns a video's state.**
    - Media owns the upload and its processing; Catalog owns what viewers see. They share one event, through the outbox.

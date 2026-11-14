@@ -60,6 +60,22 @@ public class PolicyTests
     }
 
     [Fact]
+    public async Task Clients_policy_accepts_each_named_client_only()
+    {
+        await using var app = await TestApp.StartWithTestKeyAsync();
+        var client = app.Client;
+
+        client.WithBearer(TestTokens.Client("inventory", "inventory"));
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/inventory-or-media", TestContext.Current.CancellationToken)).StatusCode);
+
+        client.WithBearer(TestTokens.Client("media", "inventory"));
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/inventory-or-media", TestContext.Current.CancellationToken)).StatusCode);
+
+        client.WithBearer(TestTokens.Client("orders", "inventory"));
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/inventory-or-media", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
     public async Task Client_policy_rejects_a_user_token_from_the_gateway()
     {
         await using var app = await TestApp.StartWithTestKeyAsync();
