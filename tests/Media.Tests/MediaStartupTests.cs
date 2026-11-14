@@ -87,4 +87,40 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
         Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
         Assert.Equal("Degraded", await ready.Content.ReadAsStringAsync(Ct));
     }
+
+    [Fact]
+    public async Task Complete_with_storage_down_is_503_and_changes_nothing()
+    {
+        // The row is written by hand: with S3 down there is no way to create an upload. 503 and Retry-After tell the browser to send the same request again.
+        var creator = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var upload = new Upload
+        {
+            Id = Guid.CreateVersion7(),
+            VideoId = Guid.NewGuid(),
+            CreatorId = creator,
+            FileName = "a.mp4",
+            ContentType = "video/mp4",
+            SizeBytes = 5 * 1024 * 1024,
+            ObjectKey = "originals/x/y",
+            S3UploadId = "gone",
+            PartSize = MediaFixture.PartSize,
+            PartCount = 1,
+            Status = UploadStatus.Uploading,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        await storageDown.WithDbAsync(async db =>
+        {
+            db.Uploads.Add(upload);
+            return await db.SaveChangesAsync(Ct);
+        });
+        using var client = storageDown.CreateClient();
+
+        var response = await Api.PostCompleteAsync(client, creator, upload.Id, [(1, "\"etag\"")]);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
+        Assert.Equal(UploadStatus.Uploading, (await storageDown.WithDbAsync(db => db.Uploads.SingleAsync(u => u.Id == upload.Id, Ct))).Status);
+    }
 }

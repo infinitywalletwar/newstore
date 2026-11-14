@@ -537,7 +537,7 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
 
 Write the project so these pass. Commit: `feat(media): the Media service with its database, roles and S3 clients`.
 
-- [ ] **Step 2: Failing upload tests**
+- [x] **Step 2: Failing upload tests**
 
 In `UploadTests`. The test plays the browser: it PUTs to the part URLs with a plain `HttpClient`.
 - `Create_returns_a_url_for_every_part`: 12 MiB is 3 parts of 5, 5 and 2 MiB; every URL's host is the public one, and `X-Amz-Expires` is between 3590 and 3600 (the SDK counts from its own clock), and `expiresAt` is the fake clock's now plus 1 hour. The two are asserted independently: the fake clock need not start at the real time.
@@ -558,7 +558,7 @@ In `UploadTests`. The test plays the browser: it PUTs to the part URLs with a pl
 
 Run `dotnet test --project tests/Media.Tests`. Expected: the new tests fail.
 
-- [ ] **Step 3: Implement uploads, then run the tests**
+- [x] **Step 3: Implement uploads, then run the tests**
 
 If ADR 0018 found that listed ETags cannot complete an upload, add `POST /uploads/{id}/parts` with `{ partNumber, eTag }` and a `upload_parts` table to the `Initial` migration (it is not merged yet). `GET` then answers from that table, and complete uses it. Say so in the walkthrough. Expected: Media.Tests pass. Commit: `feat(media): resumable uploads with presigned multipart URLs`.
 

@@ -21,6 +21,13 @@ public static class MediaExtensions
             timeout: TimeSpan.FromSeconds(ProbeBudgetSeconds)));
         return builder;
     }
+
+    /// <summary>The upload endpoints' service.</summary>
+    public static IHostApplicationBuilder AddUploads(this IHostApplicationBuilder builder)
+    {
+        builder.Services.AddScoped<UploadService>();
+        return builder;
+    }
 }
 
 /// <summary>Seeds Media: the bucket's settings. Task 5 adds the sample video.</summary>

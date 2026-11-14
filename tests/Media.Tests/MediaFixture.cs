@@ -112,12 +112,6 @@ public sealed class ShortLifetimeFixture(PostgresServer postgres, KafkaServer ka
     protected override string PartUrlLifetime => "00:00:02";
 }
 
-/// <summary>The expiry service ticks every hour of the fake clock, so a test moves time a day and sees it work.</summary>
-public sealed class ExpiryFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : MediaFixture(postgres, kafka, s3)
-{
-    protected override string ExpirySweepInterval => "01:00:00";
-}
-
 /// <summary>Media's S3 address is a port nothing listens on.</summary>
 public sealed class StorageDownFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : MediaFixture(postgres, kafka, s3)
 {
