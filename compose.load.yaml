@@ -51,5 +51,6 @@ services:
       inventory: { condition: service_healthy }
       fakepay: { condition: service_healthy }
       keycloak: { condition: service_healthy }
-    # 1,010 VUs each keep a token and sockets: the peak was about 380 MiB (tests/load/README.md), so 1g leaves room.
+    # 1,610 VUs (1,010 for the burst plus 600 preallocated for the steady load) each keep a token and sockets: the peak was 613 MiB
+    # in one run with `docker stats` sampled every 2 s (60 % of the limit; the burst alone was about 380 MiB, tests/load/README.md).
     deploy: { resources: { limits: { memory: 1g } } }

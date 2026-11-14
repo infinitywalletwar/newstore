@@ -40,6 +40,8 @@ const START_DELAY_MS = 20_000;
 // stack serves (the 1,000 buyers of the burst arrive within 0.3 s, a rate of 3,000 a second, which no single Mac VM serves under
 // 1 s: tests/load/README.md). It ramps for 15 s so the processes and pools grow into it, then holds for 10 s.
 const STEADY_RATE = 300;
+// 300 a second at a mean reserve latency of 2 s needs 600 busy VUs: more than that is a stack too slow for the rate.
+const STEADY_VUS = 600;
 // Buyers sign in once per VU and buy from many editions in turn, so a buyer is not handed its own open order back (a 200, not a
 // reservation) while its hold is still open. With the 30 s TTL a VU must not come back to an edition at all during the run: the
 // scenario lasts 25 s, so the threshold steady_vu_turns (below) fails if any VU reaches its 101st edition.
@@ -90,8 +92,12 @@ export const options = {
       startTime: STEADY_START,
       startRate: 10,
       timeUnit: '1s',
-      preAllocatedVUs: 150,
-      maxVUs: 600,
+      // All 600 VUs exist before the scenario starts. k6 docs: "allocating VUs as the test runs can overload the load generator and
+      // skew results" and "In almost all cases, the best thing to do is to pre-allocate the number of VUs you need beforehand"
+      // (arrival-rate-vu-allocation). With 150 here and a ceiling of 600, CI dropped 39 and 109 iterations while k6 allocated VUs at
+      // 185 to 220 busy (#102). maxVUs equals preAllocatedVUs, so dropped_iterations now means every VU was busy.
+      preAllocatedVUs: STEADY_VUS,
+      maxVUs: STEADY_VUS,
       stages: [
         { target: STEADY_RATE, duration: '15s' },
         { target: STEADY_RATE, duration: '10s' },
@@ -108,8 +114,8 @@ export const options = {
     'http_req_duration{name:reserve}': ['p(99)<' + BURST_P99_MS],
     'http_req_duration{name:reserve-steady}': ['p(99)<' + P99_MS],
     // "The number of iterations that weren't started due to lack of VUs (for the arrival-rate executors)" (k6 metrics reference).
-    // At 300/s with maxVUs 600 this trips when the mean reserve latency passes about 2 s (600 VUs / 300 per s), which can be before
-    // P99_MS does: if CI fails, check dropped_iterations first.
+    // At 300/s with 600 VUs (STEADY_VUS) this trips when the mean reserve latency passes about 2 s (600 VUs / 300 per s), which can be before
+    // P99_MS does: if CI fails, check dropped_iterations first, and the busy VU count in the steady progress lines.
     dropped_iterations: ['count==0'],
     // A guard that names its cause: it fails when a steady VU reaches its 101st edition, because the VU would meet its own open
     // order (a 200, not a 201) and 'steady: the buy is 201' would fail for that reason. Raise STEADY_EDITIONS if it ever does.
