@@ -520,7 +520,7 @@ Branch `phase-2/media-uploads`. Issue #116. Owns the Compose stack in wave B. Ad
     - `Media__Storage__ServiceUrl: http://floci:4566`, `Media__Storage__PublicServiceUrl: http://localhost:4566`, `Media__Storage__AccessKey: test`, `Media__Storage__SecretKey: test`, and `Media__Storage__CorsOrigins__0` to `__2`.
   - `media` depends on postgres, media-migrate (completed), kafka, keycloak, catalog and floci.
 
-- [ ] **Step 1: The service starts**
+- [x] **Step 1: The service starts**
 
 `MediaFixture` is a `NewStoreAppFactory<Program>` on `PostgresServer`, `KafkaServer` and `S3Server`, with:
 - a bucket of its own, set up by `StorageSetup`;
