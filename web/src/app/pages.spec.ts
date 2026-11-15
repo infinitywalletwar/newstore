@@ -7,6 +7,7 @@ import { Edition, MyCopy, Order } from './api/models';
 import { AuthService } from './auth/auth.service';
 import { MyCopiesComponent } from './copies/my-copies.component';
 import { OrderPageComponent } from './orders/order-page.component';
+import { VideoListComponent } from './videos/video-list.component';
 import { VideoPageComponent } from './videos/video-page.component';
 
 const fakeLocation = { origin: 'http://localhost:8100', pathname: '/', search: '', href: '' };
@@ -194,5 +195,40 @@ describe('pages', () => {
     expect(rows.length).toBe(2);
     expect(rows[0].textContent).toContain('#3');
     expect(rows[0].textContent).toContain('—');
+  });
+
+  it('Video_list_shows_thumbnails', () => {
+    const { backend } = setup('');
+    const f = TestBed.createComponent(VideoListComponent);
+    f.detectChanges();
+    const item = (id: string, thumbnailUrl: string | null) => ({ ...video, id, thumbnailUrl });
+    backend.expectOne((r) => r.url === '/api/videos').flush({
+      items: [item('v1', 'http://localhost:4566/newstore-media/hls/v1/thumbnail.jpg'), item('v2', null)], page: 1, pageSize: 20, total: 2,
+    });
+    f.detectChanges();
+
+    const images = (f.nativeElement as HTMLElement).querySelectorAll('[data-testid="video-thumbnail"]');
+    expect(images).toHaveLength(1);
+    expect(images[0].getAttribute('src')).toBe('http://localhost:4566/newstore-media/hls/v1/thumbnail.jpg');
+  });
+
+  it('Download_opens_the_link', () => {
+    const { backend } = setup('');
+    const f = TestBed.createComponent(MyCopiesComponent);
+    f.detectChanges();
+    const copy = (n: number, format: string) => ({
+      orderId: `o${n}`, editionId: 'e1', videoId: 'v1', format, copyNumber: n, price: 9.5, completedAt: '2026-01-01T00:00:00Z', deliveryStatus: null,
+    });
+    backend.expectOne('/api/me/copies').flush([copy(1, 'Digital'), copy(2, 'Physical')]);
+    f.detectChanges();
+    expect(q(f, 'download') ).not.toBeNull();
+    expect((f.nativeElement as HTMLElement).querySelectorAll('[data-testid="download"]')).toHaveLength(1);
+
+    q(f, 'download')!.click();
+    const post = backend.expectOne('/api/downloads');
+    expect(post.request.body).toEqual({ videoId: 'v1' });
+    post.flush({ url: 'http://localhost:4566/newstore-media/originals/x?sig=1', expiresAt: '2026-01-01T00:10:00Z', fileName: 'a.mp4' });
+
+    expect(fakeLocation.href).toBe('http://localhost:4566/newstore-media/originals/x?sig=1');
   });
 });

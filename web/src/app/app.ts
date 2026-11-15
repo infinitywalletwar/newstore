@@ -11,6 +11,7 @@ import { AuthService } from './auth/auth.service';
       <nav>
         @if (auth.user(); as user) {
           @if (user.isAuthenticated) {
+            <a routerLink="/studio" data-testid="studio-link">Studio</a>
             <a routerLink="/me/copies" data-testid="my-copies-link">My copies</a>
             <span data-testid="user-name">{{ user.name }}</span>
             <button type="button" data-testid="sign-out" (click)="auth.signOut()">Sign out</button>

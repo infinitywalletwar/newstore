@@ -1,10 +1,31 @@
 import { HttpErrorResponse, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BROWSER_LOCATION } from '../api/browser-location';
-import { UploadState, UploadSummary } from '../api/models';
+import { MyVideo, UploadState, UploadSummary } from '../api/models';
 import { csrfInterceptor } from '../auth/csrf.interceptor';
+import { VideoPlayerComponent } from '../videos/video-player.component';
+import { StudioComponent } from './studio.component';
 import { Uploader } from './uploader';
+
+// hls.js needs a browser (MediaSource); jsdom has none. The fake records what the player does with it.
+const hls = vi.hoisted(() => ({ supported: true, instances: [] as Array<Record<string, any>> }));
+vi.mock('hls.js', () => {
+  class FakeHls {
+    static Events = { MANIFEST_PARSED: 'hlsManifestParsed' };
+    static isSupported = () => hls.supported;
+    levels = [{ height: 360 }, { height: 720 }];
+    currentLevel = -1;
+    loadSource = vi.fn();
+    attachMedia = vi.fn();
+    destroy = vi.fn();
+    on = vi.fn();
+    constructor() {
+      hls.instances.push(this);
+    }
+  }
+  return { default: FakeHls };
+});
 
 const fakeLocation = { origin: 'http://localhost:8100', pathname: '/', search: '', href: '' };
 const s3 = (part: number, n = 1) => `http://localhost:4566/newstore-media/originals/u1?partNumber=${part}&sig=${n}`;
@@ -199,5 +220,189 @@ describe('uploader', () => {
     expect(complete.request.headers.get('X-CSRF')).toBe('1');
     expect(put.request.headers.has('X-CSRF')).toBe(false);
     expect(put.request.withCredentials).toBe(false);
+  });
+});
+
+const myVideo = (over: Partial<MyVideo> = {}): MyVideo => ({
+  id: 'v1', title: 'Sourdough', status: 'Draft', createdAt: '2026-01-01T00:00:00Z', publishedAt: null, thumbnailUrl: null, ...over,
+});
+const q = (f: ComponentFixture<unknown>, id: string) => (f.nativeElement as HTMLElement).querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+const qa = (f: ComponentFixture<unknown>, id: string) => Array.from((f.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${id}"]`)) as HTMLElement[];
+
+function studioSetup() {
+  const uploader = { upload: vi.fn(), resume: vi.fn() };
+  TestBed.configureTestingModule({
+    providers: [
+      provideHttpClient(withInterceptors([csrfInterceptor])), provideHttpClientTesting(),
+      { provide: BROWSER_LOCATION, useValue: fakeLocation },
+      { provide: Uploader, useValue: uploader },
+    ],
+  });
+  const backend = TestBed.inject(HttpTestingController);
+  const open = async (videos: MyVideo[], uploads: UploadSummary[]) => {
+    const f = TestBed.createComponent(StudioComponent);
+    f.detectChanges();
+    backend.expectOne('/api/me/videos').flush(videos);
+    backend.expectOne('/api/me/uploads').flush(uploads);
+    await tick();
+    f.detectChanges();
+    return f;
+  };
+  return { backend, uploader, open };
+}
+
+describe('studio', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('Studio_creates_a_video_and_lists_it_as_draft', async () => {
+    const { backend, open } = studioSetup();
+    const f = await open([], []);
+    const title = q(f, 'new-video-title') as HTMLInputElement;
+    title.value = 'Sourdough';
+    title.dispatchEvent(new Event('input'));
+    const description = q(f, 'new-video-description') as HTMLTextAreaElement;
+    description.value = 'Bread';
+    description.dispatchEvent(new Event('input'));
+    f.detectChanges();
+    q(f, 'create-video')!.click();
+
+    const create = backend.expectOne('/api/videos');
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body).toEqual({ title: 'Sourdough', description: 'Bread' });
+    create.flush(myVideo());
+    await tick();
+    backend.expectOne('/api/me/videos').flush([myVideo()]);
+    backend.expectOne('/api/me/uploads').flush([]);
+    await tick();
+    f.detectChanges();
+
+    const row = q(f, 'studio-row')!;
+    expect(row.dataset['videoId']).toBe('v1');
+    expect(q(f, 'upload-status')!.textContent).toContain('Draft');
+    expect(q(f, 'upload-file')).not.toBeNull();
+  });
+
+  it('Studio_shows_failed_with_its_reason', async () => {
+    const { open } = studioSetup();
+    const f = await open([myVideo()], [summary({ status: 'Failed', failureReason: 'unreadable' })]);
+
+    expect(q(f, 'upload-status')!.textContent).toContain('Failed');
+    expect(q(f, 'failure-reason')!.textContent).toContain("The file isn't a video FFmpeg can read");
+  });
+
+  it('Studio_resumes_with_the_chosen_file', async () => {
+    const { backend, uploader, open } = studioSetup();
+    uploader.resume.mockResolvedValue(state({ status: 'Processing', partUrls: [] }));
+    const upload = summary();
+    const f = await open([myVideo()], [upload]);
+
+    const input = q(f, 'resume-file') as HTMLInputElement;
+    const chosen = file();
+    Object.defineProperty(input, 'files', { value: [chosen] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+
+    expect(uploader.resume).toHaveBeenCalledWith(upload, chosen, expect.any(Function));
+    backend.expectOne('/api/me/uploads').flush([summary({ status: 'Processing' })]);
+  });
+
+  it('Studio_polls_while_processing_until_published', async () => {
+    const { backend, open } = studioSetup();
+    const f = await open([myVideo()], [summary({ status: 'Processing' })]);
+    const poll = async (ms: number, status: UploadSummary['status'] = 'Processing') => {
+      await tick(ms);
+      backend.expectOne('/api/me/uploads').flush([summary({ status })]);
+    };
+
+    // Every 5 s for the first minute: 12 polls.
+    for (let i = 0; i < 12; i++) {
+      await tick(4999);
+      backend.expectNone('/api/me/uploads');
+      await poll(1);
+    }
+    // Then every 15 s, with no cap: still polling after 10 minutes.
+    await tick(14_999);
+    backend.expectNone('/api/me/uploads');
+    await poll(1);
+    for (let i = 0; i < 40; i++) {
+      await poll(15_000);
+    }
+
+    // A terminal status stops the polling and refreshes the videos (the thumbnail and status changed).
+    await poll(15_000, 'Published');
+    backend.expectOne('/api/me/videos').flush([myVideo({ status: 'Published' })]);
+    await tick(60_000);
+    backend.expectNone('/api/me/uploads');
+    f.detectChanges();
+    expect(q(f, 'upload-status')!.textContent).toContain('Published');
+  });
+
+  it('Studio_stops_polling_when_destroyed', async () => {
+    const { backend, open } = studioSetup();
+    const f = await open([myVideo()], [summary({ status: 'Processing' })]);
+
+    f.destroy();
+    await tick(60_000);
+
+    backend.expectNone('/api/me/uploads');
+  });
+});
+
+describe('player', () => {
+  beforeEach(() => {
+    hls.supported = true;
+    hls.instances.length = 0;
+    TestBed.configureTestingModule({});
+  });
+
+  function player(src = 'http://localhost:4566/newstore-media/hls/v1/master.m3u8') {
+    const f = TestBed.createComponent(VideoPlayerComponent);
+    f.componentRef.setInput('src', src);
+    f.detectChanges();
+    return f;
+  }
+
+  it('Player_loads_the_playback_url_with_hls_js_and_destroys_it', () => {
+    const f = player();
+
+    expect(hls.instances).toHaveLength(1);
+    expect(hls.instances[0]['loadSource']).toHaveBeenCalledWith('http://localhost:4566/newstore-media/hls/v1/master.m3u8');
+    expect(hls.instances[0]['attachMedia']).toHaveBeenCalledWith(q(f, 'player'));
+    expect(q(f, 'player-error')).toBeNull();
+
+    f.destroy();
+    expect(hls.instances[0]['destroy']).toHaveBeenCalledTimes(1);
+  });
+
+  it('Player_uses_native_hls_when_hls_js_is_unsupported_and_errors_otherwise', () => {
+    hls.supported = false;
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
+    const native = player('http://x/master.m3u8');
+    expect(hls.instances).toHaveLength(0);
+    expect((q(native, 'player') as HTMLVideoElement).src).toBe('http://x/master.m3u8');
+    expect(q(native, 'player-error')).toBeNull();
+
+    vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
+    const none = player();
+    expect(q(none, 'player-error')).not.toBeNull();
+  });
+
+  it('Quality_menu_lists_the_variants_and_switches', () => {
+    const f = player();
+    const instance = hls.instances[0];
+    const onParsed = instance['on'].mock.calls.find(([event]: [string]) => event === 'hlsManifestParsed')[1] as () => void;
+    onParsed();
+    f.detectChanges();
+
+    const menu = q(f, 'quality') as HTMLSelectElement;
+    expect(Array.from(menu.options).map((o) => o.textContent!.trim())).toEqual(['Auto', '360p', '720p']);
+
+    menu.value = '1';
+    menu.dispatchEvent(new Event('change'));
+    expect(instance['currentLevel']).toBe(1);
+    menu.value = '-1';
+    menu.dispatchEvent(new Event('change'));
+    expect(instance['currentLevel']).toBe(-1);
   });
 });

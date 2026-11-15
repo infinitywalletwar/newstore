@@ -278,6 +278,7 @@ newstore/
 │       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
 ├── web/              the Angular app
 │   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it
+│   studio/ (video creation, resumable uploads straight to S3, processing status), videos/ also holds the hls.js player; copies/ has the Download button
 ├── compose.load.yaml overlay for the k6 load test: a short reservation TTL, FakePay's test endpoints and the k6 service
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
