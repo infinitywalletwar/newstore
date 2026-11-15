@@ -860,7 +860,7 @@ Commit: `feat(media): FFmpeg and ffprobe without a shell, killed on cancellation
 
 Commit: `feat(media): a jobs table with a lease`.
 
-- [ ] **Step 3: The worker end to end, failing tests, then code**
+- [x] **Step 3: The worker end to end, failing tests, then code**
 
 `ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status. Production keeps one `WorkDirectory` per worker container. Tests give every host its own: each fixture or host that runs the worker sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose, because a starting host deletes whatever its directory holds, and xUnit runs classes in parallel.
 - `Uploaded_mp4_is_published_with_two_variants_and_a_thumbnail`: upload `Published`, the anonymous `master.m3u8` lists both variants, the thumbnail is 200, and one `VideoPublished` is in the outbox with these paths.

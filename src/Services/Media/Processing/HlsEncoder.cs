@@ -2,6 +2,8 @@ using System.Globalization;
 
 using Microsoft.Extensions.Options;
 
+using NewStore.Media.Storage;
+
 namespace NewStore.Media.Processing;
 
 /// <summary>
@@ -65,6 +67,36 @@ public sealed class HlsEncoder(FfmpegRunner runner, IOptions<ProcessingOptions> 
             "-hls_segment_filename", Path.Combine(outputDirectory, "v%v", "seg_%03d.ts"), Path.Combine(outputDirectory, "v%v", "index.m3u8"),
         ]);
         return arguments;
+    }
+
+    /// <summary>Segments never change once published, so caches may keep them for a year.</summary>
+    public const string SegmentCacheControl = "public, max-age=31536000, immutable";
+
+    /// <summary>Playlists and the thumbnail.</summary>
+    public const string ShortCacheControl = "public, max-age=300";
+
+    /// <summary>
+    /// Puts every file of an encode under <paramref name="prefix"/>, with its content type and <c>Cache-Control</c> (plan, "Storage
+    /// layout"). Segments go first and playlists after them, and <c>master.m3u8</c> goes last, so the master exists only once
+    /// everything it names does.
+    /// </summary>
+    public static async Task UploadOutputAsync(IObjectStore store, string outputDirectory, string prefix, CancellationToken ct)
+    {
+        var files = Directory.EnumerateFiles(outputDirectory, "*", SearchOption.AllDirectories)
+            .Select(path => (Path: path, Key: $"{prefix}/{Path.GetRelativePath(outputDirectory, path).Replace(Path.DirectorySeparatorChar, '/')}"))
+            .OrderBy(file => file.Key == $"{prefix}/{ObjectKeys.Master}" ? 2 : Path.GetExtension(file.Path) == ".m3u8" ? 1 : 0)
+            .ThenBy(file => file.Key, StringComparer.Ordinal);
+        foreach (var (path, key) in files)
+        {
+            var (contentType, cacheControl) = Path.GetExtension(path) switch
+            {
+                ".ts" => ("video/mp2t", SegmentCacheControl),
+                ".m3u8" => ("application/vnd.apple.mpegurl", ShortCacheControl),
+                ".jpg" => ("image/jpeg", ShortCacheControl),
+                var other => throw new InvalidOperationException($"The encode wrote a file of an unexpected type: '{other}'."),
+            };
+            await store.UploadAsync(key, path, contentType, cacheControl, ct);
+        }
     }
 
     private async Task RunAsync(IReadOnlyList<string> arguments, CancellationToken ct)

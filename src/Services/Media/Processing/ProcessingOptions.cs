@@ -1,3 +1,5 @@
+using NewStore.Media.Storage;
+
 namespace NewStore.Media.Processing;
 
 /// <summary>Bound from <c>Media:Processing</c>. The defaults are the plan's Global Constraints.</summary>
@@ -62,7 +64,14 @@ public static class ProcessingExtensions
         builder.Services.AddSingleton<FfmpegRunner>();
         builder.Services.AddSingleton<Ffprobe>();
         builder.Services.AddSingleton<HlsEncoder>();
+        builder.Services.AddSingleton<IObjectStore, S3ObjectStore>();
         builder.Services.AddScoped<JobQueue>();
+        builder.Services.AddScoped<JobRunner>();
+        if (runWorker)
+        {
+            builder.Services.AddHostedService<ProcessingWorker>();
+        }
+
         return builder;
     }
 }
