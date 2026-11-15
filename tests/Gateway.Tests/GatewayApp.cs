@@ -23,6 +23,7 @@ internal sealed class GatewayApp : NewStoreAppFactory<Program>
         Settings["Services:Catalog"] = "http://catalog.test";
         Settings["Services:Inventory"] = "http://inventory.test";
         Settings["Services:Orders"] = "http://orders.test";
+        Settings["Services:Media"] = "http://media.test";
     }
 
     public StubHttpHandler Stub { get; } = new();

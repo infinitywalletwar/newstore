@@ -88,6 +88,9 @@ jobs:
         run: curl --fail --silent --show-error 'http://localhost:8101/videos?q=sourdough' | grep -q '"total":1'
       - name: Gateway forwards a search to Catalog
         run: curl --fail --silent --show-error 'http://localhost:8100/api/videos?q=sourdough' | grep -q '"total":1'
+      - name: Gateway answers 401 to an anonymous upload
+        # The gateway checks the session before it proxies, so this needs no Media service behind it.
+        run: test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8100/api/uploads)" = 401
       - name: Catalog lists the seeded edition of a sample video
         # The snapshot travels Inventory, Kafka, Catalog: retry for up to 30 s. The k6 step above also creates Digital editions of
         # this video (10 copies each), so the check looks for what only the seeded edition has: 1000 copies.
