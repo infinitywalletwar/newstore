@@ -107,6 +107,45 @@ public sealed class JobQueueTests(MediaFixture media) : IClassFixture<MediaFixtu
     }
 
     [Fact]
+    public async Task Succeed_after_losing_the_lease_writes_nothing()
+    {
+        var id = await AddJobAsync(Now);
+        var uploadId = await UploadOfAsync(id);
+        await ClaimAsync("a");
+        media.Clock.Advance(Lease + TimeSpan.FromSeconds(1));
+        await ClaimAsync("b");
+
+        // a finished its encode after all, and tries to publish.
+        await WithQueueAsync(async q =>
+        {
+            await q.SucceedAsync(id, "a", new PublishedVideo("hls/late/master.m3u8", "hls/late/thumbnail.jpg", 8), Ct);
+            return 0;
+        });
+
+        var job = await JobAsync(id);
+        Assert.Equal((JobStatus.Running, "b", 2), (job.Status, job.LockedBy, job.Attempts));
+        var upload = await media.WithDbAsync(db => db.Uploads.AsNoTracking().SingleAsync(u => u.Id == uploadId, Ct));
+        Assert.Equal((UploadStatus.Processing, null, null), (upload.Status, upload.PlaylistPath, upload.PublishedAt));
+        var key = upload.VideoId.ToString();
+        var events = await media.WithDbAsync(db => db.Database
+            .SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM outbox_messages WHERE key = {key}")
+            .SingleAsync(Ct));
+        Assert.Equal(0, events);
+    }
+
+    [Fact]
+    public async Task Retry_pause_stops_growing_at_the_cap()
+    {
+        // Five earlier attempts: the sixth's pause would be 30 s × 2^5 = 16 min, over MaxRetryPause.
+        var id = await AddJobAsync(Now, attempts: 5);
+        Assert.Equal(6, (await ClaimAsync("a"))?.Attempts);
+
+        await WithQueueAsync(async q => { await q.RetryLaterAsync(id, "a", "S3 answered 503", Ct); return 0; });
+
+        Assert.Equal(Now + TimeSpan.FromMinutes(10), (await JobAsync(id)).NextRunAt);
+    }
+
+    [Fact]
     public async Task Retry_later_waits_for_the_backoff()
     {
         var id = await AddJobAsync(Now);
@@ -157,8 +196,11 @@ public sealed class JobQueueTests(MediaFixture media) : IClassFixture<MediaFixtu
     private Task<Guid> UploadOfAsync(Guid jobId) =>
         media.WithDbAsync(db => db.ProcessingJobs.Where(j => j.Id == jobId).Select(j => j.UploadId).SingleAsync(Ct));
 
-    /// <summary>A Processing upload and its Pending job, due at <paramref name="nextRunAt"/>, as complete would write them.</summary>
-    private async Task<Guid> AddJobAsync(DateTimeOffset nextRunAt)
+    /// <summary>
+    /// A Processing upload and its Pending job, due at <paramref name="nextRunAt"/>, as complete would write them, or as a retry
+    /// leaves them after <paramref name="attempts"/> attempts.
+    /// </summary>
+    private async Task<Guid> AddJobAsync(DateTimeOffset nextRunAt, int attempts = 0)
     {
         var now = Now;
         var upload = new Upload
@@ -183,6 +225,7 @@ public sealed class JobQueueTests(MediaFixture media) : IClassFixture<MediaFixtu
             Id = Guid.CreateVersion7(),
             UploadId = upload.Id,
             Status = JobStatus.Pending,
+            Attempts = attempts,
             NextRunAt = Micro(nextRunAt),
             CreatedAt = now,
             UpdatedAt = now,
