@@ -24,10 +24,14 @@ export interface VideoSummary {
   durationSeconds: number;
   publishedAt: string;
   channel: Channel;
+  /** The thumbnail's public URL, or null until the video has been processed. */
+  thumbnailUrl: string | null;
 }
 
 export interface VideoDetails extends VideoSummary {
   description: string;
+  /** The HLS master playlist's public URL, or null until the video has been processed. */
+  playbackUrl: string | null;
 }
 
 export interface PagedResult<T> {
@@ -73,4 +77,69 @@ export interface MyCopy {
   price: number;
   completedAt: string;
   deliveryStatus: string | null;
+}
+
+/** `GET /api/me/videos`: the creator's own videos, in every status. */
+export interface MyVideo {
+  id: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  publishedAt: string | null;
+  thumbnailUrl: string | null;
+}
+
+export type UploadStatus = 'Uploading' | 'Processing' | 'Published' | 'Failed' | 'Expired';
+
+/** The statuses an upload never leaves, so the studio stops polling. */
+export const TERMINAL_UPLOAD_STATUSES: readonly UploadStatus[] = ['Published', 'Failed', 'Expired'];
+
+/** `GET /api/me/uploads`: the latest upload of each video. */
+export interface UploadSummary {
+  id: string;
+  videoId: string;
+  fileName: string;
+  sizeBytes: number;
+  status: UploadStatus;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A part S3 already has. `eTag` is quoted, as S3 sends it. */
+export interface UploadedPart {
+  partNumber: number;
+  eTag: string;
+  size: number;
+}
+
+/** A presigned PUT URL for one part. `size` is the exact slice it accepts: smaller for the last part. */
+export interface PartUrl {
+  partNumber: number;
+  url: string;
+  size: number;
+}
+
+/** `GET /api/uploads/{id}` (Media's `UploadResponse`): what S3 has, and URLs for what it lacks. */
+export interface UploadState {
+  id: string;
+  videoId: string;
+  fileName: string;
+  sizeBytes: number;
+  status: UploadStatus;
+  failureReason: string | null;
+  partSize: number;
+  partCount: number;
+  uploadedParts: UploadedPart[];
+  partUrls: PartUrl[];
+  partUrlsExpireAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `POST /api/downloads`: a presigned link to the original file. */
+export interface DownloadLink {
+  url: string;
+  expiresAt: string;
+  fileName: string;
 }
