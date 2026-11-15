@@ -43,4 +43,11 @@ public static class AuthExtensions
     /// </summary>
     public static AuthorizationBuilder AddClientPolicy(this AuthorizationBuilder auth, string clientId) =>
         auth.AddPolicy(Policies.Client(clientId), policy => policy.RequireAuthenticatedUser().RequireClaim("azp", clientId));
+
+    /// <summary>
+    /// Adds <see cref="Policies.Clients"/>(<paramref name="clientIds"/>): <c>azp</c> is one of the clients. For an endpoint
+    /// that more than one service calls.
+    /// </summary>
+    public static AuthorizationBuilder AddClientsPolicy(this AuthorizationBuilder auth, params string[] clientIds) =>
+        auth.AddPolicy(Policies.Clients(clientIds), policy => policy.RequireAuthenticatedUser().RequireClaim("azp", clientIds));
 }

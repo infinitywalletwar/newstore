@@ -12,5 +12,12 @@ internal static class KafkaSettings
     {
         factory.Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         factory.Settings["Messaging:ClientId"] = $"catalog-tests-{Guid.NewGuid():N}";
+        factory.UseMediaBaseUrl();
     }
+
+    public const string MediaBaseUrl = "http://media.test/newstore-media";
+
+    /// <summary>Catalog does not start without <c>Catalog:MediaBaseUrl</c>, so every test app sets it.</summary>
+    public static void UseMediaBaseUrl(this NewStoreAppFactory<Program> factory) =>
+        factory.Settings["Catalog:MediaBaseUrl"] = MediaBaseUrl;
 }

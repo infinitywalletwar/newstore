@@ -10,7 +10,7 @@ namespace NewStore.Security.Tests;
 
 /// <summary>
 /// The smallest service that uses <c>AddNewStoreAuth</c>: one endpoint per policy. <c>/me</c> needs <see cref="Policies.SignedIn"/>,
-/// <c>/orders-only</c> needs <c>Client("orders")</c> and <c>/inventory-only</c> needs <c>Client("inventory")</c>.
+/// <c>/orders-only</c> needs <c>Client("orders")</c> and <c>/inventory-only</c> needs <c>Client("inventory")</c> and <c>/inventory-or-media</c> needs <c>Clients("inventory", "media")</c>.
 /// Dispose it to stop the app.
 /// </summary>
 internal sealed class TestApp : IAsyncDisposable
@@ -38,7 +38,8 @@ internal sealed class TestApp : IAsyncDisposable
         builder.Configuration.AddInMemoryCollection(settings);
         builder.AddNewStoreAuth()
             .AddClientPolicy("orders")
-            .AddClientPolicy("inventory");
+            .AddClientPolicy("inventory")
+            .AddClientsPolicy("inventory", "media");
         if (useTestKey)
         {
             builder.Services.UseTestSigningKey();
@@ -50,6 +51,7 @@ internal sealed class TestApp : IAsyncDisposable
         app.MapGet("/me", (System.Security.Claims.ClaimsPrincipal user) => user.UserId()).RequireAuthorization(Policies.SignedIn);
         app.MapGet("/orders-only", () => "ok").RequireAuthorization(Policies.Client("orders"));
         app.MapGet("/inventory-only", () => "ok").RequireAuthorization(Policies.Client("inventory"));
+        app.MapGet("/inventory-or-media", () => "ok").RequireAuthorization(Policies.Clients("inventory", "media"));
         await app.StartAsync();
         return new TestApp(app);
     }
