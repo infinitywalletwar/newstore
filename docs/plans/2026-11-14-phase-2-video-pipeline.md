@@ -888,7 +888,7 @@ Expected: they pass after `JobRunner` and `ProcessingWorker` are written. Commit
 
 Commit: `feat(media): the worker container and the seeded sample`.
 
-- [ ] **Step 5: ADR 0020, AGENTS.md, pull request**
+- [x] **Step 5: ADR 0020, AGENTS.md, pull request**
 
 1. **ADR 0020, processing in a worker.**
    - A second container of the Media project, against a `BackgroundService` in the API (FFmpeg would share the API's memory and CPU) and a container per job (needs the Docker socket or an orchestrator).

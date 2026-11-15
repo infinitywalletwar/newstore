@@ -271,6 +271,7 @@ newstore/
 │   ├── Services/     one folder per service; Catalog: Channels/, Videos/, Editions/, Caching/, Seed/ (sample-catalog.json)
 │   │                 Orders: Orders/ (buy, pay, my copies), Clients/ (Inventory and Payments), Saga/ (the handlers of Payments' events)
 │   │                 Media: Storage/ (the two S3 clients, bucket setup, object keys), Uploads/ (resumable multipart uploads, expiry), Clients/ (Catalog)
+│   │                 Media: Processing/ (the jobs table with a lease, FFmpeg and ffprobe, the worker), Seed/ (the HLS sample, sample-videos.json)
 │   ├── Fakes/        stand-ins for outside services; FakePay: a hosted-checkout page and signed webhooks (not part of the store)
 │   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup

@@ -107,6 +107,7 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
 - Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, `test`/`test` for Floci, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - Media's local credentials: the database role `media/media` and the Keycloak client secret `media`.
+- `media-worker` runs FFmpeg; it has no port.
 - FakePay's local credentials: API key `fakepay`, webhook secret `fakepay-webhook`. Payments and FakePay both read them from Compose or `appsettings.Development.json`, never from `appsettings.json`.
 - Host ports:
 
@@ -141,6 +142,7 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 
 - Build: `dotnet build NewStore.slnx`
 - Test everything: `dotnet test --solution NewStore.slnx` (needs Docker running, for Testcontainers)
+- Media's tests run FFmpeg: `brew install ffmpeg` on the Mac; CI installs Ubuntu's package.
 - One test: `dotnet test --project tests/Catalog.Tests --filter-method "*<TestName>"`
 - Start the local stack: `docker compose up -d --wait`. Stop it: `docker compose down`. Wipe its data: `docker compose down -v`.
 - Build the Catalog image: `docker compose build catalog`
