@@ -366,12 +366,13 @@ services:
     deploy: { resources: { limits: { memory: 512m } } }
 
   # One-shot job: applies Media's migrations, then seeds: the bucket's public access block, policy and CORS (ADR 0005, 0018).
+  # The seed also encodes the HLS sample with FFmpeg, so the job runs on the worker's image, with room for the encode (ADR 0020).
   media-migrate:
     build:
       context: .
       dockerfile: src/Services/Media/Dockerfile
-      target: api
-    image: newstore/media:local
+      target: worker
+    image: newstore/media-worker:local
     pull_policy: build
     command: ["migrate", "seed"]
     restart: "no"
@@ -390,7 +391,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       floci: { condition: service_healthy }
-    deploy: { resources: { limits: { memory: 512m } } }
+    deploy: { resources: { limits: { memory: 1g } } }
 
   # Resumable uploads (ADR 0018): Media keeps the state and signs part URLs; the browser sends the bytes straight to Floci.
   media:
@@ -440,6 +441,43 @@ services:
       retries: 10
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
+
+  # The Media worker (ADR 0020): the same project as media, in the role that claims processing jobs and runs FFmpeg on uploads.
+  # It publishes no port; the health check probes /health/ready inside the container.
+  media-worker:
+    build:
+      context: .
+      dockerfile: src/Services/Media/Dockerfile
+      target: worker
+    image: newstore/media-worker:local
+    pull_policy: build
+    environment:
+      Media__Role: Worker
+      ConnectionStrings__Media: Host=postgres;Database=media;Username=media;Password=media
+      Messaging__BootstrapServers: kafka:9092
+      Media__Storage__ServiceUrl: http://floci:4566
+      Media__Storage__PublicServiceUrl: http://localhost:4566
+      Media__Storage__AccessKey: test
+      Media__Storage__SecretKey: test
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: media-worker
+    depends_on:
+      postgres: { condition: service_healthy }
+      media-migrate: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # On stop, Compose sends SIGTERM and kills the container after this; its default is 10 s. The worker kills FFmpeg and releases
+    # its job well within it.
+    stop_grace_period: 30s
+    deploy: { resources: { limits: { memory: 2g, cpus: "4" } } }
 
   # A stand-in for a hosted payment page such as Stripe's (ADR 0014). Not a store service: no database, no outbox.
   # The browser reaches it on localhost:8105; it calls Payments' webhook on the Compose network.

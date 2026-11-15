@@ -23,6 +23,9 @@ jobs:
       - run: dotnet restore NewStore.slnx
       - run: dotnet format NewStore.slnx --verify-no-changes --no-restore
       - run: dotnet build NewStore.slnx -c Release --no-restore
+      - name: Install FFmpeg for Media's tests
+        # The runner is Ubuntu 24.04, so this is the same package as the worker image's (ADR 0020).
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg && ffmpeg -version | head -n 1
       - run: dotnet test --solution NewStore.slnx -c Release --no-build
 
   web:
@@ -105,6 +108,16 @@ jobs:
           done
           echo "The sample video has no seeded edition (1000 copies) after 30 s" >&2
           exit 1
+      - name: The worker's FFmpeg is the one ADR 0018 measured, with libx264
+        run: |
+          version="$(docker compose -f compose.yaml -f compose.load.yaml exec -T media-worker ffmpeg -version)"
+          echo "$version" | head -n 2
+          case "$version" in "ffmpeg version 6.1.1-3ubuntu5 "*) ;; *) echo "Unexpected FFmpeg version" >&2; exit 1 ;; esac
+          echo "$version" | grep -q -- '--enable-libx264'
+      - name: The seeded sample plays at 720p
+        run: curl --fail --silent --show-error http://localhost:4566/newstore-media/hls/sample/master.m3u8 | grep -q 'RESOLUTION=1280x720'
+      - name: The sample's original is private
+        run: test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4566/newstore-media/originals/sample.mp4)" = 403
       - name: Show logs
         if: failure()
         run: docker compose -f compose.yaml -f compose.load.yaml logs

@@ -9,4 +9,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="NewStore.Media.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The seed reads it at run time, next to the assembly, in the build output and in the image. -->
+    <Content Update="Seed\sample-videos.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

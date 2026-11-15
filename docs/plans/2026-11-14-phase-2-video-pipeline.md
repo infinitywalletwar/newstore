@@ -875,7 +875,7 @@ Commit: `feat(media): a jobs table with a lease`.
 
 Expected: they pass after `JobRunner` and `ProcessingWorker` are written. Commit: `feat(media): the worker turns uploads into HLS and publishes them`.
 
-- [ ] **Step 4: The seed, the image, Compose and CI**
+- [x] **Step 4: The seed, the image, Compose and CI**
 
 1. **`SeedTests`:** `Seed_makes_the_sample_once` (the second run uploads nothing, by `ExistsAsync`) and `Seed_gives_every_sample_video_a_published_upload` (48 rows).
 2. **The image and Compose,** from Interfaces. Run `docker compose build media media-worker`, then `docker compose up -d --wait`. Check:

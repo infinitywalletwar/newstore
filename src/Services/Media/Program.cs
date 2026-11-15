@@ -37,7 +37,7 @@ if (role is MediaRole.All or MediaRole.Api)
 }
 
 builder.AddProcessing(runWorker: role is MediaRole.All or MediaRole.Worker);   // the job queue and FFmpeg in every role; the worker in All and Worker
-builder.Services.AddScoped<IDatabaseSeeder<MediaDbContext>, MediaSeeder>();   // StorageSetup.EnsureAsync; Task 5 adds the sample
+builder.Services.AddScoped<IDatabaseSeeder<MediaDbContext>, MediaSeeder>();   // the bucket's settings, the HLS sample (FFmpeg) and the sample videos' uploads
 
 var app = builder.Build();
 
