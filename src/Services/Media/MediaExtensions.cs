@@ -1,0 +1,30 @@
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+namespace NewStore.Media;
+
+public static class MediaExtensions
+{
+    private const int ProbeBudgetSeconds = 3;
+
+    /// <summary><see cref="MediaStorage"/>, <see cref="StorageSetup"/> and the <c>storage</c> readiness check, which is Degraded, never Unhealthy.</summary>
+    public static IHostApplicationBuilder AddMediaStorage(this IHostApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<MediaStorage>();
+        builder.Services.AddSingleton<StorageSetup>();
+        builder.Services.AddHealthChecks().Add(new HealthCheckRegistration(
+            "storage",
+            services => new StorageHealthCheck(services.GetRequiredService<MediaStorage>()),
+            failureStatus: HealthStatus.Degraded,
+            tags: null,
+            timeout: TimeSpan.FromSeconds(ProbeBudgetSeconds)));
+        return builder;
+    }
+
+    /// <summary>The upload endpoints' service and the expiry service.</summary>
+    public static IHostApplicationBuilder AddUploads(this IHostApplicationBuilder builder)
+    {
+        builder.Services.AddScoped<UploadService>();
+        builder.Services.AddHostedService<UploadExpiryService>();
+        return builder;
+    }
+}

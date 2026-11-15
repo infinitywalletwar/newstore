@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\ServiceDefaults\NewStore.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Shared\Contracts\NewStore.Contracts.csproj" />
+    <PackageReference Include="Npgsql.DependencyInjection" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="NewStore.Media.Tests" />
+  </ItemGroup>
+</Project>

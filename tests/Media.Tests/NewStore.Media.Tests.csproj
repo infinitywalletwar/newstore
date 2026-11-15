@@ -5,10 +5,14 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="System.Net" />
+    <Using Include="NewStore.TestSupport" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="Testcontainers.Floci" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <ProjectReference Include="..\..\src\Services\Media\NewStore.Media.csproj" />
+    <ProjectReference Include="..\Shared\NewStore.TestSupport\NewStore.TestSupport.csproj" />
   </ItemGroup>
 </Project>

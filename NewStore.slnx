@@ -13,6 +13,9 @@
   <Folder Name="/src/Services/Orders/">
     <Project Path="src/Services/Orders/NewStore.Orders.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Media/">
+    <Project Path="src/Services/Media/NewStore.Media.csproj" />
+  </Folder>
   <Folder Name="/src/Fakes/FakePay/">
     <Project Path="src/Fakes/FakePay/NewStore.FakePay.csproj" />
   </Folder>
