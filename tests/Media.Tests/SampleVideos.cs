@@ -43,7 +43,9 @@ public sealed class SampleVideos : IAsyncDisposable
 
     /// <summary>
     /// An HLS playlist named as a video, whose one segment is <c>file:///etc/hosts</c>. Read as HLS, it would make FFmpeg open a
-    /// local file the uploader chose; the input whitelists must refuse it.
+    /// local file the uploader chose. FFmpeg's HLS demuxer itself refuses a playlist whose name doesn't end in <c>.m3u8</c> (9.0.2
+    /// and 6.1.1 both print "Not detecting m3u8/hls with non standard extension"), so this sample never reaches the whitelist;
+    /// <see cref="ConcatScriptAsync"/> does.
     /// </summary>
     public Task<string> DisguisedPlaylistAsync() => Once("playlist.mp4", path => File.WriteAllTextAsync(path, """
         #EXTM3U
@@ -52,6 +54,17 @@ public sealed class SampleVideos : IAsyncDisposable
         #EXTINF:10.0,
         file:///etc/hosts
         #EXT-X-ENDLIST
+
+        """));
+
+    /// <summary>
+    /// An <c>ffconcat</c> script naming <c>/etc/hosts</c>, saved as <c>source</c>: the name the worker gives every download, with
+    /// no extension. FFmpeg recognises the concat demuxer by the content, so only <c>-format_whitelist</c> stops it before the
+    /// demuxer runs.
+    /// </summary>
+    public Task<string> ConcatScriptAsync() => Once(Path.Combine("concat", "source"), path => File.WriteAllTextAsync(path, """
+        ffconcat version 1.0
+        file /etc/hosts
 
         """));
 
@@ -85,8 +98,8 @@ public sealed class SampleVideos : IAsyncDisposable
     private Task<string> Once(string name, Func<string, Task> make) =>
         _samples.GetOrAdd(name, _ => new Lazy<Task<string>>(async () =>
         {
-            Directory.CreateDirectory(_directory);
             var path = Path.Combine(_directory, name);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await make(path);
             return path;
         })).Value;

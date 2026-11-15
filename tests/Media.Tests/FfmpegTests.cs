@@ -68,6 +68,41 @@ public sealed class FfmpegTests(SampleVideos samples) : IDisposable
     }
 
     [Fact]
+    public async Task Probe_of_a_concat_script_is_refused_by_the_whitelist()
+    {
+        var source = await samples.ConcatScriptAsync();
+
+        var refused = await Assert.ThrowsAsync<PermanentProcessingException>(() => Probe.ProbeAsync(source, Ct));
+
+        Assert.True(refused.Reason is "unreadable" or "unsupported-format", $"The reason is {refused.Reason}.");
+        // The whitelist refused it. Without -format_whitelist the concat demuxer runs and only its own "safe" check stops
+        // /etc/hosts ("Unsafe file name"), which a relative name in the script would pass.
+        Assert.Contains("Format not on whitelist", refused.Message);
+    }
+
+    [Fact]
+    public void Every_command_reads_its_input_through_the_whitelists()
+    {
+        var info = new MediaInfo(Mp4Demuxer, 8, HasAudio: true, 1280, 720, FramesPerSecond: 25);
+        var source = Path.Combine("work", "source");
+        var output = Path.Combine("work", "out");
+
+        AssertWhitelisted(Ffprobe.ProbeArguments(source), source);
+        AssertWhitelisted(HlsEncoder.ThumbnailArguments(source, info, output), source);
+        AssertWhitelisted(HlsEncoder.EncodeArguments(source, info, output, "medium"), source);
+
+        static void AssertWhitelisted(IReadOnlyList<string> arguments, string source)
+        {
+            var list = arguments.ToList();
+            var at = list.IndexOf("-protocol_whitelist");
+            Assert.True(at >= 0, $"No -protocol_whitelist in: {string.Join(' ', list)}");
+            Assert.Equal(["-protocol_whitelist", "file", "-format_whitelist", "mov,matroska"], list.Skip(at).Take(4));
+            // Input options apply to the input after them, so they come before the source.
+            Assert.True(at < list.IndexOf(source), $"The whitelists come after the source in: {string.Join(' ', list)}");
+        }
+    }
+
+    [Fact]
     public void Encode_arguments_match_the_plan()
     {
         var withAudio = new MediaInfo(Mp4Demuxer, 8, HasAudio: true, 1280, 720, FramesPerSecond: 30);

@@ -28,12 +28,18 @@ public sealed class HlsEncoder(FfmpegRunner runner, IOptions<ProcessingOptions> 
     public Task ThumbnailAsync(string source, MediaInfo info, string outputDirectory, CancellationToken ct)
     {
         Directory.CreateDirectory(outputDirectory);
+        return RunAsync(ThumbnailArguments(source, info, outputDirectory), ct);
+    }
+
+    /// <summary>The thumbnail's command, one argument per entry.</summary>
+    public static IReadOnlyList<string> ThumbnailArguments(string source, MediaInfo info, string outputDirectory)
+    {
         var at = Math.Min(5, info.DurationSeconds / 2).ToString("0.###", CultureInfo.InvariantCulture);
-        return RunAsync(
+        return
         [
             "-nostdin", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,matroska",
             "-ss", at, "-i", source, "-frames:v", "1", "-vf", "scale=-2:360", Path.Combine(outputDirectory, "thumbnail.jpg"),
-        ], ct);
+        ];
     }
 
     /// <summary>
