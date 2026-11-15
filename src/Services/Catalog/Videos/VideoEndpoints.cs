@@ -89,7 +89,7 @@ public static class VideoEndpoints
             Title = request.Title.Trim(),
             Description = request.Description ?? "",
             Status = VideoStatus.Draft,
-            CreatedAt = time.GetUtcNow(),
+            CreatedAt = time.GetUtcNowToMicrosecond(),
         };
         db.Videos.Add(video);
         await db.SaveChangesAsync(ct);

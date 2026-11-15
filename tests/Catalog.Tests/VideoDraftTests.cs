@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -45,6 +46,23 @@ public class VideoDraftTests(SeededCatalogAppFactory factory) : IClassFixture<Se
         Assert.Equal($"/videos/{video.Id}", response.Headers.Location?.OriginalString);
         Assert.Equal(("My first cut", "Draft", null, null), (video.Title, video.Status, video.PublishedAt, video.ThumbnailUrl));
         Assert.True(video.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+
+    [Fact]
+    public async Task Draft_created_at_is_cut_to_microseconds()
+    {
+        // 100 ns ticks past the microsecond: PostgreSQL stores 1 us, so an uncut value in the 201 would differ from the stored one.
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2026, 11, 14, 10, 0, 0, TimeSpan.Zero).AddTicks(1234567));
+        await using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(services => services.AddSingleton<TimeProvider>(clock)));
+        var userId = Guid.NewGuid();
+        var client = app.CreateClient().WithBearer(TestTokens.User(userId, "catalog"));
+        (await client.PostAsJsonAsync("/channels", new CreateChannelRequest("Micro Studio", $"m-{Guid.NewGuid():N}"[..20], null), Ct)).EnsureSuccessStatusCode();
+
+        var video = await CreateVideoAsync(client, "Cut");
+
+        Assert.Equal(clock.GetUtcNow().AddTicks(-(clock.GetUtcNow().Ticks % 10)), video.CreatedAt);
+        var mine = (await client.GetFromJsonAsync<List<MyVideo>>("/me/videos", Ct))!;
+        Assert.Equal(video.CreatedAt, Assert.Single(mine).CreatedAt);
     }
 
     [Fact]
