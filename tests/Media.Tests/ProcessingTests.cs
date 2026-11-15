@@ -10,8 +10,9 @@ namespace NewStore.Media.Tests;
 /// The worker end to end: each test uploads a sample through the API as the browser would, then waits for the status the creator
 /// sees. FFmpeg, PostgreSQL, Kafka and S3 are all real.
 /// </summary>
-public sealed class ProcessingTests(ProcessingFixture media, TimeoutFixture shortTimeout, HandOverFixture handOver, SampleVideos samples)
-    : IClassFixture<ProcessingFixture>, IClassFixture<TimeoutFixture>, IClassFixture<HandOverFixture>
+public sealed class ProcessingTests(
+    ProcessingFixture media, TimeoutFixture shortTimeout, HandOverFixture handOver, LeaseFixture leased, SampleVideos samples)
+    : IClassFixture<ProcessingFixture>, IClassFixture<TimeoutFixture>, IClassFixture<HandOverFixture>, IClassFixture<LeaseFixture>
 {
     /// <summary>Long enough for the 60 s sample to be encoded on a CI runner.</summary>
     private static readonly TimeSpan LongEncode = TimeSpan.FromSeconds(120);
@@ -198,6 +199,103 @@ public sealed class ProcessingTests(ProcessingFixture media, TimeoutFixture shor
         Assert.Empty(await PublishedEventsAsync(shortTimeout, upload));
     }
 
+    [Fact]
+    public async Task Claim_after_the_last_attempt_fails_without_starting()
+    {
+        // The worker of attempt 3 died holding the job (an out-of-memory kill, say): Running, its lease over, no attempts left.
+        var now = Api.Micro(DateTimeOffset.UtcNow);
+        var upload = new SampleUpload(Guid.NewGuid(), Guid.NewGuid(), Guid.CreateVersion7());
+        await media.WithDbAsync(db =>
+        {
+            db.Uploads.Add(new Upload
+            {
+                Id = upload.UploadId,
+                VideoId = upload.VideoId,
+                CreatorId = upload.CreatorId,
+                FileName = "crash.mp4",
+                ContentType = "video/mp4",
+                SizeBytes = Api.MiB,
+                ObjectKey = OriginalOf(upload),
+                S3UploadId = "test",
+                PartSize = Api.MiB,
+                PartCount = 1,
+                Status = UploadStatus.Processing,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CompletedAt = now,
+            });
+            db.ProcessingJobs.Add(new ProcessingJob
+            {
+                Id = Guid.CreateVersion7(),
+                UploadId = upload.UploadId,
+                Status = JobStatus.Running,
+                Attempts = 3,
+                NextRunAt = now.AddMinutes(-10),
+                LockedBy = "dead-worker",
+                LockedUntil = now.AddSeconds(-1),
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+            return db.SaveChangesAsync(Ct);
+        });
+
+        var final = await media.WaitForFinalAsync(upload);
+
+        Assert.Equal(("Failed", "retries-exhausted"), (final.Status, final.FailureReason));
+        var job = await JobAsync(media, upload);
+        Assert.Equal((JobStatus.Failed, 4), (job.Status, job.Attempts));
+        Assert.Contains("stopped without finishing", job.LastError);
+        Assert.Equal(0, media.Store.Downloads(OriginalOf(upload)));   // the fourth claim ended the job without touching the file
+        Assert.Empty(await PublishedEventsAsync(media, upload));
+    }
+
+    [Fact]
+    public async Task Losing_the_lease_stops_the_job_without_writing()
+    {
+        var upload = await leased.UploadAsync(await samples.LongAsync(), "video/mp4");
+        var jobId = (await JobAsync(leased, upload)).Id;
+        leased.Clock.Advance(TimeoutFixture.PollInterval);   // the worker's next poll claims the job
+        var jobDirectory = Path.Combine(leased.WorkDirectory, jobId.ToString());
+        await WaitForFileAsync(Path.Combine(jobDirectory, "out", "v0", "seg_000.ts"));
+        var uploadsBefore = leased.Store.Uploads;
+
+        // Another worker holds the job now, as after this one's lease had run out. The next renewal, a quarter of the lease on,
+        // finds the job is not ours.
+        await leased.WithDbAsync(db => db.ProcessingJobs.Where(j => j.Id == jobId)
+            .ExecuteUpdateAsync(set => set.SetProperty(j => j.LockedBy, "another-worker"), Ct));
+        leased.Clock.Advance(TimeSpan.FromSeconds(31));
+        await WaitUntilAsync(() => !Directory.Exists(jobDirectory));
+        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+
+        // FFmpeg was stopped before it finished: nothing went to S3. The job, the upload and the outbox are as the other worker left them.
+        Assert.Equal(uploadsBefore, leased.Store.Uploads);
+        var job = await JobAsync(leased, upload);
+        Assert.Equal((JobStatus.Running, "another-worker", 1), (job.Status, job.LockedBy, job.Attempts));
+        Assert.Equal("Processing", (await leased.CreateClient().GetAsync(upload.CreatorId, upload.UploadId)).Status);
+        Assert.Empty(await PublishedEventsAsync(leased, upload));
+    }
+
+    [Fact]
+    public async Task Stop_after_the_encode_still_publishes()
+    {
+        // The master playlist is the job's last upload. It waits until the host has begun to stop, then succeeds.
+        var upload = await handOver.UploadAsync(await samples.Mp4Async(), "video/mp4",
+            beforeComplete: u => handOver.Store.HoldUpload(MasterOf(u)));
+
+        await using (handOver.StartWorkerHost())
+        {
+            await handOver.Store.WaitUntilHeldAsync(MasterOf(upload));
+        }
+
+        // The stop came after the work was done, so the outcome is written: a finished encode is not thrown away.
+        var job = await JobAsync(handOver, upload);
+        Assert.Equal((JobStatus.Succeeded, 1), (job.Status, job.Attempts));
+        Assert.Equal("Published", (await handOver.CreateClient().GetAsync(upload.CreatorId, upload.UploadId)).Status);
+        Assert.Single(await PublishedEventsAsync(handOver, upload));
+    }
+
+    private static string MasterOf(SampleUpload upload) => $"{ObjectKeys.HlsPrefix(upload.VideoId, upload.UploadId)}/{ObjectKeys.Master}";
+
     private static string OriginalOf(SampleUpload upload) => ObjectKeys.Original(upload.VideoId, upload.UploadId);
 
     private async Task<string> MasterAsync(SampleUpload upload)
@@ -219,6 +317,16 @@ public sealed class ProcessingTests(ProcessingFixture media, TimeoutFixture shor
             .SqlQuery<string>($"SELECT payload::text AS \"Value\" FROM outbox_messages WHERE topic = {VideoPublished.Topic} AND key = {key}")
             .ToListAsync(Ct));
         return [.. payloads.Select(p => JsonSerializer.Deserialize<VideoPublished>(p, JsonSerializerOptions.Web)!)];
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "Not true within 30 s.");
+            await Task.Delay(TimeSpan.FromMilliseconds(20), Ct);
+        }
     }
 
     private static async Task WaitForFileAsync(string path)

@@ -146,6 +146,15 @@ public sealed class TimeoutFixture : ProcessingFixture
 }
 
 /// <summary>
+/// The worker on the fake clock, with the default lease (2 min, renewed every 30 s) and timeout. A test moves the clock by
+/// <see cref="TimeoutFixture.PollInterval"/> to let the worker claim, and by a quarter of the lease to make it renew.
+/// </summary>
+public sealed class LeaseFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : ProcessingFixture(postgres, kafka, s3)
+{
+    protected override bool UsesSystemClock => false;
+}
+
+/// <summary>
 /// Media without a worker (the role is Api): a test starts worker hosts on this fixture's database and bucket itself, with
 /// <see cref="StartWorkerHost"/>, and stops them when it wants to.
 /// </summary>
@@ -182,20 +191,36 @@ public sealed class WorkerHost(IAsyncDisposable host, string workDirectory) : IA
 }
 
 /// <summary>
-/// Downloads of an armed key fail with S3's 503 <c>SlowDown</c>, as a busy or briefly unreachable S3 answers; uploads are counted.
+/// What a test asks of the object store: downloads of an armed key fail with S3's 503 <c>SlowDown</c>, as a busy or briefly
+/// unreachable S3 answers; the upload of a held key waits until the worker's token is cancelled and then completes; uploads and
+/// each key's downloads are counted.
 /// </summary>
 internal sealed class ObjectStoreSpy
 {
     private readonly ConcurrentDictionary<string, int> _failuresLeft = new();
+    private readonly ConcurrentDictionary<string, int> _downloads = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _held = new();
     private int _uploads;
 
     public int Uploads => Volatile.Read(ref _uploads);
 
+    public int Downloads(string key) => _downloads.GetValueOrDefault(key);
+
     /// <summary>The next <paramref name="times"/> downloads of <paramref name="key"/> fail.</summary>
     public void FailDownloads(string key, int times) => _failuresLeft[key] = times;
 
+    /// <summary>
+    /// The upload of <paramref name="key"/> waits until its token is cancelled (the host is stopping), then goes through
+    /// anyway: the job's last upload succeeds after the stop has begun.
+    /// </summary>
+    public void HoldUpload(string key) => _held[key] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes once the held upload of <paramref name="key"/> has started.</summary>
+    public Task WaitUntilHeldAsync(string key) => _held[key].Task.WaitAsync(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
+
     public bool ShouldFail(string key)
     {
+        _downloads.AddOrUpdate(key, 1, (_, n) => n + 1);
         while (_failuresLeft.TryGetValue(key, out var left) && left > 0)
         {
             if (_failuresLeft.TryUpdate(key, left - 1, left))
@@ -208,6 +233,27 @@ internal sealed class ObjectStoreSpy
     }
 
     public void CountUpload() => Interlocked.Increment(ref _uploads);
+
+    /// <summary>For a held key: says the upload started, waits for <paramref name="ct"/> to be cancelled, and returns true.</summary>
+    public async Task<bool> WaitIfHeldAsync(string key, CancellationToken ct)
+    {
+        if (!_held.TryGetValue(key, out var held))
+        {
+            return false;
+        }
+
+        held.TrySetResult();
+        try
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // The stop began; the upload now completes.
+        }
+
+        return true;
+    }
 }
 
 internal sealed class SpiedObjectStore(IObjectStore inner, ObjectStoreSpy spy) : IObjectStore
@@ -217,10 +263,11 @@ internal sealed class SpiedObjectStore(IObjectStore inner, ObjectStoreSpy spy) :
             ? throw new AmazonS3Exception("Please reduce your request rate.", Amazon.Runtime.ErrorType.Receiver, "SlowDown", "test", HttpStatusCode.ServiceUnavailable)
             : inner.DownloadAsync(key, path, ct);
 
-    public Task UploadAsync(string key, string path, string contentType, string cacheControl, CancellationToken ct)
+    public async Task UploadAsync(string key, string path, string contentType, string cacheControl, CancellationToken ct)
     {
         spy.CountUpload();
-        return inner.UploadAsync(key, path, contentType, cacheControl, ct);
+        var held = await spy.WaitIfHeldAsync(key, ct);
+        await inner.UploadAsync(key, path, contentType, cacheControl, held ? CancellationToken.None : ct);
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct) => inner.ExistsAsync(key, ct);

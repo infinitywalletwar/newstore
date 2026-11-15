@@ -29,17 +29,24 @@ public sealed partial class JobRunner(
     TimeProvider time,
     ILogger<JobRunner> logger)
 {
+    /// <summary>
+    /// How long one outcome write may take. Outcome writes don't take the worker's stop token: a stop that lands after the encode
+    /// must not throw the finished work away, nor leave a failed job Running with its attempt used. Compose's stop grace period
+    /// (30 s) leaves room for it.
+    /// </summary>
+    private static readonly TimeSpan OutcomeBudget = TimeSpan.FromSeconds(10);
+
     private ProcessingOptions Options => options.Value;
 
-    /// <param name="ct">The worker's stop token.</param>
+    /// <param name="ct">The worker's stop token. It stops the work (FFmpeg is killed and the job released), not the outcome writes.</param>
     public async Task RunAsync(ClaimedJob job, string workerId, CancellationToken ct)
     {
         if (job.Attempts > Options.MaxAttempts)
         {
             // The worker of the last attempt died holding the job (a crash, an out-of-memory kill), so its lease ran out and nothing
             // was retried. This claim is one too many.
-            await queue.FailAsync(job.JobId, workerId, "retries-exhausted",
-                $"Claim {job.Attempts} of at most {Options.MaxAttempts}: the worker of the last attempt stopped without finishing.", ct);
+            await WithinBudgetAsync(t => queue.FailAsync(job.JobId, workerId, "retries-exhausted",
+                $"Claim {job.Attempts} of at most {Options.MaxAttempts}: the worker of the last attempt stopped without finishing.", t));
             Failed(logger, job.JobId, "retries-exhausted");
             return;
         }
@@ -57,7 +64,7 @@ public sealed partial class JobRunner(
                 video = await ProcessAsync(job, directory, run.Token);
             }
 
-            await queue.SucceedAsync(job.JobId, workerId, video, ct);
+            await WithinBudgetAsync(t => queue.SucceedAsync(job.JobId, workerId, video, t));
             Published(logger, job.JobId, job.UploadId);
         }
         catch (OperationCanceledException) when (leaseLost.IsCancellationRequested)
@@ -67,18 +74,18 @@ public sealed partial class JobRunner(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // The host is stopping. Not the job's fault, so its attempt is given back; the stop token is already cancelled.
-            await queue.ReleaseAsync(job.JobId, workerId, CancellationToken.None);
+            // The host is stopping. Not the job's fault, so its attempt is given back.
+            await WithinBudgetAsync(t => queue.ReleaseAsync(job.JobId, workerId, t));
             Released(logger, job.JobId);
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            await queue.FailAsync(job.JobId, workerId, "timed-out", $"The job ran longer than {Options.JobTimeout}.", ct);
+            await WithinBudgetAsync(t => queue.FailAsync(job.JobId, workerId, "timed-out", $"The job ran longer than {Options.JobTimeout}.", t));
             Failed(logger, job.JobId, "timed-out");
         }
         catch (PermanentProcessingException ex)
         {
-            await queue.FailAsync(job.JobId, workerId, ex.Reason, ex.Message, ct);
+            await WithinBudgetAsync(t => queue.FailAsync(job.JobId, workerId, ex.Reason, ex.Message, t));
             Failed(logger, job.JobId, ex.Reason);
         }
         catch (Exception ex)
@@ -86,12 +93,12 @@ public sealed partial class JobRunner(
             var error = Describe(ex);
             if (job.Attempts >= Options.MaxAttempts)
             {
-                await queue.FailAsync(job.JobId, workerId, "retries-exhausted", error, ct);
+                await WithinBudgetAsync(t => queue.FailAsync(job.JobId, workerId, "retries-exhausted", error, t));
                 Failed(logger, job.JobId, "retries-exhausted");
             }
             else
             {
-                await queue.RetryLaterAsync(job.JobId, workerId, error, ct);
+                await WithinBudgetAsync(t => queue.RetryLaterAsync(job.JobId, workerId, error, t));
                 WillRetry(logger, ex, job.JobId, job.Attempts);
             }
         }
@@ -99,6 +106,12 @@ public sealed partial class JobRunner(
         {
             DeleteDirectory(directory);
         }
+    }
+
+    private static async Task WithinBudgetAsync(Func<CancellationToken, Task> write)
+    {
+        using var budget = new CancellationTokenSource(OutcomeBudget);
+        await write(budget.Token);
     }
 
     private async Task<PublishedVideo> ProcessAsync(ClaimedJob job, string directory, CancellationToken ct)
