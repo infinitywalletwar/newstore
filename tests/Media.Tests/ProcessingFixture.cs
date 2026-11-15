@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+using NewStore.Media.Processing;
 using NewStore.Media.Storage;
 
 namespace NewStore.Media.Tests;
@@ -36,6 +37,9 @@ public class ProcessingFixture : MediaFixture
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public string WorkDirectory { get; } = NewWorkDirectory();
+
+    /// <summary>Where the worker puts a job's files: one folder per job.</summary>
+    public string JobsDirectory => Path.Combine(WorkDirectory, ProcessingOptions.JobsFolder);
 
     /// <summary>Makes S3 fail the next downloads of a key, and counts uploads.</summary>
     internal ObjectStoreSpy Store { get; } = new();
@@ -163,9 +167,9 @@ public sealed class HandOverFixture(PostgresServer postgres, KafkaServer kafka, 
     protected override MediaRole Role => MediaRole.Api;
 
     /// <summary>A second app on the same database and bucket that runs the worker, with its own work directory and consumer group.</summary>
-    public WorkerHost StartWorkerHost()
+    public WorkerHost StartWorkerHost(string? directory = null)
     {
-        var directory = NewWorkDirectory();
+        directory ??= NewWorkDirectory();
         var host = WithWebHostBuilder(builder => builder
             .UseSetting("Media:Role", nameof(MediaRole.All))
             .UseSetting("Media:Processing:WorkDirectory", directory)
@@ -179,6 +183,8 @@ public sealed class HandOverFixture(PostgresServer postgres, KafkaServer kafka, 
 public sealed class WorkerHost(IAsyncDisposable host, string workDirectory) : IAsyncDisposable
 {
     public string WorkDirectory { get; } = workDirectory;
+
+    public string JobsDirectory => Path.Combine(WorkDirectory, ProcessingOptions.JobsFolder);
 
     public async ValueTask DisposeAsync()
     {

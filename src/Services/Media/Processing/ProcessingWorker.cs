@@ -16,7 +16,7 @@ public sealed partial class ProcessingWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A job that was running when this container last died left its files here; its lease runs out and another claim redoes it.
-        EmptyWorkDirectory();
+        EmptyJobsDirectory();
         using var timer = new PeriodicTimer(options.Value.PollInterval, time);
         try
         {
@@ -59,9 +59,10 @@ public sealed partial class ProcessingWorker(
         }
     }
 
-    private void EmptyWorkDirectory()
+    /// <summary>Empties only <c>{WorkDirectory}/jobs</c>, the folder the worker creates: it never deletes a file it did not make.</summary>
+    private void EmptyJobsDirectory()
     {
-        var directory = Directory.CreateDirectory(options.Value.WorkDirectory);
+        var directory = Directory.CreateDirectory(Path.Combine(options.Value.WorkDirectory, ProcessingOptions.JobsFolder));
         foreach (var entry in directory.EnumerateFileSystemInfos())
         {
             if (entry is DirectoryInfo folder)
