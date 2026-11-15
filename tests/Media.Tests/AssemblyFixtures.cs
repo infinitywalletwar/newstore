@@ -3,3 +3,5 @@
 [assembly: AssemblyFixture(typeof(NewStore.Media.Tests.S3Server))]
 [assembly: AssemblyFixture(typeof(NewStore.TestSupport.PostgresServer))]
 [assembly: AssemblyFixture(typeof(NewStore.TestSupport.KafkaServer))]
+// The FFmpeg samples, each made once per run when a test first asks for it.
+[assembly: AssemblyFixture(typeof(NewStore.Media.Tests.SampleVideos))]

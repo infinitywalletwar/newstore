@@ -836,7 +836,7 @@ public sealed class ProcessingWorker : BackgroundService;
 
   `media-worker` depends on postgres, media-migrate (completed), kafka and floci. `media-migrate` moves to `newstore/media-worker:local` and 1g, because its seed runs FFmpeg.
 
-- [ ] **Step 1: FFmpeg, failing tests, then code**
+- [x] **Step 1: FFmpeg, failing tests, then code**
 
 `SampleVideos` makes samples once per test run with the local `ffmpeg` and `lavfi` (8 s unless noted; 1280x720 with audio; a long one: 60 s, 1280x720, with audio; no audio; 720x1280 portrait; MOV; WebM with VP9 and Opus; 200 KB of random bytes named `.mp4`; an HLS playlist naming `file:///etc/hosts`, named `.mp4`). Without `ffmpeg` on `PATH` it fails with "Media's tests need FFmpeg: brew install ffmpeg, or apt-get install ffmpeg".
 
