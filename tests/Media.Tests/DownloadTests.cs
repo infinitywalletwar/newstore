@@ -172,14 +172,19 @@ public sealed class DownloadTests(MediaFixture media, KafkaServer kafka) : IClas
         var first = Copy(owner, videoId, editionId: edition);
         var marker = Copy(Guid.NewGuid(), videoId, editionId: edition);
 
-        // The same message id twice, then a marker with the same key: one partition keeps the order, so the marker's inbox row
-        // means the duplicate has been consumed too.
+        // The same message id twice (the second one claims another copy number), then a marker with the same key: one partition keeps
+        // the order, so the marker's inbox row means the duplicate has been consumed too.
+        var duplicate = first with { CopyNumber = 2 };
         await PublishAsync(first);
-        await PublishAsync(first);
+        await PublishAsync(duplicate);
         await PublishAsync(marker);
         await WaitForHandledAsync(marker);
 
-        Assert.Equal(1, await InboxCountAsync(first.EventId));
+        // One inbox row for the two deliveries: the second was skipped, not run again (ON CONFLICT would hide a second run).
+        var inboxRows = await media.WithDbAsync(db => db.Database
+            .SqlQuery<long>($"SELECT count(*) AS \"Value\" FROM inbox_messages WHERE message_id IN ({first.EventId}, {duplicate.EventId})")
+            .SingleAsync(Ct));
+        Assert.Equal(1, inboxRows);
         Assert.Equal(1, await CopiesAsync(owner, videoId));
     }
 
