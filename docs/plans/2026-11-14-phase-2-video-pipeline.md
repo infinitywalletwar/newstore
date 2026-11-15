@@ -849,7 +849,7 @@ public sealed class ProcessingWorker : BackgroundService;
 
 Commit: `feat(media): FFmpeg and ffprobe without a shell, killed on cancellation`.
 
-- [ ] **Step 2: The job queue, failing tests, then code**
+- [x] **Step 2: The job queue, failing tests, then code**
 
 `JobQueueTests` with a `FakeTimeProvider`:
 - `Claim_takes_the_oldest_due_job_and_counts_the_attempt`
