@@ -1087,15 +1087,15 @@ Branch `phase-2/done-2`. Issue #122. Owns the Compose stack. Closes V-1, V-2 and
   - Media and the worker are healthy.
   - `GET http://localhost:8101/videos/00000000-0000-7000-8001-000000000011` has a `playbackUrl` that answers 200 anonymously.
 
-- [ ] **Step 1: The browser test**
+- [x] **Step 1: The browser test**
 
 Write the spec, the projects and the CI steps. Run them in CI only. Expected: green; if Chrome can't play, stop and report the trace. Commit: `test(e2e): a creator uploads a video that plays, and a broken one fails`.
 
-- [ ] **Step 2: The 1 GB test and the nightly job**
+- [x] **Step 2: The 1 GB test and the nightly job**
 
 Run it on the Mac: `dotnet test --project tests/Media.Tests --explicit only --filter-method "*A_1_GB_upload_becomes_playable"`. Add `nightly.yml`, and record the Mac run's stage times in ADR 0020's measurements. A `workflow_dispatch` workflow can be dispatched only once it is on the default branch, so this PR cannot run it. After the merge, the main session dispatches `gh workflow run nightly` (after the owner's go-ahead, since it runs on GitHub) and opens a small docs PR with the CI run's times in ADR 0020. Commit: `test(media): a 1 GB upload becomes playable, nightly and on demand`.
 
-- [ ] **Step 3: CI, docs, pull request**
+- [x] **Step 3: CI, docs, pull request**
 
 1. The `compose-smoke` checks.
 2. **README:** the status line says Phase 2 is done, waiting for the owner's checks; add `tests/Media.Tests/` and `.github/workflows/nightly.yml` to the layout.

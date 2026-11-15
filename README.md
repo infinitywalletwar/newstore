@@ -4,7 +4,7 @@ newstore is a video platform with a store built in. Creators upload videos, and 
 
 It's a home practice project, not a business. Its purpose is hands-on practice with the skills a senior ASP.NET Core backend developer is expected to have, and a chance to learn new ones.
 
-> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) in progress, following [its plan](docs/plans/2026-11-14-phase-2-video-pipeline.md). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
+> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) is done, following [its plan](docs/plans/2026-11-14-phase-2-video-pipeline.md); it waits for the owner's checks (the by-hand upload, resume and purchase, and the mock interview). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Goals
 
@@ -280,13 +280,14 @@ newstore/
 ├── web/              the Angular app
 │   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it
 │   studio/ (video creation, resumable uploads straight to S3, processing status), videos/ also holds the hls.js player; copies/ has the Download button
+├── .github/workflows/  ci.yml (every pull request) and nightly.yml (the 1 GB upload, nightly and on demand)
 ├── compose.load.yaml overlay for the k6 load test: a short reservation TTL, FakePay's test endpoints and the k6 service
 ├── tests/            unit, integration, contract and load tests
 │   ├── load/         k6 scripts and how to run them
-│   ├── e2e/          Playwright: a new buyer signs up and buys a copy in the browser (CI only)
+│   ├── e2e/          Playwright (CI only): a new buyer buys a copy in Chromium; a creator uploads a video that plays in Chrome, and a broken file fails
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
 │   ├── Orders.Tests/     buy, pay and the checkout saga against real PostgreSQL and Kafka, with stubs for Inventory and Payments
-│   ├── Media.Tests/      uploads against real PostgreSQL, Kafka and Floci (the local S3); the test plays the browser
+│   ├── Media.Tests/      uploads, the worker and downloads against real PostgreSQL, Kafka and Floci (the local S3), with the test playing the browser; `LargeUploadTests` is the 1 GB test, run by the nightly workflow
 │   ├── Gateway.Tests/    sign-in, sessions and routing against real Keycloak and Redis
 │   └── Shared/       NewStore.TestSupport: the app factory, span sink, and the PostgreSQL and Kafka servers every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool

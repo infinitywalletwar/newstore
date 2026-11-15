@@ -116,6 +116,20 @@ jobs:
           echo "$version" | grep -q -- '--enable-libx264'
       - name: The seeded sample plays at 720p
         run: curl --fail --silent --show-error http://localhost:4566/newstore-media/hls/sample/master.m3u8 | grep -q 'RESOLUTION=1280x720'
+      - name: The seeded video's playback URL answers anonymously
+        # Catalog builds playbackUrl from the video's HLS path; the player fetches exactly this address.
+        run: |
+          url="$(curl --fail --silent --show-error http://localhost:8101/videos/00000000-0000-7000-8001-000000000011 | jq -er '.playbackUrl')"
+          echo "playbackUrl: $url"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 200
+      - name: Media and the worker are healthy
+        run: |
+          for service in media media-worker; do
+            id="$(docker compose -f compose.yaml -f compose.load.yaml ps --quiet "$service")"
+            health="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
+            echo "$service: $health"
+            test "$health" = healthy
+          done
       - name: The sample's original is private
         run: test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4566/newstore-media/originals/sample.mp4)" = 403
       - name: Show logs
@@ -129,7 +143,8 @@ jobs:
   # stack with the load overlay's 30-second TTL. The owner's rule is no browser on the Mac, so this job is the only place it runs.
   e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # 30, not 20: the video test waits up to 3 minutes twice for the worker's FFmpeg, and the job installs Chrome as well as Chromium.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -145,6 +160,8 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8103/health/ready
       - name: FakePay is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8105/health/ready
+      - name: Media is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8106/health/ready
       - name: Catalog lists the seeded edition of the sample video
         # The snapshot travels Inventory, Kafka, Catalog. Without the wait the video page can list no edition when the test opens it.
         run: |
@@ -156,11 +173,22 @@ jobs:
           done
           echo "The sample video has no seeded edition (1000 copies) after 30 s" >&2
           exit 1
-      - name: Install the test and Chromium
+      - name: Install the test, Chromium and Chrome
+        # Chrome is for video.spec.ts: Playwright's Chromium lacks some codecs (tests/e2e/playwright.config.ts).
         working-directory: tests/e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium chrome
+      - name: Make the video test's files
+        # The stack is up, so the worker image exists and the runner needs no FFmpeg: the sample is made inside that image.
+        run: |
+          mkdir -p tests/e2e/fixtures
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/tests/e2e/fixtures:/out" --entrypoint ffmpeg newstore/media-worker:local \
+            -nostdin -y -hide_banner -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=25:duration=8 \
+            -f lavfi -i sine=frequency=440:sample_rate=48000:duration=8 -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 128k /out/sample.mp4
+          head -c 2097152 /dev/urandom > tests/e2e/fixtures/broken.mp4
+          ls -l tests/e2e/fixtures
       - name: Run the browser test
         working-directory: tests/e2e
         run: npx playwright test
