@@ -221,7 +221,7 @@ describe('pages', () => {
     });
     backend.expectOne('/api/me/copies').flush([copy(1, 'Digital'), copy(2, 'Physical')]);
     f.detectChanges();
-    expect(q(f, 'download') ).not.toBeNull();
+    expect(q(f, 'download')).not.toBeNull();
     expect((f.nativeElement as HTMLElement).querySelectorAll('[data-testid="download"]')).toHaveLength(1);
 
     q(f, 'download')!.click();

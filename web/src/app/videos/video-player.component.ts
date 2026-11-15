@@ -1,5 +1,5 @@
 import { Component, ElementRef, effect, input, signal, viewChild } from '@angular/core';
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
 
 /**
  * Plays an HLS master playlist. Order matters (hls.js README: check `Hls.isSupported()` first): hls.js through Media
@@ -34,28 +34,47 @@ export class VideoPlayerComponent {
   private hls: Hls | null = null;
 
   constructor() {
-    // The cleanup runs before the effect runs again (a new `src`) and when the component is destroyed.
+    // The cleanup runs before the effect runs again (a new `src`) and when the component is destroyed. hls.js is loaded
+    // with `import()`, so only a page that shows a player downloads it; `cancelled` covers a destroy during that load.
     effect((onCleanup) => {
       const src = this.src();
       const video = this.video().nativeElement;
+      let cancelled = false;
+      onCleanup(() => {
+        cancelled = true;
+        this.release();
+      });
       this.failed.set(false);
       this.heights.set([]);
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.on(Hls.Events.MANIFEST_PARSED, () => this.heights.set(hls.levels.map((level) => level.height)));
-        hls.loadSource(src);
-        hls.attachMedia(video);
-        this.hls = hls;
-        onCleanup(() => {
-          hls.destroy();
-          this.hls = null;
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-      } else {
-        this.failed.set(true);
-      }
+      void import('hls.js').then(({ default: Hls }) => {
+        if (cancelled) {
+          return;
+        }
+        if (Hls.isSupported()) {
+          const hls = new Hls();
+          this.hls = hls;
+          hls.on(Hls.Events.MANIFEST_PARSED, () => this.heights.set(hls.levels.map((level) => level.height)));
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) {
+              this.release();
+              this.heights.set([]);
+              this.failed.set(true);
+            }
+          });
+          hls.loadSource(src);
+          hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = src;
+        } else {
+          this.failed.set(true);
+        }
+      });
     });
+  }
+
+  private release(): void {
+    this.hls?.destroy();
+    this.hls = null;
   }
 
   /** `-1` is Auto: hls.js picks the variant by bandwidth. Any other value pins the variant at that index of `hls.levels`. */

@@ -1,10 +1,10 @@
 import { HttpClient } from '@angular/common/http';
-import { BROWSER_LOCATION } from '../api/browser-location';
-import { problemTitle } from '../api/problem';
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { BROWSER_LOCATION } from '../api/browser-location';
 import { DownloadLink, MyCopy } from '../api/models';
+import { problemTitle } from '../api/problem';
 
 @Component({
   selector: 'app-my-copies',
@@ -56,7 +56,7 @@ export class MyCopiesComponent {
     });
   }
 
-  /** Asks for a presigned link to the original and sends the browser to it: S3 answers with the file as an attachment. */
+  /** Asks for a presigned link to the original and sends the browser to it. */
   protected download(copy: MyCopy): void {
     this.downloadError.set(null);
     this.http.post<DownloadLink>('/api/downloads', { videoId: copy.videoId }).subscribe({

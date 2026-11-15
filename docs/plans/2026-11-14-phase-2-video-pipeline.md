@@ -1034,7 +1034,7 @@ Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `
 
 Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 
-- [ ] **Step 3: The image, pull request**
+- [x] **Step 3: The image, pull request**
 
 1. `docker compose build gateway`: the image's `npm ci` installs `hls.js`.
 2. **Walkthrough diagram:** a sequence diagram of an upload interrupted by a reload, from the browser's side, ending in complete. Interview questions:

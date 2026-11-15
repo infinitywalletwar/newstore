@@ -12,7 +12,7 @@ import { Uploader } from './uploader';
 const hls = vi.hoisted(() => ({ supported: true, instances: [] as Array<Record<string, any>> }));
 vi.mock('hls.js', () => {
   class FakeHls {
-    static Events = { MANIFEST_PARSED: 'hlsManifestParsed' };
+    static Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError' };
     static isSupported = () => hls.supported;
     levels = [{ height: 360 }, { height: 720 }];
     currentLevel = -1;
@@ -202,6 +202,89 @@ describe('uploader', () => {
     backend.verify();
   });
 
+  it('Refreshes_once_when_every_part_gets_a_403_together', async () => {
+    const { backend, uploader } = setup();
+    const done = uploader.resume(summary(), file(), vi.fn());
+    backend.expectOne('/api/uploads/u1').flush(state());
+    await tick();
+
+    [1, 2, 3].forEach((n) => backend.expectOne(s3(n)).flush('expired', { status: 403, statusText: 'Forbidden' }));
+    await tick();
+    const get = backend.expectOne('/api/uploads/u1');
+    get.flush(state({ partUrls: [1, 2, 3].map((n) => ({ partNumber: n, url: s3(n, 2), size: n === 3 ? 5 : 10 })) }));
+    await tick();
+
+    backend.expectNone('/api/uploads/u1');
+    [1, 2, 3].forEach((n) => backend.expectOne(s3(n, 2)).flush(null, etag(`"e${n}"`)));
+    await tick();
+    backend.expectOne('/api/uploads/u1/complete').flush(state({ status: 'Processing', partUrls: [] }));
+    await done;
+    backend.verify();
+  });
+
+  it('Keeps_at_most_three_parts_in_flight', async () => {
+    const { backend, uploader } = setup();
+    const big = new File([new Uint8Array(70)], 'a.mp4', { type: 'video/mp4' });
+    const urls = Array.from({ length: 7 }, (_, i) => ({ partNumber: i + 1, url: s3(i + 1), size: 10 }));
+    const done = uploader.resume(summary({ sizeBytes: 70 }), big, vi.fn());
+    backend.expectOne('/api/uploads/u1').flush(state({ sizeBytes: 70, partCount: 7, partUrls: urls }));
+    await tick();
+
+    const open: TestRequest[] = [];
+    let max = 0;
+    let finished = 0;
+    const pump = () => {
+      open.push(...backend.match((r) => r.url.startsWith('http://localhost:4566/')));
+      max = Math.max(max, open.length);
+    };
+    pump();
+    expect(open).toHaveLength(3);
+    while (open.length > 0) {
+      open.shift()!.flush(null, etag(`"e${++finished}"`));
+      await tick();
+      pump();
+    }
+
+    expect(max).toBe(3);
+    expect(finished).toBe(7);
+    backend.expectOne('/api/uploads/u1/complete').flush(state({ status: 'Processing', partUrls: [] }));
+    await done;
+  });
+
+  it('Stops_when_aborted_and_makes_no_further_request', async () => {
+    const { backend, uploader } = setup();
+    const abort = new AbortController();
+    const done = uploader.upload('v1', file(), vi.fn(), abort.signal);
+    const failure = done.catch((e: unknown) => e);
+    backend.expectOne('/api/uploads').flush(state({ partCount: 1, partSize: 25, partUrls: [{ partNumber: 1, url: s3(1), size: 25 }] }));
+    await tick();
+    const put = backend.expectOne(s3(1));
+    put.error(new ProgressEvent('error'));
+    await tick(10); // now waiting to retry
+
+    abort.abort();
+    await tick(60_000);
+
+    expect(((await failure) as Error).name).toBe('AbortError');
+    backend.expectNone(s3(1));
+    backend.expectNone('/api/uploads/u1/complete');
+  });
+
+  it('Cancels_the_request_in_flight_when_aborted', async () => {
+    const { backend, uploader } = setup();
+    const abort = new AbortController();
+    const failure = uploader.upload('v1', file(), vi.fn(), abort.signal).catch((e: unknown) => e);
+    backend.expectOne('/api/uploads').flush(state({ partCount: 1, partSize: 25, partUrls: [{ partNumber: 1, url: s3(1), size: 25 }] }));
+    await tick();
+    const put = backend.expectOne(s3(1));
+
+    abort.abort();
+    await tick();
+
+    expect(put.cancelled).toBe(true);
+    expect(((await failure) as Error).name).toBe('AbortError');
+  });
+
   it('S3_requests_carry_no_csrf_header', async () => {
     const { backend, uploader } = setup();
     const done = uploader.upload('v1', file(), vi.fn());
@@ -303,7 +386,7 @@ describe('studio', () => {
     input.dispatchEvent(new Event('change'));
     await tick();
 
-    expect(uploader.resume).toHaveBeenCalledWith(upload, chosen, expect.any(Function));
+    expect(uploader.resume).toHaveBeenCalledWith(upload, chosen, expect.any(Function), expect.any(AbortSignal));
     backend.expectOne('/api/me/uploads').flush([summary({ status: 'Processing' })]);
   });
 
@@ -338,6 +421,45 @@ describe('studio', () => {
     expect(q(f, 'upload-status')!.textContent).toContain('Published');
   });
 
+  it('Studio_blocks_a_second_upload_while_one_is_in_flight', async () => {
+    const { uploader, open } = studioSetup();
+    uploader.upload.mockImplementation((_id: string, _file: File, progress: (s: number, t: number) => void) => {
+      progress(5, 25);
+      return new Promise(() => {});
+    });
+    const f = await open([myVideo()], []);
+
+    const input = q(f, 'upload-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+    f.detectChanges();
+
+    expect(q(f, 'upload-status')!.textContent).toContain('Uploading');
+    expect(q(f, 'upload-progress')).not.toBeNull();
+    expect(q(f, 'upload-file')).toBeNull();
+    expect(q(f, 'resume-file')).toBeNull();
+  });
+
+  it('Studio_aborts_an_upload_when_destroyed', async () => {
+    const { backend, uploader, open } = studioSetup();
+    let signal: AbortSignal | undefined;
+    uploader.upload.mockImplementation((_id: string, _file: File, _p: unknown, s: AbortSignal) => {
+      signal = s;
+      return new Promise(() => {});
+    });
+    const f = await open([myVideo()], []);
+    const input = q(f, 'upload-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+
+    f.destroy();
+
+    expect(signal?.aborted).toBe(true);
+    backend.verify();
+  });
+
   it('Studio_stops_polling_when_destroyed', async () => {
     const { backend, open } = studioSetup();
     const f = await open([myVideo()], [summary({ status: 'Processing' })]);
@@ -356,15 +478,19 @@ describe('player', () => {
     TestBed.configureTestingModule({});
   });
 
-  function player(src = 'http://localhost:4566/newstore-media/hls/v1/master.m3u8') {
+  /** hls.js loads with `import()`, so the player is ready one `whenStable` later. */
+  async function player(src = 'http://localhost:4566/newstore-media/hls/v1/master.m3u8') {
     const f = TestBed.createComponent(VideoPlayerComponent);
     f.componentRef.setInput('src', src);
+    f.detectChanges();
+    await f.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     f.detectChanges();
     return f;
   }
 
-  it('Player_loads_the_playback_url_with_hls_js_and_destroys_it', () => {
-    const f = player();
+  it('Player_loads_the_playback_url_with_hls_js_and_destroys_it', async () => {
+    const f = await player();
 
     expect(hls.instances).toHaveLength(1);
     expect(hls.instances[0]['loadSource']).toHaveBeenCalledWith('http://localhost:4566/newstore-media/hls/v1/master.m3u8');
@@ -375,21 +501,21 @@ describe('player', () => {
     expect(hls.instances[0]['destroy']).toHaveBeenCalledTimes(1);
   });
 
-  it('Player_uses_native_hls_when_hls_js_is_unsupported_and_errors_otherwise', () => {
+  it('Player_uses_native_hls_when_hls_js_is_unsupported_and_errors_otherwise', async () => {
     hls.supported = false;
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
-    const native = player('http://x/master.m3u8');
+    const native = await player('http://x/master.m3u8');
     expect(hls.instances).toHaveLength(0);
     expect((q(native, 'player') as HTMLVideoElement).src).toBe('http://x/master.m3u8');
     expect(q(native, 'player-error')).toBeNull();
 
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('');
-    const none = player();
+    const none = await player();
     expect(q(none, 'player-error')).not.toBeNull();
   });
 
-  it('Quality_menu_lists_the_variants_and_switches', () => {
-    const f = player();
+  it('Quality_menu_lists_the_variants_and_switches', async () => {
+    const f = await player();
     const instance = hls.instances[0];
     const onParsed = instance['on'].mock.calls.find(([event]: [string]) => event === 'hlsManifestParsed')[1] as () => void;
     onParsed();
@@ -404,5 +530,20 @@ describe('player', () => {
     menu.value = '-1';
     menu.dispatchEvent(new Event('change'));
     expect(instance['currentLevel']).toBe(-1);
+  });
+
+  it('Player_shows_an_error_and_frees_hls_js_after_a_fatal_error', async () => {
+    const f = await player();
+    const instance = hls.instances[0];
+    const onError = instance['on'].mock.calls.find(([event]: [string]) => event === 'hlsError')[1] as (e: string, d: { fatal: boolean }) => void;
+
+    onError('hlsError', { fatal: false });
+    f.detectChanges();
+    expect(q(f, 'player-error')).toBeNull();
+
+    onError('hlsError', { fatal: true });
+    f.detectChanges();
+    expect(q(f, 'player-error')).not.toBeNull();
+    expect(instance['destroy']).toHaveBeenCalled();
   });
 });

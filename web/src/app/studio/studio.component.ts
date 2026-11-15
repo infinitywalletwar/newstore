@@ -1,5 +1,6 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { MyVideo, Problem, TERMINAL_UPLOAD_STATUSES, UploadSummary } from '../api/models';
 import { Uploader } from './uploader';
@@ -32,11 +33,14 @@ const FAILURE_REASONS: Record<string, string> = {
       @let upload = uploads()[video.id];
       <div class="card" data-testid="studio-row" [attr.data-video-id]="video.id">
         <strong>{{ video.title }}</strong>
-        <span data-testid="upload-status">{{ upload ? upload.status : 'Draft' }}</span>
+        @let busy = progress()[video.id];
+        <span data-testid="upload-status">{{ busy ? 'Uploading' : upload ? upload.status : 'Draft' }}</span>
         @if (upload?.status === 'Failed') {
           <span data-testid="failure-reason">{{ reason(upload!.failureReason) }}</span>
         }
-        @if (!upload || upload.status === 'Failed' || upload.status === 'Expired') {
+        @if (busy) {
+          <!-- An upload or resume is running: no second one may start. -->
+        } @else if (!upload || upload.status === 'Failed' || upload.status === 'Expired') {
           <input type="file" accept="video/mp4,video/quicktime" aria-label="Choose a video file" data-testid="upload-file" (change)="start(video, $any($event.target).files?.[0])" />
         } @else if (upload.status === 'Uploading') {
           <label>
@@ -72,10 +76,14 @@ export class StudioComponent {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private waitedMs = 0;
   private destroyed = false;
+  private readonly destroyRef = inject(DestroyRef);
+  /** Aborted on destroy: stops retry timers and in-flight PUTs. The parts already on S3 stay, so the upload can be resumed later. */
+  private readonly abort = new AbortController();
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       this.destroyed = true;
+      this.abort.abort();
       clearTimeout(this.timer);
     });
     void this.loadAll();
@@ -99,22 +107,28 @@ export class StudioComponent {
 
   protected start(video: MyVideo, file: File | undefined): void {
     if (file) {
-      void this.run(video.id, (progress) => this.uploader.upload(video.id, file, progress));
+      void this.run(video.id, file.size, (progress) => this.uploader.upload(video.id, file, progress, this.abort.signal));
     }
   }
 
   protected resume(upload: UploadSummary, file: File | undefined): void {
     if (file) {
-      void this.run(upload.videoId, (progress) => this.uploader.resume(upload, file, progress));
+      void this.run(upload.videoId, file.size, (progress) => this.uploader.resume(upload, file, progress, this.abort.signal));
     }
   }
 
-  private async run(videoId: string, send: (progress: (sent: number, total: number) => void) => Promise<unknown>): Promise<void> {
+  private async run(videoId: string, total: number, send: (progress: (sent: number, total: number) => void) => Promise<unknown>): Promise<void> {
     this.setRowError(videoId, null);
+    this.progress.update((p) => ({ ...p, [videoId]: { sent: 0, total } }));
     try {
       await send((sent, total) => this.progress.update((p) => ({ ...p, [videoId]: { sent, total } })));
     } catch (error) {
-      this.setRowError(videoId, uploadErrorMessage(error));
+      if (!this.destroyed) {
+        this.setRowError(videoId, uploadErrorMessage(error));
+      }
+    }
+    if (this.destroyed) {
+      return;
     }
     this.progress.update(({ [videoId]: _done, ...rest }) => rest);
     await this.loadUploads();
@@ -130,7 +144,7 @@ export class StudioComponent {
 
   private async loadVideos(): Promise<void> {
     try {
-      this.videos.set(await firstValueFrom(this.http.get<MyVideo[]>('/api/me/videos')));
+      this.videos.set(await firstValueFrom(this.http.get<MyVideo[]>('/api/me/videos').pipe(takeUntilDestroyed(this.destroyRef))));
     } catch {
       this.error.set('Could not load your videos.');
     }
@@ -140,7 +154,7 @@ export class StudioComponent {
   private async loadUploads(): Promise<void> {
     clearTimeout(this.timer);
     try {
-      const list = await firstValueFrom(this.http.get<UploadSummary[]>('/api/me/uploads'));
+      const list = await firstValueFrom(this.http.get<UploadSummary[]>('/api/me/uploads').pipe(takeUntilDestroyed(this.destroyRef)));
       const before = this.uploads();
       this.uploads.set(Object.fromEntries(list.map((u) => [u.videoId, u])));
       // A video that just reached a terminal status has a new status and thumbnail in Catalog.
