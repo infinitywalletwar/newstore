@@ -419,9 +419,6 @@ services:
       Media__Storage__PublicServiceUrl: http://localhost:4566
       Media__Storage__AccessKey: test
       Media__Storage__SecretKey: test
-      Media__Storage__CorsOrigins__0: http://localhost:8100
-      Media__Storage__CorsOrigins__1: http://localhost:4200
-      Media__Storage__CorsOrigins__2: http://localhost:5100
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: media
     ports: ["127.0.0.1:8106:8080"]

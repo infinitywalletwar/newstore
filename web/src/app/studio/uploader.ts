@@ -32,7 +32,9 @@ interface Run {
  * sends only the rest. The requests to S3 go through `HttpClient` like any other, but `csrfInterceptor` only touches
  * our own origin's `/api` and `/auth`, and a cross-origin request carries no cookie unless `withCredentials` is set
  * (MDN, "Using XMLHttpRequest": https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/withCredentials): S3
- * sees neither. An `AbortSignal` stops the run; the parts already on S3 stay there for `resume`.
+ * sees neither on these requests. (Thumbnail `<img>` requests and the download navigation do carry the cookie to S3 on this
+ * local stack: `localhost:8100` and `localhost:4566` are the same site and "Cookies do not provide isolation by port",
+ * RFC 6265 section 8.5, https://www.rfc-editor.org/rfc/rfc6265#section-8.5. Production needs a separate S3 or CDN domain.) An `AbortSignal` stops the run; the parts already on S3 stay there for `resume`.
  */
 @Injectable({ providedIn: 'root' })
 export class Uploader {

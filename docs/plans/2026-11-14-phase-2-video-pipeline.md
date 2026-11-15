@@ -989,7 +989,7 @@ Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser
 
   If Task 1's `Listed_etags_complete_the_upload` failed, Task 7's `Uploader` also reports each part's ETag to Media with `POST /api/uploads/{id}/parts`, after each part's PUT. The main session states which case applies in the dispatch.
 
-  The S3 requests are cross-origin: `csrfInterceptor` adds nothing to them, and `HttpClient` sends no cookie without `withCredentials`, so no session cookie reaches S3.
+  The S3 requests are cross-origin: `csrfInterceptor` adds nothing to them, and `HttpClient` sends no cookie without `withCredentials`, so the upload's requests to S3 carry no session cookie. Thumbnail `<img>` requests and the download navigation do reach S3 with the cookie, because `localhost:8100` and `localhost:4566` are the same site: "Cookies do not provide isolation by port" ([RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5); [MDN, same-site](https://developer.mozilla.org/en-US/docs/Glossary/Site)). That is harmless on a local-only stack; in production the S3 or CDN domain must be a different registrable domain from the app.
 - **The studio page** (`studio`):
   - A new-video form (`POST /api/videos`), then a file input.
   - A row per video from `/api/me/videos`, joined by `videoId` with `/api/me/uploads`. Each row shows the status: `Draft` without an upload, else the upload's status.
@@ -1040,7 +1040,7 @@ Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 2. **Walkthrough diagram:** a sequence diagram of an upload interrupted by a reload, from the browser's side, ending in complete. Interview questions:
    - "How does the browser resume an upload after the page is reloaded?"
    - "Why does the player check `Hls.isSupported()` before the native HLS path?"
-   - "Why do the requests to S3 carry neither the session cookie nor the CSRF header?"
+   - "Why do the upload's requests to S3 carry neither the session cookie nor the CSRF header, and why can a thumbnail request still carry the cookie?"
 
 ---
 

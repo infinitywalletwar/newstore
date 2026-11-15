@@ -348,7 +348,7 @@ newstore/
   - Delivery uses a pin on a map instead of address lookup, one warehouse and sped-up couriers.
 - Tools:
   - newstore gets its own GitHub repository.
-  - Docker Compose for daily work.
+  - Docker Compose for daily work. After you pull a change that adds a service, a database role or a realm client, run `docker compose down -v` once. PostgreSQL runs its init scripts only when the data directory is empty ([postgres image](https://hub.docker.com/_/postgres), "Initialization scripts"), and Keycloak's `--import-realm` skips a realm that already exists ("If a realm already exists in the server, the import operation is skipped.", [Keycloak import and export](https://www.keycloak.org/server/importExport)); `compose.yaml` starts Keycloak with `start-dev --import-realm`, so an old volume keeps the old realm. Without it a stack from before the change misses the new database or client ([#136](https://github.com/infinitywalletwar/newstore/issues/136)).
   - The gateway serves the Angular app until Nginx arrives in Phase 4.
   - Playwright runs on the host, against the Compose stack, in its own CI job.
   - k6 gets user tokens through the password grant, which RFC 9700 forbids for real clients, so the load test creates that client itself and no other client allows the grant.
