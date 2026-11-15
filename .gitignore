@@ -495,3 +495,6 @@ kubeconfig*
 tests/e2e/node_modules/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+
+# Made in CI by the e2e job (a sample video and a broken file)
+tests/e2e/fixtures/

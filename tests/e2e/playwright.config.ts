@@ -13,5 +13,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', testMatch: 'checkout.spec.ts', use: { ...devices['Desktop Chrome'] } },
+    // "Chromium does not have all the codecs that Google Chrome or Microsoft Edge are bundling", and the page says to use the official
+    // channel for them (https://playwright.dev/docs/browsers). The video test plays H.264, so it runs in Chrome.
+    { name: 'chrome', testMatch: 'video.spec.ts', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+  ],
 });

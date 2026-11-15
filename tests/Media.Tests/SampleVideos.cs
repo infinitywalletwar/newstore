@@ -104,7 +104,7 @@ public sealed class SampleVideos : IAsyncDisposable
             return path;
         })).Value;
 
-    private static async Task RunFfmpegAsync(IReadOnlyList<string> arguments)
+    internal static async Task RunFfmpegAsync(IReadOnlyList<string> arguments)
     {
         var start = new ProcessStartInfo("ffmpeg") { UseShellExecute = false, RedirectStandardError = true };
         foreach (var argument in arguments)
