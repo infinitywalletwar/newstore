@@ -1010,7 +1010,7 @@ Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser
   - Playback and lists: `player`, `player-error`, `quality`, `video-thumbnail`.
   - My copies: `download`.
 
-- [ ] **Step 1: The uploader, failing tests, then code**
+- [x] **Step 1: The uploader, failing tests, then code**
 
 In `studio.spec.ts`, with `HttpTestingController` and fake timers:
 - `Uploads_parts_and_completes_with_their_etags`
@@ -1022,7 +1022,7 @@ In `studio.spec.ts`, with `HttpTestingController` and fake timers:
 
 Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `feat(web): resumable uploads straight to S3`.
 
-- [ ] **Step 2: The pages, failing tests, then code**
+- [x] **Step 2: The pages, failing tests, then code**
 
 - `Studio_creates_a_video_and_lists_it_as_draft`
 - `Studio_shows_failed_with_its_reason`
@@ -1034,7 +1034,7 @@ Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `
 
 Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 
-- [ ] **Step 3: The image, pull request**
+- [x] **Step 3: The image, pull request**
 
 1. `docker compose build gateway`: the image's `npm ci` installs `hls.js`.
 2. **Walkthrough diagram:** a sequence diagram of an upload interrupted by a reload, from the browser's side, ending in complete. Interview questions:
