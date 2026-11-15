@@ -932,7 +932,7 @@ Branch `phase-2/downloads`. Issue #120. Closes L-2. Read: topic 01 ("Ссылк�
 
   A link is a bearer: whoever holds it can use it until it expires, and AWS checks the expiry when a request starts, so a download that starts in time finishes ([presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)). "Only the owner" means only the owner can get a link.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 The tests use `KafkaServer.PublishAsync` and their own `Published` upload rows:
 - `Digital_copy_lets_the_owner_download_the_original`: after `CopyAssigned` (`Digital`), the link answers 200 with the original's bytes and `Content-Disposition: attachment; filename="trip.mp4"`.
@@ -945,7 +945,7 @@ The tests use `KafkaServer.PublishAsync` and their own `Published` upload rows:
 
 Expected: they fail. Implement, run. Expected: Media.Tests pass. Commit: `feat(media): owners of a digital copy download the original`.
 
-- [ ] **Step 2: ADR 0021, pull request**
+- [x] **Step 2: ADR 0021, pull request**
 
 1. **ADR 0021, playback and downloads.**
    - Playback: a public `hls/` prefix with a base URL from configuration, CloudFront in Phase 6. The alternatives: through the gateway (the bytes through ASP.NET Core) and a presigned GET per file (relative segment URIs carry no signature, so playlists would be rewritten: RFC 8216 reads URIs relative to the playlist).

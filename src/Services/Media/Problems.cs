@@ -8,6 +8,10 @@ internal static class Problems
     public static IResult NotFound(string what) =>
         Results.Problem(statusCode: StatusCodes.Status404NotFound, title: $"{what} not found.", type: Type("not-found"));
 
+    /// <summary>A 404 with its own <c>type</c>, for a caller that must tell this miss from any other.</summary>
+    public static IResult NotFound(string slug, string title) =>
+        Results.Problem(statusCode: StatusCodes.Status404NotFound, title: title, type: Type(slug));
+
     public static IResult Conflict(string slug, string title, IDictionary<string, object?>? extensions = null, string? detail = null) =>
         Results.Problem(statusCode: StatusCodes.Status409Conflict, title: title, detail: detail, type: Type(slug), extensions: extensions);
 
