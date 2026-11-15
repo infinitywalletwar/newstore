@@ -293,6 +293,46 @@ describe('uploader', () => {
     expect(((await failure) as Error).name).toBe('AbortError');
   });
 
+  it('Stops_the_other_parts_when_one_fails_for_good', async () => {
+    const { backend, uploader } = setup();
+    const progress = vi.fn();
+    const failure = uploader.upload('v1', file(), progress).catch((e: unknown) => e);
+    const five = [1, 2, 3, 4, 5].map((n) => ({ partNumber: n, url: s3(n), size: 5 }));
+    backend.expectOne('/api/uploads').flush(state({ partCount: 5, partSize: 5, partUrls: five }));
+    await tick();
+
+    // Three parts are on the wire. Part 1 answers a permanent error; 2 and 3 are still sending.
+    const [first, second, third] = [1, 2, 3].map((n) => backend.expectOne(s3(n)));
+    first.flush('bad request', { status: 400, statusText: 'Bad Request' });
+    await tick(60_000);
+
+    expect(await failure).toBeInstanceOf(HttpErrorResponse);
+    expect([second.cancelled, third.cancelled]).toEqual([true, true]);
+    // The workers took no further part, and nothing completes.
+    backend.expectNone(s3(4));
+    backend.expectNone(s3(5));
+    backend.expectNone('/api/uploads/u1/complete');
+    // The row's progress is not reported again once the run has failed.
+    const calls = progress.mock.calls.length;
+    await tick(60_000);
+    expect(progress.mock.calls.length).toBe(calls);
+  });
+
+  it('Takes_the_content_type_from_the_extension_when_the_browser_gives_none', async () => {
+    const { backend, uploader } = setup();
+    void uploader.upload('v1', new File(['x'], 'clip.WEBM', { type: '' }), vi.fn()).catch(() => undefined);
+
+    expect(backend.expectOne('/api/uploads').request.body).toEqual({ videoId: 'v1', fileName: 'clip.WEBM', contentType: 'video/webm', sizeBytes: 1 });
+  });
+
+  it('Refuses_a_file_with_no_content_type_before_it_calls_create', async () => {
+    const { backend, uploader } = setup();
+
+    await expect(uploader.upload('v1', new File(['x'], 'clip.avi', { type: '' }), vi.fn())).rejects.toThrow('MP4, MOV or WebM');
+
+    backend.expectNone('/api/uploads');
+  });
+
   it('S3_requests_carry_no_csrf_header', async () => {
     const { backend, uploader } = setup();
     const done = uploader.upload('v1', file(), vi.fn());
@@ -466,6 +506,119 @@ describe('studio', () => {
 
     expect(signal?.aborted).toBe(true);
     backend.verify();
+  });
+
+  it('Studio_offers_webm_in_both_file_pickers', async () => {
+    const { open } = studioSetup();
+    const draft = await open([myVideo()], []);
+    expect(q(draft, 'upload-file')!.getAttribute('accept')).toBe('.mp4,.mov,.webm,video/mp4,video/quicktime,video/webm');
+    draft.destroy();
+
+    const uploading = await open([myVideo()], [summary()]);
+    expect(q(uploading, 'resume-file')!.getAttribute('accept')).toBe('.mp4,.mov,.webm,video/mp4,video/quicktime,video/webm');
+  });
+
+  it('Studio_says_what_each_failure_code_means', async () => {
+    const { open } = studioSetup();
+    for (const code of ['encode-failed', 'timed-out', 'retries-exhausted', 'size-mismatch']) {
+      const f = await open([myVideo()], [summary({ status: 'Failed', failureReason: code })]);
+      const text = q(f, 'failure-reason')!.textContent!;
+      expect(text, code).not.toContain(code);
+      expect(text.length, code).toBeGreaterThan(20);
+      f.destroy();
+    }
+  });
+
+  it('Cancel_expires_the_upload_and_offers_a_new_file', async () => {
+    const { backend, open } = studioSetup();
+    const f = await open([myVideo()], [summary()]);
+    expect(q(f, 'resume-file')).not.toBeNull();
+
+    q(f, 'cancel-upload')!.click();
+    await tick();
+    const del = backend.expectOne('/api/uploads/u1');
+    expect(del.request.method).toBe('DELETE');
+    del.flush(null, { status: 204, statusText: 'No Content' });
+    await tick();
+    // The upload is Expired now (Media's cancel), and the studio offers a new upload for that status.
+    backend.expectOne('/api/me/uploads').flush([summary({ status: 'Expired', failureReason: 'cancelled' })]);
+    await tick();
+    f.detectChanges();
+
+    expect(q(f, 'upload-file')).not.toBeNull();
+    expect(q(f, 'resume-file')).toBeNull();
+    expect(q(f, 'cancel-upload')).toBeNull();
+  });
+
+  it('Cancel_is_offered_after_the_upload_is_lost', async () => {
+    const { backend, uploader, open } = studioSetup();
+    uploader.resume.mockRejectedValue(new HttpErrorResponse({ status: 409, error: { type: 'urn:newstore:problem:upload-lost' } }));
+    const f = await open([myVideo()], [summary()]);
+    const input = q(f, 'resume-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+    backend.expectOne('/api/me/uploads').flush([summary()]);
+    await tick();
+    f.detectChanges();
+
+    expect(q(f, 'upload-error')!.textContent).toContain('Storage lost this upload');
+    q(f, 'cancel-upload')!.click();
+    await tick();
+    backend.expectOne('/api/uploads/u1').flush(null, { status: 204, statusText: 'No Content' });
+    await tick();
+    backend.expectOne('/api/me/uploads').flush([summary({ status: 'Expired', failureReason: 'cancelled' })]);
+    await tick();
+    f.detectChanges();
+
+    expect(q(f, 'upload-file')).not.toBeNull();
+    expect(q(f, 'upload-error')).toBeNull();
+  });
+
+  it('Cancel_aborts_the_run_in_flight_first', async () => {
+    const { backend, uploader, open } = studioSetup();
+    let signal: AbortSignal | undefined;
+    uploader.resume.mockImplementation((_u: unknown, _f: File, _p: unknown, s: AbortSignal) => {
+      signal = s;
+      return new Promise((_, reject) => s.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError'))));
+    });
+    const f = await open([myVideo()], [summary()]);
+    const input = q(f, 'resume-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+    f.detectChanges();
+    expect(q(f, 'upload-progress')).not.toBeNull();
+
+    q(f, 'cancel-upload')!.click();
+    await tick();
+
+    expect(signal?.aborted).toBe(true);
+    backend.expectOne('/api/uploads/u1').flush(null, { status: 204, statusText: 'No Content' });
+    await tick();
+    backend.expectOne('/api/me/uploads').flush([summary({ status: 'Expired', failureReason: 'cancelled' })]);
+    await tick();
+    f.detectChanges();
+    expect(q(f, 'upload-file')).not.toBeNull();
+    // The abort is the creator's own choice, so it is not shown as a failure.
+    expect(q(f, 'upload-error')).toBeNull();
+  });
+
+  it('Studio_shows_resume_and_the_error_after_a_part_fails_for_good', async () => {
+    const { backend, uploader, open } = studioSetup();
+    uploader.resume.mockRejectedValue(new HttpErrorResponse({ status: 400 }));
+    const f = await open([myVideo()], [summary()]);
+    const input = q(f, 'resume-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file()] });
+    input.dispatchEvent(new Event('change'));
+    await tick();
+    backend.expectOne('/api/me/uploads').flush([summary()]);
+    await tick();
+    f.detectChanges();
+
+    expect(q(f, 'upload-progress')).toBeNull();
+    expect(q(f, 'resume-file')).not.toBeNull();
+    expect(q(f, 'upload-error')!.textContent).toContain('The upload failed');
   });
 
   it('Studio_stops_polling_when_destroyed', async () => {

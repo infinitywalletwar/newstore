@@ -1,9 +1,13 @@
+using System.Net.Http.Json;
+
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 using NewStore.ServiceDefaults.Data;
+
+using static NewStore.Media.Tests.Api;
 
 namespace NewStore.Media.Tests;
 
@@ -68,6 +72,28 @@ public sealed class SeedTests(SeedFixture media) : IClassFixture<SeedFixture>
         // The first sample video of the catalog's seed, with its channel's creator.
         var first = Assert.Single(uploads, u => u.VideoId == Guid.Parse("00000000-0000-7000-8001-000000000011"));
         Assert.Equal(Guid.Parse("00000000-0000-7000-8000-000000000001"), first.CreatorId);
+    }
+
+    [Fact]
+    public async Task Sample_video_owner_downloads_the_sample_original()
+    {
+        await SeedAsync(media);
+        var sampleVideo = Guid.Parse("00000000-0000-7000-8001-000000000011");
+        var owner = Guid.NewGuid();
+        await media.WithDbAsync(async db =>
+        {
+            db.DigitalCopies.Add(new DigitalCopy { OwnerId = owner, VideoId = sampleVideo, EditionId = Guid.NewGuid(), CopyNumber = 1, GrantedAt = media.Clock.GetUtcNow() });
+            await db.SaveChangesAsync(Ct);
+            return 0;
+        });
+
+        var response = await media.CreateClient().SendAsUserAsync(owner, HttpMethod.Post, "/downloads", new { videoId = sampleVideo });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var link = (await response.Content.ReadFromJsonAsync<DownloadLink>(Ct))!;
+        using var file = await ProcessingFixture.GetAnonymousAsync(new Uri(link.Url));
+        Assert.Equal(HttpStatusCode.OK, file.StatusCode);
+        Assert.True((await file.Content.ReadAsByteArrayAsync(Ct)).Length > 0);
     }
 
     private static async Task SeedAsync(WebApplicationFactory<Program> app)

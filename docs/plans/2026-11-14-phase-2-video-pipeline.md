@@ -807,12 +807,12 @@ public sealed class ProcessingWorker : BackgroundService;
 - **`JobRunner`,** in order:
   1. A claim whose `Attempts` is above `MaxAttempts` (the worker died on the last one) fails with `retries-exhausted`.
   2. A `LeaseKeeper` renews every `Lease / 4`. A renewal that returns false cancels the job's token, and the runner stops without writing.
-  3. Download the original to `{WorkDirectory}/{jobId}/source`.
+  3. Download the original to `{WorkDirectory}/jobs/{jobId}/source`.
   4. `ProbeAsync`. A non-zero exit is `unreadable`, a format outside the two accepted is `unsupported-format`, no video stream is `no-video-stream`, and a duration of 0 or less is `zero-duration`.
-  5. `EncodeAsync` and `ThumbnailAsync` into `{WorkDirectory}/{jobId}/out`. A non-zero exit is `encode-failed`, with the last 20 stderr lines in `last_error`.
+  5. `EncodeAsync` and `ThumbnailAsync` into `{WorkDirectory}/jobs/{jobId}/out`. A non-zero exit is `encode-failed`, with the last 20 stderr lines in `last_error`.
   6. Upload every file under `ObjectKeys.HlsPrefix`, with the content types and `Cache-Control` from Global Constraints. `master.m3u8` goes last, so the master exists only when everything it names does.
   7. `SucceedAsync`, in one transaction: the job `Succeeded`, the upload `Published` with paths, duration and `PublishedAt`, and `VideoPublished` through `IOutbox.Enqueue(…, VideoPublished.Topic, videoId.ToString())`.
-  8. Delete `{WorkDirectory}/{jobId}` in a `finally`. At start, the worker deletes whatever its directory holds.
+  8. Delete `{WorkDirectory}/jobs/{jobId}` in a `finally`. At start, the worker empties `{WorkDirectory}/jobs`, its own folder, and never anything else.
 - **Failures.** The runner works under one token linked to the worker's stop token, cancelled after `JobTimeout` and by a lost lease.
   - A `PermanentProcessingException` fails the job and the upload at once, with its reason.
   - Cancelled by `JobTimeout`: FFmpeg is killed and the job fails with `timed-out`.
@@ -862,7 +862,7 @@ Commit: `feat(media): a jobs table with a lease`.
 
 - [x] **Step 3: The worker end to end, failing tests, then code**
 
-`ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status. Production keeps one `WorkDirectory` per worker container. Tests give every host its own: each fixture or host that runs the worker sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose, because a starting host deletes whatever its directory holds, and xUnit runs classes in parallel.
+`ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status. Production keeps one `WorkDirectory` per worker container. Tests give every host its own: each fixture or host that runs the worker sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose, because a starting host empties its `jobs` folder, and xUnit runs classes in parallel.
 - `Uploaded_mp4_is_published_with_two_variants_and_a_thumbnail`: upload `Published`, the anonymous `master.m3u8` lists both variants, the thumbnail is 200, and one `VideoPublished` is in the outbox with these paths.
 - `Video_without_audio_is_published` and `Portrait_video_keeps_its_aspect_ratio` (Review Focus 4): the widths ffmpeg computes, 202x360 and 406x720.
 - `[Theory] Mov_and_webm_are_published`
@@ -989,7 +989,7 @@ Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser
 
   If Task 1's `Listed_etags_complete_the_upload` failed, Task 7's `Uploader` also reports each part's ETag to Media with `POST /api/uploads/{id}/parts`, after each part's PUT. The main session states which case applies in the dispatch.
 
-  The S3 requests are cross-origin: `csrfInterceptor` adds nothing to them, and `HttpClient` sends no cookie without `withCredentials`, so no session cookie reaches S3.
+  The S3 requests are cross-origin: `csrfInterceptor` adds nothing to them, and `HttpClient` sends no cookie without `withCredentials`, so the upload's requests to S3 carry no session cookie. Thumbnail `<img>` requests and the download navigation do reach S3 with the cookie, because `localhost:8100` and `localhost:4566` are the same site: "Cookies do not provide isolation by port" ([RFC 6265 §8.5](https://www.rfc-editor.org/rfc/rfc6265#section-8.5); [MDN, same-site](https://developer.mozilla.org/en-US/docs/Glossary/Site)). That is harmless on a local-only stack; in production the S3 or CDN domain must be a different registrable domain from the app.
 - **The studio page** (`studio`):
   - A new-video form (`POST /api/videos`), then a file input.
   - A row per video from `/api/me/videos`, joined by `videoId` with `/api/me/uploads`. Each row shows the status: `Draft` without an upload, else the upload's status.
@@ -1040,7 +1040,7 @@ Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 2. **Walkthrough diagram:** a sequence diagram of an upload interrupted by a reload, from the browser's side, ending in complete. Interview questions:
    - "How does the browser resume an upload after the page is reloaded?"
    - "Why does the player check `Hls.isSupported()` before the native HLS path?"
-   - "Why do the requests to S3 carry neither the session cookie nor the CSRF header?"
+   - "Why do the upload's requests to S3 carry neither the session cookie nor the CSRF header, and why can a thumbnail request still carry the cookie?"
 
 ---
 

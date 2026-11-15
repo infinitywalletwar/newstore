@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 using NewStore.Contracts.Media;
+using NewStore.Media.Processing;
 
 namespace NewStore.Media.Tests;
 
@@ -167,7 +168,7 @@ public sealed class ProcessingTests(
         // A worker takes the job; once FFmpeg has written its first segment, the host stops, as on SIGTERM.
         await using (var first = handOver.StartWorkerHost())
         {
-            await WaitForFileAsync(Path.Combine(first.WorkDirectory, jobId.ToString(), "out", "v0", "seg_000.ts"));
+            await WaitForFileAsync(Path.Combine(first.JobsDirectory, jobId.ToString(), "out", "v0", "seg_000.ts"));
         }
 
         var released = await JobAsync(handOver, upload);
@@ -190,7 +191,7 @@ public sealed class ProcessingTests(
         shortTimeout.Clock.Advance(TimeoutFixture.PollInterval);   // the worker's next poll claims the job
 
         // FFmpeg has written its first segment when the 2 s pass, so the kill lands during its run.
-        await WaitForFileAsync(Path.Combine(shortTimeout.WorkDirectory, jobId.ToString(), "out", "v0", "seg_000.ts"));
+        await WaitForFileAsync(Path.Combine(shortTimeout.JobsDirectory, jobId.ToString(), "out", "v0", "seg_000.ts"));
         shortTimeout.Clock.Advance(TimeSpan.FromSeconds(2));
         var final = await shortTimeout.WaitForFinalAsync(upload);
 
@@ -255,7 +256,7 @@ public sealed class ProcessingTests(
         var upload = await leased.UploadAsync(await samples.LongAsync(), "video/mp4");
         var jobId = (await JobAsync(leased, upload)).Id;
         leased.Clock.Advance(TimeoutFixture.PollInterval);   // the worker's next poll claims the job
-        var jobDirectory = Path.Combine(leased.WorkDirectory, jobId.ToString());
+        var jobDirectory = Path.Combine(leased.JobsDirectory, jobId.ToString());
         await WaitForFileAsync(Path.Combine(jobDirectory, "out", "v0", "seg_000.ts"));
         var uploadsBefore = leased.Store.Uploads;
 
@@ -292,6 +293,25 @@ public sealed class ProcessingTests(
         Assert.Equal((JobStatus.Succeeded, 1), (job.Status, job.Attempts));
         Assert.Equal("Published", (await handOver.CreateClient().GetAsync(upload.CreatorId, upload.UploadId)).Status);
         Assert.Single(await PublishedEventsAsync(handOver, upload));
+    }
+
+    [Fact]
+    public async Task Starting_worker_empties_only_its_jobs_folder()
+    {
+        // The operator pointed WorkDirectory at a folder that holds other files. Only {WorkDirectory}/jobs is the worker's.
+        var directory = ProcessingFixture.NewWorkDirectory();
+        var jobs = Directory.CreateDirectory(Path.Combine(directory, ProcessingOptions.JobsFolder, Guid.NewGuid().ToString()));
+        await File.WriteAllTextAsync(Path.Combine(jobs.FullName, "source"), "left by a dead worker", Ct);
+        var foreign = Path.Combine(directory, "not-ours.txt");
+        await File.WriteAllTextAsync(foreign, "keep", Ct);
+        var foreignFolder = Directory.CreateDirectory(Path.Combine(directory, "other")).FullName;
+
+        await using (handOver.StartWorkerHost(directory))
+        {
+            Assert.True(File.Exists(foreign));
+            Assert.True(Directory.Exists(foreignFolder));
+            Assert.False(Directory.Exists(jobs.FullName));
+        }
     }
 
     private static string MasterOf(SampleUpload upload) => $"{ObjectKeys.HlsPrefix(upload.VideoId, upload.UploadId)}/{ObjectKeys.Master}";

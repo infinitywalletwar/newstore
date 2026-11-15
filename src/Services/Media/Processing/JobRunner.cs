@@ -52,7 +52,7 @@ public sealed partial class JobRunner(
         }
 
         // One token for the whole run, cancelled by the worker's stop, by the job's timeout or by a lost lease.
-        var directory = Path.Combine(Options.WorkDirectory, job.JobId.ToString());
+        var directory = Path.Combine(Options.WorkDirectory, ProcessingOptions.JobsFolder, job.JobId.ToString());
         using var timeout = new CancellationTokenSource(Options.JobTimeout, time);
         using var leaseLost = new CancellationTokenSource();
         using var run = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token, leaseLost.Token);

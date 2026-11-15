@@ -24,7 +24,10 @@ public sealed class ProcessingOptions
     /// <summary>A job that runs longer fails with <c>timed-out</c>, and FFmpeg is killed.</summary>
     public TimeSpan JobTimeout { get; set; } = TimeSpan.FromMinutes(60);
 
-    /// <summary>The worker's own folder: a job works in <c>{WorkDirectory}/{jobId}</c>, and a starting worker empties it.</summary>
+    /// <summary>The folder inside <see cref="WorkDirectory"/> that the worker owns: a job works in <c>{WorkDirectory}/jobs/{jobId}</c>.</summary>
+    public const string JobsFolder = "jobs";
+
+    /// <summary>Where the worker works. Only <see cref="JobsFolder"/> inside it is the worker's: a starting worker empties that and nothing else.</summary>
     public string WorkDirectory { get; set; } = Path.Combine(Path.GetTempPath(), "newstore-media");
 
     public string FfmpegPath { get; set; } = "ffmpeg";

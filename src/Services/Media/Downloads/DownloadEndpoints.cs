@@ -34,9 +34,10 @@ public static class DownloadEndpoints
         }
 
         // A video has at most one live upload (ix_uploads_live_video), so at most one is Published.
+        // The key is the one the row stores: a seeded sample's original is not at originals/{videoId}/{uploadId}.
         var upload = await db.Uploads.AsNoTracking()
             .Where(u => u.VideoId == request.VideoId && u.Status == UploadStatus.Published)
-            .Select(u => new { u.Id, u.FileName })
+            .Select(u => new { u.ObjectKey, u.FileName })
             .SingleOrDefaultAsync(ct);
         if (upload is null)
         {
@@ -45,7 +46,7 @@ public static class DownloadEndpoints
 
         var lifetime = options.Value.LinkLifetime;
         var fileName = SafeFileName.Of(upload.FileName);
-        var url = await storage.PresignDownloadAsync(ObjectKeys.Original(request.VideoId, upload.Id), upload.FileName, lifetime);
+        var url = await storage.PresignDownloadAsync(upload.ObjectKey, upload.FileName, lifetime);
 
         http.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new DownloadLink(url, time.GetUtcNowToMicrosecond().Add(lifetime), fileName));
