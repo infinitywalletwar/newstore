@@ -31,8 +31,9 @@ test('a creator uploads a video, it plays, and a broken file fails', async ({ pa
   await expect(row.getByTestId('upload-status')).toHaveText('Published', { timeout: PROCESSING_TIMEOUT });
 
   // Catalog publishes the video when it consumes VideoPublished, so its page can be a 404 for a moment.
+  // The gateway refuses a cookie-authenticated call without `X-CSRF: 1` (403, ADR 0015), which the page's own calls add.
   await expect
-    .poll(async () => (await page.request.get(`/api/videos/${videoId}`)).status(), { timeout: 30_000 })
+    .poll(async () => (await page.request.get(`/api/videos/${videoId}`, { headers: { 'X-CSRF': '1' } })).status(), { timeout: 30_000 })
     .toBe(200);
 
   // Open the video's page and watch what the player fetches: the master playlist and a segment, both from the public bucket.
