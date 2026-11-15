@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using NewStore.Contracts.Inventory;
+using NewStore.Contracts.Media;
 using NewStore.Media;
+using NewStore.Media.Processing;
 using NewStore.Messaging;
 using NewStore.ServiceDefaults;
 using NewStore.ServiceDefaults.Data;
@@ -20,7 +22,7 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 builder.AddMessaging<MediaDbContext>(m =>
 {
     m.AddTopic(CopyAssigned.Topic, CopyAssigned.Partitions);
-    // Task 5: m.AddTopic(VideoPublished.Topic, VideoPublished.Partitions);
+    m.AddTopic(VideoPublished.Topic, VideoPublished.Partitions);
     if (role is MediaRole.All or MediaRole.Api) m.AddHandler<CopyAssigned, CopyAssignedHandler>(CopyAssigned.Topic);
 });
 
@@ -34,8 +36,8 @@ if (role is MediaRole.All or MediaRole.Api)
     builder.AddDownloads();                // DownloadOptions
 }
 
-// Task 5: builder.AddProcessing(runWorker: role is MediaRole.All or MediaRole.Worker);
-builder.Services.AddScoped<IDatabaseSeeder<MediaDbContext>, MediaSeeder>();   // StorageSetup.EnsureAsync; Task 5 adds the sample
+builder.AddProcessing(runWorker: role is MediaRole.All or MediaRole.Worker);   // the job queue and FFmpeg in every role; the worker in All and Worker
+builder.Services.AddScoped<IDatabaseSeeder<MediaDbContext>, MediaSeeder>();   // the bucket's settings, the HLS sample (FFmpeg) and the sample videos' uploads
 
 var app = builder.Build();
 

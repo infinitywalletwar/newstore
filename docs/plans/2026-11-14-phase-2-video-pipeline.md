@@ -836,7 +836,7 @@ public sealed class ProcessingWorker : BackgroundService;
 
   `media-worker` depends on postgres, media-migrate (completed), kafka and floci. `media-migrate` moves to `newstore/media-worker:local` and 1g, because its seed runs FFmpeg.
 
-- [ ] **Step 1: FFmpeg, failing tests, then code**
+- [x] **Step 1: FFmpeg, failing tests, then code**
 
 `SampleVideos` makes samples once per test run with the local `ffmpeg` and `lavfi` (8 s unless noted; 1280x720 with audio; a long one: 60 s, 1280x720, with audio; no audio; 720x1280 portrait; MOV; WebM with VP9 and Opus; 200 KB of random bytes named `.mp4`; an HLS playlist naming `file:///etc/hosts`, named `.mp4`). Without `ffmpeg` on `PATH` it fails with "Media's tests need FFmpeg: brew install ffmpeg, or apt-get install ffmpeg".
 
@@ -849,7 +849,7 @@ public sealed class ProcessingWorker : BackgroundService;
 
 Commit: `feat(media): FFmpeg and ffprobe without a shell, killed on cancellation`.
 
-- [ ] **Step 2: The job queue, failing tests, then code**
+- [x] **Step 2: The job queue, failing tests, then code**
 
 `JobQueueTests` with a `FakeTimeProvider`:
 - `Claim_takes_the_oldest_due_job_and_counts_the_attempt`
@@ -860,7 +860,7 @@ Commit: `feat(media): FFmpeg and ffprobe without a shell, killed on cancellation
 
 Commit: `feat(media): a jobs table with a lease`.
 
-- [ ] **Step 3: The worker end to end, failing tests, then code**
+- [x] **Step 3: The worker end to end, failing tests, then code**
 
 `ProcessingTests` use a `MediaFixture` with `Role = All`, `PollInterval` 100 ms, `RetryPause` 100 ms and `MaxRetryPause` 200 ms. Each test uploads a sample through the API, as Task 2's tests do, and waits for a final status. Production keeps one `WorkDirectory` per worker container. Tests give every host its own: each fixture or host that runs the worker sets `Media:Processing:WorkDirectory` to a unique temp folder and deletes it on dispose, because a starting host deletes whatever its directory holds, and xUnit runs classes in parallel.
 - `Uploaded_mp4_is_published_with_two_variants_and_a_thumbnail`: upload `Published`, the anonymous `master.m3u8` lists both variants, the thumbnail is 200, and one `VideoPublished` is in the outbox with these paths.
@@ -875,7 +875,7 @@ Commit: `feat(media): a jobs table with a lease`.
 
 Expected: they pass after `JobRunner` and `ProcessingWorker` are written. Commit: `feat(media): the worker turns uploads into HLS and publishes them`.
 
-- [ ] **Step 4: The seed, the image, Compose and CI**
+- [x] **Step 4: The seed, the image, Compose and CI**
 
 1. **`SeedTests`:** `Seed_makes_the_sample_once` (the second run uploads nothing, by `ExistsAsync`) and `Seed_gives_every_sample_video_a_published_upload` (48 rows).
 2. **The image and Compose,** from Interfaces. Run `docker compose build media media-worker`, then `docker compose up -d --wait`. Check:
@@ -888,7 +888,7 @@ Expected: they pass after `JobRunner` and `ProcessingWorker` are written. Commit
 
 Commit: `feat(media): the worker container and the seeded sample`.
 
-- [ ] **Step 5: ADR 0020, AGENTS.md, pull request**
+- [x] **Step 5: ADR 0020, AGENTS.md, pull request**
 
 1. **ADR 0020, processing in a worker.**
    - A second container of the Media project, against a `BackgroundService` in the API (FFmpeg would share the API's memory and CPU) and a container per job (needs the Docker socket or an orchestrator).
