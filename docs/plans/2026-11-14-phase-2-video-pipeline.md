@@ -720,7 +720,7 @@ Expected: they fail.
 
 Expected: Gateway.Tests pass, and `docker compose build gateway` succeeds. Commit: `feat(gateway): route uploads, downloads and video drafts`.
 
-- [ ] **Step 3: Compose, CI, pull request**
+- [x] **Step 3: Compose, CI, pull request**
 
 1. After Task 2 has merged and this branch has merged `main`: the gateway's env and dependency.
 2. **CI `compose-smoke`:** `curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8100/api/uploads` prints `401`.

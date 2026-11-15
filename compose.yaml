@@ -242,6 +242,7 @@ services:
       catalog: { condition: service_healthy }
       inventory: { condition: service_healthy }
       orders: { condition: service_healthy }
+      media: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
