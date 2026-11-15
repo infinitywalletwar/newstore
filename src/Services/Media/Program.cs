@@ -21,7 +21,7 @@ builder.AddMessaging<MediaDbContext>(m =>
 {
     m.AddTopic(CopyAssigned.Topic, CopyAssigned.Partitions);
     // Task 5: m.AddTopic(VideoPublished.Topic, VideoPublished.Partitions);
-    // Task 6: if (role is MediaRole.All or MediaRole.Api) m.AddHandler<CopyAssigned, CopyAssignedHandler>(CopyAssigned.Topic);
+    if (role is MediaRole.All or MediaRole.Api) m.AddHandler<CopyAssigned, CopyAssignedHandler>(CopyAssigned.Topic);
 });
 
 if (role is MediaRole.All or MediaRole.Api)
@@ -31,7 +31,7 @@ if (role is MediaRole.All or MediaRole.Api)
     builder.AddServiceClient<CatalogClient>("Services:Catalog");
     builder.AddReadinessWarmUp(WarmUpExtensions.WarmUpAuthAsync);
     builder.AddUploads();                // UploadService, UploadExpiryService
-    // Task 6: builder.AddDownloads();
+    builder.AddDownloads();                // DownloadOptions
 }
 
 // Task 5: builder.AddProcessing(runWorker: role is MediaRole.All or MediaRole.Worker);
@@ -51,7 +51,7 @@ if (role is MediaRole.All or MediaRole.Api)
     app.UseAuthentication();
     app.UseAuthorization();
     app.MapUploadEndpoints();
-    // Task 6: app.MapDownloadEndpoints();
+    app.MapDownloadEndpoints();
 }
 
 app.Run();
