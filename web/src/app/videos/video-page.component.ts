@@ -4,14 +4,19 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Edition, Order, VideoDetails } from '../api/models';
 import { problemTitle } from '../api/problem';
 import { AuthService } from '../auth/auth.service';
+import { VideoPlayerComponent } from './video-player.component';
 
 @Component({
   selector: 'app-video-page',
+  imports: [VideoPlayerComponent],
   template: `
     @if (video(); as v) {
       <h1>{{ v.title }}</h1>
       <p>{{ v.channel.name }}</p>
       <p>{{ v.description }}</p>
+      @if (v.playbackUrl) {
+        <app-video-player [src]="v.playbackUrl" />
+      }
     } @else if (notFound()) {
       <p>No such video.</p>
     }

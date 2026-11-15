@@ -23,7 +23,7 @@ builder.AddMessaging<MediaDbContext>(m =>
 {
     m.AddTopic(CopyAssigned.Topic, CopyAssigned.Partitions);
     m.AddTopic(VideoPublished.Topic, VideoPublished.Partitions);
-    // Task 6: if (role is MediaRole.All or MediaRole.Api) m.AddHandler<CopyAssigned, CopyAssignedHandler>(CopyAssigned.Topic);
+    if (role is MediaRole.All or MediaRole.Api) m.AddHandler<CopyAssigned, CopyAssignedHandler>(CopyAssigned.Topic);
 });
 
 if (role is MediaRole.All or MediaRole.Api)
@@ -33,7 +33,7 @@ if (role is MediaRole.All or MediaRole.Api)
     builder.AddServiceClient<CatalogClient>("Services:Catalog");
     builder.AddReadinessWarmUp(WarmUpExtensions.WarmUpAuthAsync);
     builder.AddUploads();                // UploadService, UploadExpiryService
-    // Task 6: builder.AddDownloads();
+    builder.AddDownloads();                // DownloadOptions
 }
 
 builder.AddProcessing(runWorker: role is MediaRole.All or MediaRole.Worker);   // the job queue and FFmpeg in every role; the worker in All and Worker
@@ -53,7 +53,7 @@ if (role is MediaRole.All or MediaRole.Api)
     app.UseAuthentication();
     app.UseAuthorization();
     app.MapUploadEndpoints();
-    // Task 6: app.MapDownloadEndpoints();
+    app.MapDownloadEndpoints();
 }
 
 app.Run();

@@ -16,6 +16,9 @@ import { PagedResult, VideoSummary } from '../api/models';
       <ul class="cards">
         @for (video of r.items; track video.id) {
           <li class="card" data-testid="video-card">
+            @if (video.thumbnailUrl) {
+              <img data-testid="video-thumbnail" [src]="video.thumbnailUrl" alt="" width="160" />
+            }
             <a [routerLink]="['/videos', video.id]">{{ video.title }}</a>
             <div>{{ video.channel.name }}</div>
           </li>

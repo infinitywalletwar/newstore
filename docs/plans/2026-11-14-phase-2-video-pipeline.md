@@ -932,7 +932,7 @@ Branch `phase-2/downloads`. Issue #120. Closes L-2. Read: topic 01 ("Ссылк�
 
   A link is a bearer: whoever holds it can use it until it expires, and AWS checks the expiry when a request starts, so a download that starts in time finishes ([presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html)). "Only the owner" means only the owner can get a link.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 The tests use `KafkaServer.PublishAsync` and their own `Published` upload rows:
 - `Digital_copy_lets_the_owner_download_the_original`: after `CopyAssigned` (`Digital`), the link answers 200 with the original's bytes and `Content-Disposition: attachment; filename="trip.mp4"`.
@@ -945,7 +945,7 @@ The tests use `KafkaServer.PublishAsync` and their own `Published` upload rows:
 
 Expected: they fail. Implement, run. Expected: Media.Tests pass. Commit: `feat(media): owners of a digital copy download the original`.
 
-- [ ] **Step 2: ADR 0021, pull request**
+- [x] **Step 2: ADR 0021, pull request**
 
 1. **ADR 0021, playback and downloads.**
    - Playback: a public `hls/` prefix with a base URL from configuration, CloudFront in Phase 6. The alternatives: through the gateway (the bytes through ASP.NET Core) and a presigned GET per file (relative segment URIs carry no signature, so playlists would be rewritten: RFC 8216 reads URIs relative to the playlist).
@@ -1010,7 +1010,7 @@ Branch `phase-2/web-video`. Issue #121. Advances V-1, V-3 and L-2 in the browser
   - Playback and lists: `player`, `player-error`, `quality`, `video-thumbnail`.
   - My copies: `download`.
 
-- [ ] **Step 1: The uploader, failing tests, then code**
+- [x] **Step 1: The uploader, failing tests, then code**
 
 In `studio.spec.ts`, with `HttpTestingController` and fake timers:
 - `Uploads_parts_and_completes_with_their_etags`
@@ -1022,7 +1022,7 @@ In `studio.spec.ts`, with `HttpTestingController` and fake timers:
 
 Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `feat(web): resumable uploads straight to S3`.
 
-- [ ] **Step 2: The pages, failing tests, then code**
+- [x] **Step 2: The pages, failing tests, then code**
 
 - `Studio_creates_a_video_and_lists_it_as_draft`
 - `Studio_shows_failed_with_its_reason`
@@ -1034,7 +1034,7 @@ Add `hls.js`, implement. Expected: `npm test -- --watch=false` passes. Commit: `
 
 Expected: they pass. Commit: `feat(web): the studio, the player and downloads`.
 
-- [ ] **Step 3: The image, pull request**
+- [x] **Step 3: The image, pull request**
 
 1. `docker compose build gateway`: the image's `npm ci` installs `hls.js`.
 2. **Walkthrough diagram:** a sequence diagram of an upload interrupted by a reload, from the browser's side, ending in complete. Interview questions:
