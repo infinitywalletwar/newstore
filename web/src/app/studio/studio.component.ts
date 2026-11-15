@@ -3,7 +3,7 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { MyVideo, Problem, TERMINAL_UPLOAD_STATUSES, UploadSummary } from '../api/models';
-import { Uploader } from './uploader';
+import { Uploader, VIDEO_ACCEPT } from './uploader';
 
 /** Polling: every 5 s for the first minute of waiting, then every 15 s, with no cap. */
 const FAST_POLL_MS = 5000;
@@ -15,6 +15,10 @@ const FAILURE_REASONS: Record<string, string> = {
   'unsupported-format': 'The file format is not supported',
   'no-video-stream': 'The file has no video stream',
   'zero-duration': 'The video has no duration',
+  'encode-failed': 'The video could not be converted for streaming. Try another file',
+  'timed-out': 'Converting the video took too long. Try a shorter or smaller file',
+  'retries-exhausted': 'Storage was unavailable while the video was processed. Upload it again',
+  'size-mismatch': 'The uploaded file is not the size you chose. Upload it again',
 };
 
 @Component({
@@ -41,12 +45,16 @@ const FAILURE_REASONS: Record<string, string> = {
         @if (busy) {
           <!-- An upload or resume is running: no second one may start. -->
         } @else if (!upload || upload.status === 'Failed' || upload.status === 'Expired') {
-          <input type="file" accept="video/mp4,video/quicktime" aria-label="Choose a video file" data-testid="upload-file" (change)="start(video, $any($event.target).files?.[0])" />
+          <input type="file" [accept]="accept" aria-label="Choose a video file" data-testid="upload-file" (change)="start(video, $any($event.target).files?.[0])" />
         } @else if (upload.status === 'Uploading') {
           <label>
             Resume
-            <input type="file" accept="video/mp4,video/quicktime" data-testid="resume-file" (change)="resume(upload, $any($event.target).files?.[0])" />
+            <input type="file" [accept]="accept" data-testid="resume-file" (change)="resume(upload, $any($event.target).files?.[0])" />
           </label>
+        }
+        @if (upload?.status === 'Uploading') {
+          <!-- Also while a run is in flight: cancel stops it first, then ends the upload. -->
+          <button type="button" data-testid="cancel-upload" (click)="cancel(upload!)">Cancel upload</button>
         }
         @if (progress()[video.id]; as p) {
           <progress data-testid="upload-progress" [max]="p.total" [value]="p.sent"></progress>
@@ -64,6 +72,7 @@ export class StudioComponent {
   private readonly http = inject(HttpClient);
   private readonly uploader = inject(Uploader);
 
+  protected readonly accept = VIDEO_ACCEPT;
   protected readonly title = signal('');
   protected readonly description = signal('');
   protected readonly videos = signal<MyVideo[]>([]);
@@ -79,6 +88,8 @@ export class StudioComponent {
   private readonly destroyRef = inject(DestroyRef);
   /** Aborted on destroy: stops retry timers and in-flight PUTs. The parts already on S3 stay, so the upload can be resumed later. */
   private readonly abort = new AbortController();
+  /** The run in flight for each video: its signal follows `abort` and also stops when the creator cancels the upload. */
+  private readonly runs = new Map<string, AbortController>();
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -107,31 +118,61 @@ export class StudioComponent {
 
   protected start(video: MyVideo, file: File | undefined): void {
     if (file) {
-      void this.run(video.id, file.size, (progress) => this.uploader.upload(video.id, file, progress, this.abort.signal));
+      void this.run(video.id, file.size, (progress, signal) => this.uploader.upload(video.id, file, progress, signal));
     }
   }
 
   protected resume(upload: UploadSummary, file: File | undefined): void {
     if (file) {
-      void this.run(upload.videoId, file.size, (progress) => this.uploader.resume(upload, file, progress, this.abort.signal));
+      void this.run(upload.videoId, file.size, (progress, signal) => this.uploader.resume(upload, file, progress, signal));
     }
   }
 
-  private async run(videoId: string, total: number, send: (progress: (sent: number, total: number) => void) => Promise<unknown>): Promise<void> {
+  private async run(
+    videoId: string, total: number,
+    send: (progress: (sent: number, total: number) => void, signal: AbortSignal) => Promise<unknown>,
+  ): Promise<void> {
     this.setRowError(videoId, null);
     this.progress.update((p) => ({ ...p, [videoId]: { sent: 0, total } }));
+    // One signal per run: it ends with the component (destroy) or when the creator cancels this video's upload.
+    const own = new AbortController();
+    this.runs.set(videoId, own);
     try {
-      await send((sent, total) => this.progress.update((p) => ({ ...p, [videoId]: { sent, total } })));
+      await send((sent, total) => this.progress.update((p) => ({ ...p, [videoId]: { sent, total } })), AbortSignal.any([this.abort.signal, own.signal]));
     } catch (error) {
-      if (!this.destroyed) {
+      // A cancel is the creator's own choice, not a failure to show.
+      if (!this.destroyed && !own.signal.aborted) {
         this.setRowError(videoId, uploadErrorMessage(error));
       }
     }
-    if (this.destroyed) {
-      return;
+    if (this.runs.get(videoId) === own) {
+      this.runs.delete(videoId);
+    }
+    if (this.destroyed || own.signal.aborted) {
+      return; // After a cancel, `cancel` clears the progress and reloads the uploads.
     }
     this.progress.update(({ [videoId]: _done, ...rest }) => rest);
     await this.loadUploads();
+  }
+
+  /**
+   * Ends an upload the creator no longer wants (`DELETE /api/uploads/{id}`, which leaves it `Expired`: the status that offers a
+   * new file). A run in flight is aborted first, so no PUT goes on after the upload is gone.
+   */
+  protected async cancel(upload: UploadSummary): Promise<void> {
+    this.runs.get(upload.videoId)?.abort();
+    this.setRowError(upload.videoId, null);
+    try {
+      await firstValueFrom(this.http.delete(`/api/uploads/${upload.id}`));
+    } catch {
+      if (!this.destroyed) {
+        this.setRowError(upload.videoId, 'Could not cancel this upload. Try again.');
+      }
+    }
+    if (!this.destroyed) {
+      this.progress.update(({ [upload.videoId]: _cancelled, ...rest }) => rest);
+      await this.loadUploads();
+    }
   }
 
   private setRowError(videoId: string, message: string | null): void {

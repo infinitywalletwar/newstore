@@ -5,6 +5,22 @@ import { PartUrl, UploadState, UploadSummary } from '../api/models';
 
 export type Progress = (sent: number, total: number) => void;
 
+/** The content type Media expects for each extension it accepts (`ContentTypes` in `UploadEndpoints.cs`). */
+const CONTENT_TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
+
+/** The `accept` of the file pickers: the extensions and the types, so a file whose type the OS does not know is still offered. */
+export const VIDEO_ACCEPT = [...Object.keys(CONTENT_TYPES), ...Object.values(CONTENT_TYPES)].join(',');
+
+/** The browser's type for the file; when it has none (the OS maps no type to the extension), the one the extension implies. */
+function contentTypeOf(file: File): string {
+  const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  const type = file.type || CONTENT_TYPES[extension];
+  if (!type) {
+    throw new Error('Could not tell what kind of file this is. Choose an MP4, MOV or WebM video.');
+  }
+  return type;
+}
+
 /** How many parts are on the wire at once. */
 const CONCURRENCY = 3;
 /** The pauses before the 1st, 2nd and 3rd retry of a part that failed on the network. */
@@ -41,8 +57,10 @@ export class Uploader {
   private readonly http = inject(HttpClient);
 
   async upload(videoId: string, file: File, progress: Progress, signal?: AbortSignal): Promise<UploadState> {
+    // Before the request: a file with no usable type is refused here, not by a 400 the creator cannot read.
+    const contentType = contentTypeOf(file);
     const created = await firstValueFrom(
-      guard(this.http.post<UploadState>('/api/uploads', { videoId, fileName: file.name, contentType: file.type, sizeBytes: file.size }), signal),
+      guard(this.http.post<UploadState>('/api/uploads', { videoId, fileName: file.name, contentType, sizeBytes: file.size }), signal),
     );
     return this.send(created, file, progress, signal);
   }
@@ -59,21 +77,45 @@ export class Uploader {
   }
 
   private async send(state: UploadState, file: File, progress: Progress, signal?: AbortSignal): Promise<UploadState> {
-    const run: Run = { state, file, etags: new Map(), urls: new Map(), inFlight: new Map(), progress, signal };
+    // The run's own signal: it follows the caller's, and the first failed part aborts it too, so the other parts stop.
+    const stop = new AbortController();
+    const follow = () => stop.abort();
+    if (signal?.aborted) {
+      stop.abort();
+    }
+    signal?.addEventListener('abort', follow, { once: true });
+    const run: Run = { state, file, etags: new Map(), urls: new Map(), inFlight: new Map(), progress, signal: stop.signal };
     this.adopt(run, state);
     this.report(run);
 
-    // A small pool: CONCURRENCY workers take the next missing part until none is left. One failed part rejects the
-    // whole send; the parts already sent stay on S3 and `resume` finds them.
+    // A small pool: CONCURRENCY workers take the next missing part until none is left or the run is stopped. The first
+    // failure is kept and stops the others; the pool settles before it rethrows, so nothing reports progress after the
+    // caller has seen the error. The parts already sent stay on S3 and `resume` finds them.
     const queue = [...run.urls.keys()].sort((a, b) => a - b);
+    let failure: { error: unknown } | undefined;
     const worker = async (): Promise<void> => {
-      for (let part = queue.shift(); part !== undefined; part = queue.shift()) {
-        if (!run.etags.has(part)) {
-          await this.sendPart(run, part);
+      try {
+        for (let part = queue.shift(); part !== undefined && !stop.signal.aborted; part = queue.shift()) {
+          if (!run.etags.has(part)) {
+            await this.sendPart(run, part);
+          }
         }
+      } catch (error) {
+        failure ??= { error };
+        stop.abort();
       }
     };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+    try {
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+    } finally {
+      signal?.removeEventListener('abort', follow);
+    }
+    if (failure) {
+      throw failure.error;
+    }
+    if (stop.signal.aborted) {
+      throw abortError(); // Aborted between two parts: do not complete with parts missing.
+    }
 
     // Every part's ETag: the ones S3 already listed and the ones our own PUTs returned.
     const parts = [...run.etags].sort(([a], [b]) => a - b).map(([partNumber, eTag]) => ({ partNumber, eTag }));
@@ -117,6 +159,9 @@ export class Uploader {
         this.report(run);
         return;
       } catch (error) {
+        if (run.signal?.aborted) {
+          throw error; // Stopped (by the creator or by another part's failure): no more reports.
+        }
         run.inFlight.delete(part);
         this.report(run);
         const status = error instanceof HttpErrorResponse ? error.status : -1;
