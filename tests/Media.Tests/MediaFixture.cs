@@ -39,6 +39,9 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
     /// <summary>Which parts of Media run. Api by default, so no worker runs; Tasks 5 and 6 set another in fixtures of their own.</summary>
     protected virtual MediaRole Role => MediaRole.Api;
 
+    /// <summary>The size of the parts of an upload. A subclass that wants the production size (64 MiB) says so.</summary>
+    protected virtual long UploadPartSize => PartSize;
+
     protected virtual string PartUrlLifetime => "01:00:00";
 
     /// <summary>How often the expiry service ticks on <see cref="Clock"/>. A day keeps it out of tests that do not move the clock that far.</summary>
@@ -76,7 +79,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         Settings["Messaging:ClientId"] = $"media-{GetType().Name}-{Guid.NewGuid():N}";
         Settings["WarmUp:Enabled"] = "false";
         Settings["Media:Role"] = Role.ToString();
-        Settings["Media:Uploads:PartSize"] = PartSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Settings["Media:Uploads:PartSize"] = UploadPartSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Settings["Media:Uploads:PartUrlLifetime"] = PartUrlLifetime;
         Settings["Media:Uploads:ExpirySweepInterval"] = ExpirySweepInterval;
 

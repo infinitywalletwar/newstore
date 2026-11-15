@@ -1,0 +1,23 @@
+name: nightly
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  # The 1 GB upload takes minutes, so it does not run on every pull request: it is Explicit in Media.Tests and this job runs it
+  # with `--explicit only`, every night and on demand.
+  large-upload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Install FFmpeg
+        # The test makes its 1 GB sample with it. Ubuntu 24.04's package is the worker image's (ADR 0020).
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg && ffmpeg -version | head -n 1
+      - name: A 1 GB upload becomes playable
+        run: dotnet test --project tests/Media.Tests -c Release --explicit only --filter-method "*A_1_GB_upload_becomes_playable" --output Detailed
