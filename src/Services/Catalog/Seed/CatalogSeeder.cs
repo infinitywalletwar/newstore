@@ -9,7 +9,7 @@ using NewStore.ServiceDefaults.Data;
 namespace NewStore.Catalog.Seed;
 
 /// <summary>
-/// Inserts the sample catalog from <c>sample-catalog.json</c> when the database has no channels. Running it
+/// Inserts the sample catalog from <c>sample-catalog.json</c> (published videos that play the sample files) when the database has no channels. Running it
 /// again does nothing, so the Compose job can run "seed" on every start.
 /// </summary>
 public sealed class CatalogSeeder(TimeProvider time) : IDatabaseSeeder<CatalogDbContext>
@@ -50,7 +50,11 @@ public sealed class CatalogSeeder(TimeProvider time) : IDatabaseSeeder<CatalogDb
                 Title = v.Title,
                 Description = v.Description,
                 DurationSeconds = v.DurationSeconds,
+                Status = VideoStatus.Published,
+                CreatedAt = v.PublishedAt,
                 PublishedAt = v.PublishedAt,
+                PlaylistPath = Video.SamplePlaylistPath,
+                ThumbnailPath = Video.SampleThumbnailPath,
             }));
         }
 

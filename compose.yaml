@@ -134,6 +134,8 @@ services:
       Messaging__BootstrapServers: kafka:9092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: catalog
+      # Where a browser reaches the public media files; playback and thumbnail URLs start with it.
+      Catalog__MediaBaseUrl: http://localhost:4566/newstore-media
       # Tokens carry the public issuer; the keys come from the address a container can reach (ADR 0012).
       Auth__Issuer: http://localhost:8180/realms/newstore
       Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration

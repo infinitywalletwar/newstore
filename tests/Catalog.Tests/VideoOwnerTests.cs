@@ -36,7 +36,7 @@ public class VideoOwnerTests(SeededCatalogAppFactory factory) : IClassFixture<Se
 
         var owner = await client.GetFromJsonAsync<VideoOwner>($"/videos/{SourdoughId}/owner", Ct);
 
-        Assert.Equal(new VideoOwner(Guid.Parse(SourdoughId), Guid.Parse("00000000-0000-7000-8000-000000000001")), owner);
+        Assert.Equal(new VideoOwner(Guid.Parse(SourdoughId), Guid.Parse("00000000-0000-7000-8000-000000000001"), "Published"), owner);
     }
 
     [Fact]
