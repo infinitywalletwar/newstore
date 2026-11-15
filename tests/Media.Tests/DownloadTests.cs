@@ -69,9 +69,19 @@ public sealed class DownloadTests(MediaFixture media, KafkaServer kafka) : IClas
             var now = Micro(media.Clock.GetUtcNow());
             db.Uploads.Add(new Upload
             {
-                Id = uploadId, VideoId = videoId, CreatorId = Guid.NewGuid(), FileName = fileName, ContentType = "video/mp4",
-                SizeBytes = content.Length, ObjectKey = key, S3UploadId = "done", PartSize = MediaFixture.PartSize, PartCount = 1,
-                Status = status, CreatedAt = now, UpdatedAt = now,
+                Id = uploadId,
+                VideoId = videoId,
+                CreatorId = Guid.NewGuid(),
+                FileName = fileName,
+                ContentType = "video/mp4",
+                SizeBytes = content.Length,
+                ObjectKey = key,
+                S3UploadId = "done",
+                PartSize = MediaFixture.PartSize,
+                PartCount = 1,
+                Status = status,
+                CreatedAt = now,
+                UpdatedAt = now,
             });
             await db.SaveChangesAsync(Ct);
             return 0;
