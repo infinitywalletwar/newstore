@@ -42,6 +42,9 @@ public class ProcessingFixture : MediaFixture
 
     protected override MediaRole Role => MediaRole.All;
 
+    /// <summary>False keeps <see cref="MediaFixture.Clock"/>, the fake clock: the worker then polls, and a job times out, only when the test moves it.</summary>
+    protected virtual bool UsesSystemClock => true;
+
     public static string NewWorkDirectory() => Path.Combine(Path.GetTempPath(), $"newstore-media-work-{Guid.NewGuid():N}");
 
     /// <summary>The public address of an object, as a player reads it: no signature.</summary>
@@ -103,9 +106,13 @@ public class ProcessingFixture : MediaFixture
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
-            // The worker waits in real time (its polls, retry pauses and lease renewals), so this app runs on the system clock.
-            services.RemoveAll<TimeProvider>();
-            services.AddSingleton(TimeProvider.System);
+            if (UsesSystemClock)
+            {
+                // The worker waits in real time (its polls, retry pauses and lease renewals), so this app runs on the system clock.
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton(TimeProvider.System);
+            }
+
             services.RemoveAll<IObjectStore>();
             services.AddSingleton<IObjectStore>(sp => new SpiedObjectStore(new S3ObjectStore(sp.GetRequiredService<MediaStorage>()), Store));
         });
@@ -121,13 +128,21 @@ public class ProcessingFixture : MediaFixture
     }
 }
 
-/// <summary>A job that runs over 2 s fails with <c>timed-out</c>.</summary>
+/// <summary>
+/// A job that runs over 2 s fails with <c>timed-out</c>. The 2 s are on the fake clock, which the test moves once FFmpeg has written its
+/// first segment, so the timeout lands during the encode however fast the machine is. The worker polls on that clock too: the test
+/// moves it by <c>PollInterval</c> to let the worker claim.
+/// </summary>
 public sealed class TimeoutFixture : ProcessingFixture
 {
     public TimeoutFixture(PostgresServer postgres, KafkaServer kafka, S3Server s3) : base(postgres, kafka, s3)
     {
         Settings["Media:Processing:JobTimeout"] = "00:00:02";
     }
+
+    public static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
+
+    protected override bool UsesSystemClock => false;
 }
 
 /// <summary>

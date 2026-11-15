@@ -186,9 +186,11 @@ public sealed class ProcessingTests(ProcessingFixture media, TimeoutFixture shor
     {
         var upload = await shortTimeout.UploadAsync(await samples.LongAsync(), "video/mp4");
         var jobId = (await JobAsync(shortTimeout, upload)).Id;
+        shortTimeout.Clock.Advance(TimeoutFixture.PollInterval);   // the worker's next poll claims the job
 
-        // The encode has begun when the timeout ends the job, so the kill lands during FFmpeg's run.
+        // FFmpeg has written its first segment when the 2 s pass, so the kill lands during its run.
         await WaitForFileAsync(Path.Combine(shortTimeout.WorkDirectory, jobId.ToString(), "out", "v0", "seg_000.ts"));
+        shortTimeout.Clock.Advance(TimeSpan.FromSeconds(2));
         var final = await shortTimeout.WaitForFinalAsync(upload);
 
         Assert.Equal(("Failed", "timed-out"), (final.Status, final.FailureReason));
