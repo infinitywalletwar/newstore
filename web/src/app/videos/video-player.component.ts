@@ -68,6 +68,11 @@ export class VideoPlayerComponent {
         } else {
           this.failed.set(true);
         }
+      }).catch(() => {
+        // The chunk could not be loaded (offline, a deploy replaced it): no blank player.
+        if (!cancelled) {
+          this.failed.set(true);
+        }
       });
     });
   }

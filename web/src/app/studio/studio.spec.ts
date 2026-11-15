@@ -9,7 +9,7 @@ import { StudioComponent } from './studio.component';
 import { Uploader } from './uploader';
 
 // hls.js needs a browser (MediaSource); jsdom has none. The fake records what the player does with it.
-const hls = vi.hoisted(() => ({ supported: true, instances: [] as Array<Record<string, any>> }));
+const hls = vi.hoisted(() => ({ failToLoad: false, supported: true, instances: [] as Array<Record<string, any>> }));
 vi.mock('hls.js', () => {
   class FakeHls {
     static Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError' };
@@ -24,7 +24,15 @@ vi.mock('hls.js', () => {
       hls.instances.push(this);
     }
   }
-  return { default: FakeHls };
+  // A getter that throws makes `import('hls.js').then(({ default }) => ...)` reject, as a chunk that fails to load does.
+  return {
+    get default() {
+      if (hls.failToLoad) {
+        throw new Error('Failed to fetch dynamically imported module');
+      }
+      return FakeHls;
+    },
+  };
 });
 
 const fakeLocation = { origin: 'http://localhost:8100', pathname: '/', search: '', href: '' };
@@ -474,6 +482,7 @@ describe('studio', () => {
 describe('player', () => {
   beforeEach(() => {
     hls.supported = true;
+    hls.failToLoad = false;
     hls.instances.length = 0;
     TestBed.configureTestingModule({});
   });
@@ -545,5 +554,13 @@ describe('player', () => {
     f.detectChanges();
     expect(q(f, 'player-error')).not.toBeNull();
     expect(instance['destroy']).toHaveBeenCalled();
+  });
+
+  it('Player_shows_an_error_when_the_hls_js_chunk_fails_to_load', async () => {
+    hls.failToLoad = true;
+    const f = await player();
+
+    expect(q(f, 'player-error')).not.toBeNull();
+    expect(hls.instances).toHaveLength(0);
   });
 });
