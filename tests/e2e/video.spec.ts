@@ -44,17 +44,21 @@ test('a creator uploads a video, it plays, and a broken file fails', async ({ pa
   await expect.poll(() => fetched.find((r) => /\.ts(\?|$)/.test(r.url))?.status).toBe(200);
 
   // Muted, because a browser refuses to start sound without a user gesture. The `chrome` project is used for its codecs (playwright.config.ts).
+  // `play()` rejects until hls.js has attached its source, so the whole step retries until the video has moved.
   const player = page.getByTestId('player');
-  await player.evaluate((video: HTMLVideoElement) => {
-    video.muted = true;
-    return video.play();
-  });
-  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime), { timeout: 15_000 }).toBeGreaterThan(0.5);
+  await expect(async () => {
+    await player.evaluate((video: HTMLVideoElement) => {
+      video.muted = true;
+      return video.play();
+    });
+    expect(await player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.5);
+  }).toPass({ timeout: 15_000 });
 
   // A broken file: random bytes are no video, so the worker fails the upload and the row says why.
   await page.getByTestId('studio-link').click();
   const broken = await createVideo(page, `E2E broken ${Date.now()}`);
   await broken.getByTestId('upload-file').setInputFiles('fixtures/broken.mp4');
   await expect(broken.getByTestId('upload-status')).toHaveText('Failed', { timeout: PROCESSING_TIMEOUT });
-  await expect(broken.getByTestId('failure-reason')).toBeVisible();
+  // Random bytes make ffprobe fail, which the worker records as `unreadable` (ProcessingTests), and the studio words that code.
+  await expect(broken.getByTestId('failure-reason')).toHaveText("The file isn't a video FFmpeg can read");
 });
