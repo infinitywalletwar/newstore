@@ -707,7 +707,7 @@ Branch `phase-2/gateway-media`. Issue #118. Merges after Task 2. Read: Stage 1 t
 
   The S3 traffic never goes through the gateway: part PUTs, playlists, segments and downloads go from the browser to `localhost:4566`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 In `ProxyTests`, with the existing stubs:
 - `[Theory] New_routes_reach_their_service_with_the_users_token`: each row of the table, signed in with the CSRF header, reaches the stub of its service on the path without `/api`, with a bearer token and no cookie.
@@ -716,7 +716,7 @@ In `ProxyTests`, with the existing stubs:
 
 Expected: they fail.
 
-- [ ] **Step 2: Implement, then run the tests**
+- [x] **Step 2: Implement, then run the tests**
 
 Expected: Gateway.Tests pass, and `docker compose build gateway` succeeds. Commit: `feat(gateway): route uploads, downloads and video drafts`.
 

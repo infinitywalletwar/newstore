@@ -232,6 +232,7 @@ services:
       Services__Catalog: http://catalog:8080
       Services__Inventory: http://inventory:8080
       Services__Orders: http://orders:8080
+      Services__Media: http://media:8080
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: gateway
     ports: ["127.0.0.1:8100:8080"]
