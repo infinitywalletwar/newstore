@@ -33,7 +33,7 @@ services:
       FakePay__EnableTestEndpoints: "true"
 
   k6:
-    image: grafana/k6:2.3.0
+    image: grafana/k6:2.4.0
     profiles: [load]
     volumes: ["./tests/load:/scripts:ro"]
     command: ["run", "/scripts/last-copy.js", "-e", "BASE_URL=http://gateway:8080", "-e", "P99_MS=${P99_MS:-1000}", "-e", "BURST_P99_MS=${BURST_P99_MS:-3000}", "-e", "RESERVATION_TTL_SECONDS=${RESERVATION_TTL_SECONDS:-30}", "--summary-trend-stats=med,p(95),p(99),max"]
