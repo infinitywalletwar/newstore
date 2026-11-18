@@ -88,7 +88,7 @@ services:
   # The local S3 (ADR 0018). Signature checks are on, so a presigned URL is verified as AWS would verify it. The credentials are
   # Floci's own: access key test, secret test.
   floci:
-    image: floci/floci:2.4.0
+    image: floci/floci:2.5.0
     environment:
       FLOCI_STORAGE_MODE: persistent
       FLOCI_STORAGE_PERSISTENT_PATH: /app/data
