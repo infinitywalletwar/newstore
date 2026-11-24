@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using DotNet.Testcontainers.Builders;
+
 using Testcontainers.Keycloak;
 
 namespace NewStore.Security.Tests;
@@ -15,7 +17,7 @@ public sealed class KeycloakServer : IAsyncLifetime
     public const string PublicIssuer = PublicUrl + "/realms/newstore";
 
     private readonly KeycloakContainer _container = new KeycloakBuilder("quay.io/keycloak/keycloak:26.8.2")
-        .WithResourceMapping(new FileInfo(RealmFile.Path), "/opt/keycloak/data/import/")
+        .WithResourceMapping(FilePath.Of(RealmFile.Path), DirectoryPath.Of("/opt/keycloak/data/import/"))
         .WithCommand("--import-realm")
         .WithEnvironment("KC_HOSTNAME", PublicUrl)
         .WithEnvironment("KC_HOSTNAME_BACKCHANNEL_DYNAMIC", "true")
