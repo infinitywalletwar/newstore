@@ -15,8 +15,9 @@ namespace NewStore.Messaging.Kafka;
 /// <summary>
 /// The service's one Kafka consumer. It handles one message at a time through <see cref="IdempotentDispatcher{TContext}"/>,
 /// stores the offset after the handler's transaction committed, and commits the stored offsets every
-/// <see cref="CommitEveryMessages"/> messages or <see cref="CommitEvery"/>. Offsets are stored only after the
-/// work, so a crash re-reads at most the uncommitted tail, and the inbox turns that re-read into a no-op.
+/// <see cref="CommitEveryMessages"/> messages or <see cref="CommitEvery"/>, and before a rebalance revokes its
+/// partitions. Offsets are stored only after the work, so a crash re-reads at most the uncommitted tail, and the
+/// inbox turns that re-read into a no-op.
 /// A failure that <see cref="TransientFailures.IsTransient"/> accepts is retried without a limit: the consumer seeks back
 /// to the message, waits and keeps polling. Any other failure is retried <see cref="MessagingOptions.MaxHandlerAttempts"/>
 /// times and then dead-lettered.
@@ -68,7 +69,15 @@ internal sealed class KafkaConsumerService<TContext>(
             EnableAutoOffsetStore = false,
             AutoOffsetReset = AutoOffsetReset.Earliest,
         })
-            .SetPartitionsRevokedHandler((_, revoked) => ForgetAttempts(revoked.Select(r => r.TopicPartition)))
+            .SetPartitionsRevokedHandler((c, revoked) =>
+            {
+                // librdkafka drops a partition's stored offset when the partition leaves the assignment, right after
+                // this handler. Commit while this member still owns it, so the next owner starts after our work.
+                Commit(c);
+                ForgetAttempts(revoked.Select(r => r.TopicPartition));
+            })
+            // Lost: another member may own the partitions already, so no commit. Their stored offsets are dropped,
+            // and the next commit finds nothing to send (Local_NoOffset).
             .SetPartitionsLostHandler((_, lost) => ForgetAttempts(lost.Select(l => l.TopicPartition)))
             .Build();
 
@@ -277,14 +286,21 @@ internal sealed class KafkaConsumerService<TContext>(
         try
         {
             consumer.Commit();
-            _uncommitted = 0;
-            _lastCommitAt = timeProvider.GetTimestamp();
+        }
+        catch (KafkaException ex) when (ex.Error.Code == ErrorCode.Local_NoOffset)
+        {
+            // No stored offset is newer than the committed one: what we stored left with a lost partition, or with
+            // a revoked one whose commit failed. Every retry would fail the same way, so there is nothing to commit.
         }
         catch (KafkaException ex)
         {
             // Not fatal: the offsets stay stored and the next commit includes them.
             MessagingLog.CommitFailed(logger, ex.Error.Reason);
+            return;
         }
+
+        _uncommitted = 0;
+        _lastCommitAt = timeProvider.GetTimestamp();
     }
 
     private static void Pause(TimeSpan duration, CancellationToken stoppingToken) =>

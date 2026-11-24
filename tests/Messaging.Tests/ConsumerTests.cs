@@ -3,6 +3,7 @@ using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 
 using NewStore.Messaging.Inbox;
 
@@ -138,6 +139,43 @@ public class ConsumerTests(PostgresServer postgres, KafkaServer kafka)
             "the successor receives a message");
 
         Assert.Equal(control.EventId.ToString(), Scenario.Header(first!, "message-id"));
+    }
+
+    [Fact]
+    public async Task Offsets_stored_before_a_rebalance_are_committed_before_the_partition_moves()
+    {
+        var scenario = await Scenario.CreateAsync(postgres, kafka);
+        var probe = new HandlerProbe();
+
+        // A clock that never moves: the one-second commit never comes due, so the handled message's offset stays
+        // stored but uncommitted until the rebalance.
+        using var host = await scenario.StartHostAsync(
+            scenario.ClientId,
+            b => b.AddHandler<ThingCreated, CreateThingHandler>(scenario.Topic),
+            services: s => s.AddSingleton(probe).AddSingleton<TimeProvider>(new FakeTimeProvider()));
+        var handled = ThingCreated.New("handled");
+        await scenario.ProduceAsync(scenario.Topic, handled);
+        await Scenario.EventuallyAsync(() => Task.FromResult(probe.Completed(handled.EventId)), s_wait, "the message is handled");
+
+        // A second member joins the group, so the rebalance revokes the partition from the host.
+        using var newcomer = new ConsumerBuilder<string, string>(new ConsumerConfig
+        {
+            BootstrapServers = scenario.BootstrapServers,
+            GroupId = scenario.ClientId,
+            EnableAutoCommit = false,
+        }).Build();
+        newcomer.Subscribe(scenario.Topic);
+        var partition = new TopicPartition(scenario.Topic, 0);
+        await Scenario.EventuallyAsync(
+            () =>
+            {
+                // Polling serves the newcomer's side of the rebalance.
+                newcomer.Consume(TimeSpan.FromMilliseconds(200));
+                var committed = newcomer.Committed([partition], TimeSpan.FromSeconds(5)).Single();
+                return Task.FromResult(committed.Offset == 1);
+            },
+            s_wait,
+            "the handled message's offset (0) is committed as 1, the next offset to read");
     }
 
     [Fact]
