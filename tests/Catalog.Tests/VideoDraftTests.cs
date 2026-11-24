@@ -87,6 +87,17 @@ public class VideoDraftTests(SeededCatalogAppFactory factory) : IClassFixture<Se
     }
 
     [Fact]
+    public async Task Editions_of_a_draft_are_a_404_like_the_draft_itself()
+    {
+        var (_, client, _) = await CreatorAsync();
+        var draft = await CreateVideoAsync(client, "Unreleased");
+        using var anonymous = factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/videos/{draft.Id}/editions", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/videos/{draft.Id}/editions", Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task Creating_a_video_without_a_channel_is_409()
     {
         using var client = ClientFor(Guid.NewGuid());

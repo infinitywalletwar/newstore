@@ -66,6 +66,20 @@ public class CreatorTests(ConditionalUpdateFixture fixture) : IClassFixture<Cond
     }
 
     [Fact]
+    public async Task Create_edition_for_your_own_draft_is_409()
+    {
+        using var client = fixture.CreateClient();
+        var creator = Guid.NewGuid();
+        var video = Guid.NewGuid();
+        FakeCatalog.SetOwner(video, creator, "Draft");
+
+        var response = await client.SendAsUserAsync(creator, HttpMethod.Post, "/editions", NewEdition(video));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("urn:newstore:problem:video-not-published", (await response.ReadProblemAsync()).Type);
+    }
+
+    [Fact]
     public async Task Create_edition_for_an_unknown_video_is_400()
     {
         using var client = fixture.CreateClient();
