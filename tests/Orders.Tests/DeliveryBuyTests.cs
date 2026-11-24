@@ -139,6 +139,23 @@ public class DeliveryBuyTests
         Assert.Equal(0, await CountOrdersAsync(buyer));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task Refused_release_still_answers_400(HttpStatusCode releaseStatus)
+    {
+        _fixture.Inventory.Format = "Digital";
+        _fixture.Inventory.Release = _ => new HttpResponseMessage(releaseStatus);
+        var buyer = Guid.NewGuid();
+
+        var response = await BuyAsync(buyer, Guid.NewGuid(), Delivery());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await ProblemAsync(response);
+        Assert.Equal("urn:newstore:problem:delivery-not-allowed", problem.GetProperty("type").GetString());
+        Assert.Equal(0, await CountOrdersAsync(buyer));
+    }
+
     [Fact]
     public async Task Digital_buy_without_delivery_is_unchanged()
     {

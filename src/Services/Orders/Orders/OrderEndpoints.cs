@@ -145,8 +145,10 @@ public static class OrderEndpoints
         {
             await inventory.ReleaseAsync(reservationId, CancellationToken.None);
         }
-        catch (TransientFailureException ex)
+        catch (Exception ex) when (ex is TransientFailureException or HttpRequestException or InvalidOperationException)
         {
+            // Best effort: a refused release (401/403 as HttpRequestException, 409 as InvalidOperationException) must not turn the
+            // buyer's 400 into a 500. The reservation expires on its own.
             OrdersLog.ReleaseFailed(logger, reservationId, ex);
         }
     }
