@@ -51,15 +51,26 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 - Each service reads and writes only its own database. It learns about other services' data through their APIs and Kafka events.
 - Publish every event through the transactional outbox, and make every consumer idempotent.
 - Events (`NewStore.Messaging`, ADR 0008):
-  - To publish, call `IOutbox.Enqueue(event, topic, key)` in the same unit of work as the business change, then `SaveChangesAsync`. The key is the aggregate's id. Never produce to Kafka directly.
+  - To publish, call `IOutbox.Enqueue(event, topic, key)` in the same unit of work as the business change, then `SaveChangesAsync`. The key is the aggregate's id. Never produce an event to Kafka directly; the one exception is a stream (below).
   - To consume, write an `IIntegrationEventHandler<TEvent>` and register it with `AddMessaging<TContext>(m => m.AddHandler<TEvent, THandler>("topic"))`. The handler needs no idempotency code: it runs inside the inbox transaction, once per message id, and its writes commit with the inbox row.
   - The context's model calls `modelBuilder.AddOutbox()` and `modelBuilder.AddInbox()`, and the service's migration creates `outbox_messages` and `inbox_messages`. `AddTopic` creates topics at startup.
   - An event that another service consumes is a record in `NewStore.Contracts` (`src/Shared/Contracts/<Producer>/`), because the consumer picks the class by the CLR full name in the `type` header. The record holds its topic name and partition count as constants, and both ends declare the topic with them.
   - When several events share a topic, its name and partition count live in one static class named for the producer (`PaymentEvents`, `OrderEvents`), and the key is the aggregate's id. An event that has a topic to itself keeps the constants on the record, as `EditionSnapshot` does.
+  - A consumer of a shared topic declares each event type on it that it doesn't handle with `m.AddIgnoredType<TEvent>(topic)`, as Payments does for `ShipmentRequested` and Delivery for `RefundRequested`. A declared type is skipped without a warning; a type nobody declared still logs a Warning, because it may be a contract the consumer should know.
   - `MessagingCleanupService` deletes published outbox rows one day after publishing and inbox rows after seven days (`Messaging:OutboxRetention`, `Messaging:InboxRetention`). A consumer that replays older messages raises the inbox retention first, or they are handled again.
   - A handler that calls another service lets `HttpRequestException` and timeouts propagate, or throws `TransientFailureException`. The consumer retries those without a limit, except an `HttpRequestException` with a 4xx status other than 408 and 429, which is permanent; any other exception is dead-lettered after `MaxHandlerAttempts`. A client behind a resilience pipeline converts Polly's `ExecutionRejectedException` (an open circuit, a timeout or a rate-limiter rejection) to `TransientFailureException`.
   - Kafka is never in a readiness check: a service without Kafka still serves reads. The relay's `outbox-relay` check is a live check only.
   - A service that is slow on its first request (OpenID keys, its own token, connections) calls `AddReadinessWarmUp`: `/health/ready` is unhealthy until the warm-up has worked once, and after that readiness no longer depends on it. Orders does this. `WarmUp:Enabled=false` turns it off in a test.
+- Streams (`NewStore.Messaging`, ADR 0022):
+  - A stream is a high-frequency message that the next one replaces and that its producer can make again from its own state, such as the courier's positions on `delivery.positions`. Everything else is an event and goes through the outbox. A new stream needs its own decision record that says why losing one message is harmless.
+  - To produce, call `IStreamProducer.ProduceAsync(topic, key, message, ct)`. It awaits Kafka's acknowledgement (the idempotent producer, `acks=all`) and throws when there is none. Work that must not be lost, such as the courier's last position, is marked done only after that acknowledgement.
+  - To consume, write an `IStreamHandler<TMessage>` and register it with `m.AddStreamHandler<TMessage, THandler>(topic)`. It gets batches of up to `Messaging:StreamBatchSize` (200) messages or `Messaging:StreamBatchWindow` (200 ms), in a consumer group of its own, `<ClientId>.<topic>`, with no inbox and no dead-letter topic. Offsets are committed after the handler returns, a batch that throws is retried without a limit, and a message that can't be read is skipped.
+  - So a stream handler is idempotent by a natural key (Delivery's: `ON CONFLICT DO NOTHING` on `(shipment_id, seq)`, and `WHERE last_seq < @seq`), and it never throws because of one bad message: it drops it and logs it.
+  - A stream's record lives in the service that produces and consumes it, with its topic and partition constants, as `CourierPosition` does in Delivery. It moves to `NewStore.Contracts` when another service consumes it.
+- Live updates (ADR 0023):
+  - A SignalR hub is mapped under `/hubs/` in its service, accepts WebSockets only, and sets `CloseOnAuthenticationExpiration`. The gateway routes it as `/api/hubs/...`.
+  - A browser client connects with WebSockets only and `skipNegotiation`, so instances behind the gateway need no sticky sessions. It calls its subscribe method again after every reconnect, because SignalR doesn't keep group membership across one, and it drops a message it has already shown by its sequence number.
+  - A browser can't add `X-CSRF` to a WebSocket, so the gateway accepts a cookie-authenticated WebSocket upgrade under `/api/hubs/` by its `Origin` instead, which must be one of `Gateway:PublicOrigins`. Every other cookie request still needs `X-CSRF: 1`.
 - A service validates tokens with `AddNewStoreAuth` and calls another service only through `AddServiceClient` (ADR 0012).
 - Each service enforces its own permissions with authorization policies, in addition to the gateway's token check.
 - Record any choice with a real trade-off as a decision record in `docs/adr/`. Check each claim about an alternative against its documentation before writing it, and link the page.
@@ -109,6 +120,8 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 - Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, `test`/`test` for Floci, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - Media's local credentials: the database role `media/media` and the Keycloak client secret `media`.
 - `media-worker` runs FFmpeg; it has no port.
+- Delivery's local credentials: the database role `delivery/delivery`. Delivery calls no other service, so it has no Keycloak client.
+- Delivery runs in three containers from one image: `delivery` and `delivery-b` (`Delivery:Role` Api) and `delivery-courier` (Courier). Only `delivery` publishes a port.
 - FakePay's local credentials: API key `fakepay`, webhook secret `fakepay-webhook`. Payments and FakePay both read them from Compose or `appsettings.Development.json`, never from `appsettings.json`.
 - Host ports:
 
@@ -132,6 +145,8 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
   | 5105 | FakePay with `dotnet run` |
   | 8106 | Media in Compose |
   | 5106 | Media with `dotnet run` |
+  | 8107 | Delivery in Compose (`delivery`; `delivery-b` and `delivery-courier` publish no port) |
+  | 5107 | Delivery with `dotnet run` |
   | 8100 | Gateway in Compose: the browser's front door |
   | 5100 | Gateway with `dotnet run` |
 

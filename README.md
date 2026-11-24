@@ -4,7 +4,7 @@ newstore is a video platform with a store built in. Creators upload videos, and 
 
 It's a home practice project, not a business. Its purpose is hands-on practice with the skills a senior ASP.NET Core backend developer is expected to have, and a chance to learn new ones.
 
-> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) is done, following [its plan](docs/plans/2026-11-14-phase-2-video-pipeline.md); it waits for the owner's checks (the by-hand upload, resume and purchase, and the mock interview). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
+> **Status:** Phase 0 (Foundation), Phase 1a (Buy the last copy) and Phase 1b (Checkout) done; Phase 1b's mock interview and sprint review are still to come. Phase 2 (Video pipeline) is done, following [its plan](docs/plans/2026-11-14-phase-2-video-pipeline.md); it waits for the owner's checks (the by-hand upload, resume and purchase, and the mock interview). Phase 3 (Delivery tracking) follows [its plan](docs/plans/2026-11-24-phase-3-delivery.md). To start work or pick it up again, follow [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Goals
 
@@ -143,7 +143,8 @@ flowchart LR
     Browser -. sign-in page .-> Keycloak
     Gateway -. tokens .-> Keycloak
     Catalog & Media & Inventory & Orders & Payments & Delivery <--> Kafka[(Kafka)]
-    Courier[Courier simulator] --> Kafka
+    Courier[Delivery courier] --> Kafka
+    Delivery <--> Redis[(Redis: SignalR backplane)]
     Media & Worker[Media worker: FFmpeg] --> S3[(S3)]
     Browser -. upload parts, playback, downloads .-> S3
 ```
@@ -160,8 +161,8 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 | Inventory | editions, stock, reservations, copies | Reservations and copy numbers. This is where the last copy is decided. |
 | Orders | orders | Runs the checkout saga. |
 | Payments | payment attempts | Talks to the payment provider and handles its callbacks idempotently. |
-| Delivery | shipments, position history | Shipments, tracking and the SignalR hub for live maps. |
-| Courier simulator | nothing | A worker that drives simulated couriers and publishes their positions. |
+| Delivery | shipments, position history, the couriers' leases | Shipments, tracking and the SignalR hub for live maps. It runs as two API instances behind the gateway. |
+| Delivery courier | nothing of its own: it leases shipments in Delivery's database | A second container of Delivery (`Delivery:Role` Courier) that drives the simulated couriers and produces their positions straight to Kafka (ADR 0022). |
 | Keycloak | users, service clients | Sign-in, and tokens for calls between services. It's off-the-shelf software, not our code. |
 | FakePay | payment sessions, in memory | A stand-in for a hosted payment page until Stripe test mode in Phase 7. A test double, not part of the store. |
 
@@ -172,7 +173,7 @@ Each service is an ASP.NET Core app with its own PostgreSQL database, accessed t
 3. The provider calls Payments back. Payments publishes "payment succeeded" or "payment failed", once per payment however often the callback comes.
 4. On success, Orders asks Inventory to confirm the reservation. Inventory assigns the copy number and publishes "copy assigned". If the hold ran out first, Orders publishes "refund requested" instead, and Payments refunds.
 5. On failure, Orders asks Inventory to release the reservation. A reservation nobody starts paying for expires after 10 minutes, and a held one after 45.
-6. "Copy assigned" leads Delivery to create a shipment for a physical copy, or makes a digital copy downloadable.
+6. When Orders completes the order of a physical copy, it also publishes "shipment requested", with the address and the pin, in the same transaction. Delivery creates a shipment from it. "Copy assigned" makes a digital copy downloadable.
 
 Every event is published through a transactional outbox, and every consumer ignores messages it has already handled. Orders' calls to Inventory and Payments are commands that are safe to repeat: each carries an id Orders chose, so a retry after a lost reply still takes effect only once. A consumer retries a call that failed because the other service was down, without a limit, so a payment is never dropped while Inventory restarts.
 
@@ -190,6 +191,7 @@ Every event is published through a transactional outbox, and every consumer igno
 - **Sign-in and permissions:** the gateway is a backend-for-frontend (BFF). It signs the browser in to Keycloak with the authorization code flow and PKCE, keeps the tokens on the server, and gives the browser only an HttpOnly session cookie. It adds the user's access token to each API call it forwards. Each service checks the token itself and enforces its own permissions with ASP.NET Core authorization policies, for example "a creator can change only their own editions". A service that calls another sends its own token, from the client credentials grant, and the callee names the callers it accepts.
 - **Caching:** Redis, through HybridCache, for catalog reads. Redis is also the SignalR backplane when Delivery runs as several instances.
 - **Monitoring:** every service sends metrics, logs and traces with OpenTelemetry to an OpenTelemetry Collector. The collector forwards them to Prometheus, Loki and Tempo, and Grafana shows all three. A single purchase appears as one trace across every service.
+- **Live updates:** the browser holds one WebSocket to Delivery's SignalR hub, through the gateway, with no fallback transport. Because it skips negotiation, the Delivery instances need no sticky sessions; a Redis backplane carries a message to a browser connected to the other instance. A browser can't add the CSRF header to a WebSocket, so the gateway checks the upgrade's `Origin` instead (ADR 0023).
 - **Front door:** Nginx handles HTTPS and serves the Angular app, then passes `/api` and WebSocket traffic to the YARP gateway. Until Nginx arrives in Phase 4, the gateway serves the Angular app itself.
 
 ## Stack
@@ -272,8 +274,9 @@ newstore/
 │   │                 Orders: Orders/ (buy, pay, my copies), Clients/ (Inventory and Payments), Saga/ (the handlers of Payments' events)
 │   │                 Media: Storage/ (the two S3 clients, bucket setup, object keys), Uploads/ (resumable multipart uploads, expiry), Clients/ (Catalog)
 │   │                 Media: Processing/ (the jobs table with a lease, FFmpeg and ffprobe, the worker), Seed/ (the HLS sample, sample-videos.json)
+│   │                 Delivery: Shipments/ (the shipment from Orders' event, the REST API, the warehouse), Courier/ (the lease, the timeline,
+│   │                 producing positions), Tracking/ (the positions stream, the SignalR hub); one image, three containers: two API instances and the courier
 │   ├── Fakes/        stand-ins for outside services; FakePay: a hosted-checkout page and signed webhooks (not part of the store)
-│   ├── Workers/      the courier simulator and other workers
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
 │       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
 │       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
@@ -370,3 +373,12 @@ newstore/
   - The worker gets 2 GB of memory and Floci about 0.5 GB; the spike measures both.
   - Media aborts abandoned uploads itself and marks them Expired; an S3 lifecycle rule waits for Terraform.
   - No files are deleted in Phase 2, V-5 included.
+- Phase 3, decided 2026-11-24. The owner asked Claude to decide every Phase 3 choice («решай все сам»); any of these can change in the Phase 3 plan's pull request:
+  - The address and the pin belong to the order: `POST /orders` requires them for a DVD edition and refuses them for a digital one. When the saga completes a DVD order, Orders publishes "shipment requested" through the outbox with everything Delivery needs, so Delivery calls no other service.
+  - Delivery is a new service with its own database, and it takes ports 8107 and 5107. One warehouse comes from configuration (`Delivery:Warehouse`, Tempelhof in Berlin), and each shipment copies its coordinates when it is created. There is no distance check: every trip takes the same time.
+  - The courier is a second container of Delivery, not a project in `src/Workers/`: it claims shipments with a lease in Delivery's database, as the Media worker claims jobs, so a dead courier's shipments are taken over. Its position is a pure function of when the trip started (a straight line from the warehouse to the pin, 30 s of preparing and 4 min 30 s of travel, a position every 2 s), so a courier that takes a trip over reports the same positions.
+  - Courier positions are a stream, not events. The courier produces them straight to Kafka (`delivery.positions`, 6 partitions) and awaits each acknowledgement; Delivery's API consumes them in batches in a consumer group of their own, without the inbox, and a repeat is harmless because a position only moves a shipment forward. A lost position is replaced 2 s later, and the last one is acknowledged before the trip counts as finished. This is the one exception to "every event goes through the outbox" (ADR 0022).
+  - Live tracking is one SignalR hub, WebSockets only, with a Redis backplane. Two Delivery instances sit behind the gateway with round robin and a health check, and no sticky sessions. A connection ends when the access token behind it expires; the page reconnects through the gateway, which refreshes the token, and tracks again, because SignalR doesn't keep groups across a reconnect (ADR 0023).
+  - The gateway accepts a hub's WebSocket upgrade by its `Origin`, from a list of the app's own origins, since a browser can't add the CSRF header to a WebSocket; the `SameSite=Strict` cookie stays as a second layer (ADR 0023).
+  - The map is Leaflet 1.9.4 with OpenStreetMap's tiles and their attribution, and the browser test never fetches a tile. L-1's delivery status comes from Delivery; Orders never learns it.
+  - `delivery-b`, the second API instance, and `delivery-courier` publish no port. Delivery's three containers add 1.25 GB, so the stack's limits come to 10 GB.
