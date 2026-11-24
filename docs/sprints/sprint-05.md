@@ -12,13 +12,13 @@ The tasks of [the Phase 3 plan](../plans/2026-11-24-phase-3-delivery.md), in fou
 
 | Wave | Issue | Task |
 |---|---|---|
-| A | #TBD | 1 Messaging streams |
-| A | #TBD | 2 Orders: the delivery address and `ShipmentRequested` |
-| B | #TBD | 3 The Delivery service |
-| C | #TBD | 4 The courier |
-| C | #TBD | 5 Live tracking |
-| C | #TBD | 6 The web app |
-| D | #TBD | 7 Phase 3 done |
+| A | #155 | 1 Messaging streams |
+| A | #156 | 2 Orders: the delivery address and `ShipmentRequested` |
+| B | #157 | 3 The Delivery service |
+| C | #158 | 4 The courier |
+| C | #159 | 5 Live tracking |
+| C | #160 | 6 The web app |
+| D | #161 | 7 Phase 3 done |
 
 The Stage 3 roadmap topics (real-time and SignalR, scaling SignalR, high-frequency events) are written, so they can be read before wave A.
 

@@ -233,10 +233,10 @@ export interface ShipmentDetails { id: string; orderId: string; copyNumber: numb
 
 | Wave | Tasks, at the same time | Owns the Compose stack on the Mac | Issues |
 |---|---|---|---|
-| A | 1 Messaging streams ‖ 2 Orders: the address and `ShipmentRequested` | Task 2 | #TBD, #TBD |
-| B | 3 The Delivery service | Task 3 | #TBD |
-| C | 4 The courier ‖ 5 Live tracking ‖ 6 The web app | Task 5 | #TBD, #TBD, #TBD |
-| D | 7 Phase 3 done | Task 7 | #TBD |
+| A | 1 Messaging streams ‖ 2 Orders: the address and `ShipmentRequested` | Task 2 | #155, #156 |
+| B | 3 The Delivery service | Task 3 | #157 |
+| C | 4 The courier ‖ 5 Live tracking ‖ 6 The web app | Task 5 | #158, #159, #160 |
+| D | 7 Phase 3 done | Task 7 | #161 |
 
 The design's waves stand. The one refinement: Payments' `AddIgnoredType<ShipmentRequested>` needs both Task 1's method and Task 2's record, which merge in parallel, so it moves to Task 3.
 
@@ -324,7 +324,7 @@ The browser can hold its WebSocket on either API instance, and either instance c
 
 ### Task 1: Messaging streams
 
-Branch `phase-3/streams`. Issue #TBD. Read: topic 03 (high-frequency events) and Stage 1's outbox and idempotent-consumer topics.
+Branch `phase-3/streams`. Issue #155. Read: topic 03 (high-frequency events) and Stage 1's outbox and idempotent-consumer topics.
 
 **Files:**
 - Create: `src/Shared/Messaging/Streams/IStreamProducer.cs`, `IStreamHandler.cs`, `StreamProducer.cs`, `KafkaStreamConsumer.cs`; `tests/Messaging.Tests/StreamTests.cs`, `IgnoredTypeTests.cs`; `docs/adr/0022-positions-are-a-stream.md`
@@ -386,7 +386,7 @@ Expected: Messaging.Tests pass, and so does the whole solution (`dotnet test --s
 
 ### Task 2: Orders: the delivery address and `ShipmentRequested`
 
-Branch `phase-3/orders-delivery`. Issue #TBD. Owns the Compose stack in wave A. Advances D-1. Read: Stage 1's sagas topic, and topic 03's "stream versus event".
+Branch `phase-3/orders-delivery`. Issue #156. Owns the Compose stack in wave A. Advances D-1. Read: Stage 1's sagas topic, and topic 03's "stream versus event".
 
 **Files:**
 - Create: `src/Shared/Contracts/Orders/ShipmentRequested.cs`; a migration, `DeliveryAddress`; `tests/Orders.Tests/DeliveryBuyTests.cs`, `ShipmentSagaTests.cs`
@@ -460,7 +460,7 @@ Expected: they pass after the change. Commit: `feat(orders): the saga requests a
 
 ### Task 3: The Delivery service
 
-Branch `phase-3/delivery-service`. Issue #TBD. Owns the Compose stack in wave B. Advances D-1 and L-1. Read: topic 01's first half (what the hub will need from the REST API) and Stage 1's idempotent-consumer topic.
+Branch `phase-3/delivery-service`. Issue #157. Owns the Compose stack in wave B. Advances D-1 and L-1. Read: topic 01's first half (what the hub will need from the REST API) and Stage 1's idempotent-consumer topic.
 
 **Files:**
 - **Create:**
@@ -611,7 +611,7 @@ Expected: Delivery.Tests pass. Commit: `feat(delivery): shipments from Orders' e
 
 ### Task 4: The courier
 
-Branch `phase-3/courier`. Issue #TBD. Advances D-2. Read: topic 03 (idempotency by seq) and Stage 2's topic 02 ("Захват задачи с арендой"). The courier gets a deep walkthrough, as the hard part "the courier's live updates": the lease and the timeline step by step, the test that proves a takeover repeats the seqs, and one change for the owner (set `Delivery:Courier:Lease` to 10 s and `LeaseRenewInterval` to 3 s in Compose, `docker compose kill delivery-courier` mid-trip, start it again and compare the seqs on the topic with `kafka-console-consumer.sh`).
+Branch `phase-3/courier`. Issue #158. Advances D-2. Read: topic 03 (idempotency by seq) and Stage 2's topic 02 ("Захват задачи с арендой"). The courier gets a deep walkthrough, as the hard part "the courier's live updates": the lease and the timeline step by step, the test that proves a takeover repeats the seqs, and one change for the owner (set `Delivery:Courier:Lease` to 10 s and `LeaseRenewInterval` to 3 s in Compose, `docker compose kill delivery-courier` mid-trip, start it again and compare the seqs on the topic with `kafka-console-consumer.sh`).
 
 **Files:**
 - Create: `src/Services/Delivery/Courier/CourierTimeline.cs`, `CourierLeases.cs`, `CourierRunner.cs`, `CourierService.cs`, `CourierExtensions.cs`; `tests/Delivery.Tests/CourierTimelineTests.cs`, `CourierLeaseTests.cs`, `CourierTests.cs`, `CourierFixture.cs`, `PositionsTopic.cs` (a test helper that reads `delivery.positions` from the start with a plain consumer)
@@ -721,7 +721,7 @@ Expected: they pass after `CourierRunner` and `CourierService` are written. Comm
 
 ### Task 5: Live tracking
 
-Branch `phase-3/live-tracking`. Issue #TBD. Owns the Compose stack in wave C. Advances D-3. Read: topics 01 and 02 (all of them) and topic 03's batching section. Live tracking gets a deep walkthrough, as "the courier's live updates": the batch handler, the hub's snapshot, the backplane, and the two-host test, step by step, with one change for the owner (in `TwoHostTests`, remove the Redis connection string from both hosts and watch the test fail, then read why in the walkthrough's diagram).
+Branch `phase-3/live-tracking`. Issue #159. Owns the Compose stack in wave C. Advances D-3. Read: topics 01 and 02 (all of them) and topic 03's batching section. Live tracking gets a deep walkthrough, as "the courier's live updates": the batch handler, the hub's snapshot, the backplane, and the two-host test, step by step, with one change for the owner (in `TwoHostTests`, remove the Redis connection string from both hosts and watch the test fail, then read why in the walkthrough's diagram).
 
 **Files:**
 - **Create:**
@@ -833,7 +833,7 @@ Expected: Gateway.Tests and Delivery.Tests pass. Commit: `feat(gateway): route D
 
 ### Task 6: The web app
 
-Branch `phase-3/web-tracking`. Issue #TBD. Advances D-1, D-3 and L-1 in the browser. Read: topic 01 (the client side) and topic 02 ("Переподключение и группы"). Middle depth, except the tracking client's reconnect, which gets a deep walkthrough.
+Branch `phase-3/web-tracking`. Issue #160. Advances D-1, D-3 and L-1 in the browser. Read: topic 01 (the client side) and topic 02 ("Переподключение и группы"). Middle depth, except the tracking client's reconnect, which gets a deep walkthrough.
 
 **Files:**
 - **Create:** `web/src/app/maps/leaflet-map.ts` (`createMap(element: HTMLElement, center: GeoPoint, zoom: number): L.Map` with the OSM tile layer and attribution, `L.Icon.Default.imagePath = 'leaflet/'`), `web/src/app/delivery/delivery-form.component.ts`, `web/src/app/shipments/tracking-client.ts`, `web/src/app/shipments/tracking-page.component.ts`, `web/src/app/shipments/shipment-status.ts` (labels `Preparing`, `Picked up`, `In transit`, `Delivered`, and the four steps), `web/src/app/shipments/tracking.spec.ts`
@@ -914,7 +914,7 @@ Expected: they pass, and `npm run build` succeeds within the budgets in `angular
 
 ### Task 7: Phase 3 done
 
-Branch `phase-3/done-3`. Issue #TBD. Owns the Compose stack. Closes D-1, D-2, D-3 and L-1. Read: topics 01 to 03 again, for the mock interview.
+Branch `phase-3/done-3`. Issue #161. Owns the Compose stack. Closes D-1, D-2, D-3 and L-1. Read: topics 01 to 03 again, for the mock interview.
 
 **Files:**
 - Create: `compose.e2e.yaml`, `tests/e2e/delivery.spec.ts`
