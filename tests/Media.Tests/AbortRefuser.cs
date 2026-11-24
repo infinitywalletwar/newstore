@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 
 using Amazon.Runtime;
@@ -18,7 +19,7 @@ namespace NewStore.Media.Tests;
 // give MediaStorage an HttpClientFactory hook and answer 403 to DELETE ...?uploadId= in a DelegatingHandler instead.
 internal sealed class AbortRefuser(string uniqueName) : IRuntimePipelineCustomizer
 {
-    private int _attempts;
+    private readonly ConcurrentDictionary<string, bool> _refused = new();
 
     public string UniqueName => uniqueName;
 
@@ -26,8 +27,11 @@ internal sealed class AbortRefuser(string uniqueName) : IRuntimePipelineCustomiz
 
     public string? Bucket { get; set; }
 
-    /// <summary>How many aborts were refused.</summary>
-    public int Attempts => Volatile.Read(ref _attempts);
+    /// <summary>
+    /// True once an abort of this S3 upload was refused. Per upload, not a count: the fixture, and so this refuser, is shared by
+    /// every test in the class, and an earlier test's refusal must not satisfy a later test's wait.
+    /// </summary>
+    public bool HasRefused(string s3UploadId) => _refused.ContainsKey(s3UploadId);
 
     public void Register() => RuntimePipelineCustomizerRegistry.Instance.Register(this);
 
@@ -48,7 +52,7 @@ internal sealed class AbortRefuser(string uniqueName) : IRuntimePipelineCustomiz
             if (owner.Armed && executionContext.RequestContext.OriginalRequest is AbortMultipartUploadRequest request
                 && request.BucketName == owner.Bucket)
             {
-                Interlocked.Increment(ref owner._attempts);
+                owner._refused.TryAdd(request.UploadId, true);
 
                 // 403 is not retried by the SDK, so each refused abort is one attempt.
                 throw new AmazonS3Exception("Refused by the test.", ErrorType.Sender, "AccessDenied", "test", HttpStatusCode.Forbidden);

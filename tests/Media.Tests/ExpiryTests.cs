@@ -107,12 +107,15 @@ public sealed class ExpiryTests(ExpiryFixture media) : IClassFixture<ExpiryFixtu
     public async Task Failed_abort_is_retried_on_the_next_tick()
     {
         var (_, upload) = await CreateWithOnePartAsync();
+        var s3UploadId = (await RowAsync(upload.Id)).S3UploadId;
         var refuser = media.Refuser;
         refuser.Armed = true;
 
         media.Clock.Advance(TimeSpan.FromHours(25));
 
-        await EventuallyAsync(() => Task.FromResult(refuser.Attempts >= 1), "S3 refuses the first abort");
+        // This upload's refusal, not any refusal: the refuser is the class's, and an earlier test's refusal is already there.
+        // The sweep commits Expired before it aborts, so once this abort is refused the row is Expired.
+        await EventuallyAsync(() => Task.FromResult(refuser.HasRefused(s3UploadId)), "S3 refuses this upload's first abort");
         var refused = await RowAsync(upload.Id);
         Assert.Equal(UploadStatus.Expired, refused.Status);
         Assert.Null(refused.S3AbortedAt);
