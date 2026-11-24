@@ -278,7 +278,7 @@ newstore/
 │   │                 producing positions), Tracking/ (the positions stream, the SignalR hub); one image, three containers: two API instances and the courier
 │   ├── Fakes/        stand-ins for outside services; FakePay: a hosted-checkout page and signed webhooks (not part of the store)
 │   └── Shared/       outbox, Kafka and OpenTelemetry setup
-│       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics
+│       ├── Messaging/    NewStore.Messaging: the outbox, the relay, the idempotent consumer, topics, and streams
 │       └── Contracts/    NewStore.Contracts: the events other services consume, one folder per producer
 ├── web/              the Angular app
 │   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it

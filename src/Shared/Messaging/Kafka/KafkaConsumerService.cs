@@ -13,7 +13,7 @@ using NewStore.Messaging.Telemetry;
 namespace NewStore.Messaging.Kafka;
 
 /// <summary>
-/// The service's one Kafka consumer. It handles one message at a time through <see cref="IdempotentDispatcher{TContext}"/>,
+/// The service's one consumer of events (each stream has its own, <c>KafkaStreamConsumer</c>). It handles one message at a time through <see cref="IdempotentDispatcher{TContext}"/>,
 /// stores the offset after the handler's transaction committed, and commits the stored offsets every
 /// <see cref="CommitEveryMessages"/> messages or <see cref="CommitEvery"/>, and before a rebalance revokes its
 /// partitions. Offsets are stored only after the work, so a crash re-reads at most the uncommitted tail, and the

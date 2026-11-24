@@ -54,4 +54,13 @@ public sealed class MessagingOptions
 
     /// <summary>The pause between two cleanup passes. The first pass runs after the first interval, not at startup.</summary>
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>The most messages a stream handler gets in one batch.</summary>
+    public int StreamBatchSize { get; set; } = 200;
+
+    /// <summary>
+    /// How long a stream consumer gathers a batch, counted from the batch's first message. A batch that has not reached
+    /// <see cref="StreamBatchSize"/> by then goes to the handler as it is.
+    /// </summary>
+    public TimeSpan StreamBatchWindow { get; set; } = TimeSpan.FromMilliseconds(200);
 }

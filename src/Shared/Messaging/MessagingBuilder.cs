@@ -51,4 +51,21 @@ public sealed class MessagingBuilder
             }));
         return this;
     }
+
+    /// <summary>
+    /// Consumes the stream <paramref name="topic"/> in batches with <typeparamref name="THandler"/>, in a consumer group of
+    /// its own (<c>&lt;ClientId&gt;.&lt;topic&gt;</c>), without the inbox and without a dead-letter topic. Messages whose
+    /// <c>type</c> header is not <typeparamref name="TMessage"/>'s full name are skipped. Declare the topic with
+    /// <see cref="AddTopic"/> too.
+    /// </summary>
+    public MessagingBuilder AddStreamHandler<TMessage, THandler>(string topic)
+        where TMessage : class
+        where THandler : class, IStreamHandler<TMessage>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+
+        _services.TryAddScoped<IStreamHandler<TMessage>, THandler>();
+        _registry.AddStream(new StreamRegistration(topic, typeof(TMessage)));
+        return this;
+    }
 }
