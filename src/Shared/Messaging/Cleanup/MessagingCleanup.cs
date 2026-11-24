@@ -71,7 +71,10 @@ public sealed class MessagingCleanupService<TContext>(
 /// <summary>The cleanup pass itself, on a non-generic type so a test can call it without the hosted service.</summary>
 public static class MessagingCleanup
 {
-    /// <summary>One pass: two <c>DELETE</c> statements, one per table. Takes <paramref name="now"/> so a test needs no timer.</summary>
+    /// <summary>
+    /// One pass: a <c>DELETE</c> per table. Takes <paramref name="now"/> so a test needs no timer. A table that is not in the
+    /// context's model is skipped: a service that consumes nothing (Inventory) has an outbox and no inbox.
+    /// </summary>
     public static async Task<CleanupResult> CleanAsync(
         DbContext db, MessagingOptions options, DateTimeOffset now, CancellationToken ct)
     {
@@ -81,13 +84,20 @@ public static class MessagingCleanup
         var outboxCutoff = now - options.OutboxRetention;
         var inboxCutoff = now - options.InboxRetention;
 
-        var outbox = await db.Set<OutboxMessage>()
-            .Where(m => m.PublishedAt != null && m.PublishedAt < outboxCutoff)
-            .ExecuteDeleteAsync(ct);
-        var inbox = await db.Set<InboxMessage>()
-            .Where(m => m.HandledAt < inboxCutoff)
-            .ExecuteDeleteAsync(ct);
+        var outbox = Has<OutboxMessage>(db)
+            ? await db.Set<OutboxMessage>()
+                .Where(m => m.PublishedAt != null && m.PublishedAt < outboxCutoff)
+                .ExecuteDeleteAsync(ct)
+            : 0;
+        var inbox = Has<InboxMessage>(db)
+            ? await db.Set<InboxMessage>()
+                .Where(m => m.HandledAt < inboxCutoff)
+                .ExecuteDeleteAsync(ct)
+            : 0;
 
         return new CleanupResult(outbox, inbox);
     }
+
+    // Set<T>() on a type the model lacks throws "Cannot create a DbSet for 'T' because this type is not included in the model".
+    private static bool Has<TEntity>(DbContext db) => db.Model.FindEntityType(typeof(TEntity)) is not null;
 }

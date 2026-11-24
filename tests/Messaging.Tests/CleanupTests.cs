@@ -59,11 +59,34 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
     }
 
     [Fact]
+    public async Task A_context_without_an_inbox_cleans_only_its_outbox()
+    {
+        // Inventory publishes and consumes nothing, so its model has no InboxMessage (it never calls AddInbox).
+        var ct = TestContext.Current.CancellationToken;
+        var scenario = await Scenario.CreateAsync(postgres, kafka, createTopic: false);
+        var now = DateTimeOffset.UtcNow;
+        var publishedLongAgo = OutboxRow(now.AddDays(-2), publishedAt: now.AddDays(-2));
+        await using (var seed = scenario.OpenContext())
+        {
+            seed.Add(publishedLongAgo);
+            await seed.SaveChangesAsync(ct);
+        }
+
+        await using var context = new OutboxOnlyDbContext(new DbContextOptionsBuilder<OutboxOnlyDbContext>()
+            .UseNpgsql(scenario.ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options);
+        var result = await MessagingCleanup.CleanAsync(context, s_defaults, now, ct);
+
+        Assert.Equal(new CleanupResult(1, 0), result);
+    }
+
+    [Fact]
     public async Task Cleanup_runs_on_the_interval()
     {
         var ct = TestContext.Current.CancellationToken;
         var scenario = await Scenario.CreateAsync(postgres, kafka, createTopic: false);
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var old = OutboxRow(time.GetUtcNow().AddDays(-2), publishedAt: time.GetUtcNow().AddDays(-2));
         await using (var seed = scenario.OpenContext())
         {
@@ -81,10 +104,14 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
             time,
             NullLogger<MessagingCleanupService<ThingsDbContext>>.Instance);
 
-        // StartAsync runs ExecuteAsync up to its first await, so the timer exists when it returns.
         await cleanup.StartAsync(ct);
         try
         {
+            // Since .NET 10 all of ExecuteAsync runs on a background thread, so the timer may not exist yet when StartAsync
+            // returns; a clock moved before it exists never reaches it.
+            // https://learn.microsoft.com/dotnet/core/compatibility/extensions/10.0/backgroundservice-executeasync-task
+            await time.TimerCreated.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
             // Not at startup: the row survives until the first interval has passed.
             await using var probe = scenario.OpenContext();
             Assert.True(await probe.Set<OutboxMessage>().AnyAsync(ct));
@@ -112,4 +139,19 @@ public class CleanupTests(PostgresServer postgres, KafkaServer kafka)
         OccurredAt = occurredAt,
         PublishedAt = publishedAt,
     };
+}
+
+/// <summary>A fake clock that says when the code under test has created its timer, so the test moves time only after that.</summary>
+internal sealed class TimerSignalingTimeProvider : FakeTimeProvider
+{
+    private readonly TaskCompletionSource _timerCreated = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task TimerCreated => _timerCreated.Task;
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = base.CreateTimer(callback, state, dueTime, period);
+        _timerCreated.TrySetResult();
+        return timer;
+    }
 }
