@@ -57,10 +57,10 @@ public static partial class EditionEndpoints
             return Problems.Validation(errors);
         }
 
-        Guid? videoOwner;
+        CatalogVideo? video;
         try
         {
-            videoOwner = await catalog.GetVideoOwnerAsync(request.VideoId, ct);
+            video = await catalog.GetVideoAsync(request.VideoId, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TransientFailureException)
         {
@@ -68,15 +68,22 @@ public static partial class EditionEndpoints
             return Problems.Unavailable("dependency-unavailable", "The catalog is not reachable. Try again shortly.");
         }
 
-        if (videoOwner is null)
+        if (video is null)
         {
             return Problems.Validation(new() { ["videoId"] = ["videoId names no video."] });
         }
 
         var creatorId = user.UserId();
-        if (videoOwner != creatorId)
+        if (video.CreatorId != creatorId)
         {
             return Problems.Forbidden("not-your-video", "This video belongs to another creator.");
+        }
+
+        // Checked after the owner, so a stranger learns nothing about someone else's draft. Only at creation, not at reserve (ADR 0019).
+        if (!video.IsPublished)
+        {
+            return Problems.Conflict(
+                "video-not-published", "Publish the video before you create editions of it: a draft cannot be sold.");
         }
 
         var edition = new Edition

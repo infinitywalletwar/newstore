@@ -37,3 +37,12 @@ So one video has a status in two services. Who owns which, and how do the two st
 - A `VideoPublished` for a video Catalog does not have goes to `media.videos.dlt` after three attempts. Nothing reads that topic yet (ADR 0008).
 - The migration that adds the status marks every existing video `Published` and points it at the sample files, so a stack seeded in Phase 1 plays the sample without a reset.
 - Rolling the migration back (`Down`) deletes every draft: `published_at` is required again, and a draft has none. A draft holds only a title and a description that Media has not touched, so we accept losing them for a rollback that is not planned.
+
+## Update, 2026-11-24 (#138): editions only of a published video
+
+- **A creator may create, and so sell, editions only of a `Published` video.** A draft is "a draft that only I see" (V-1), and a sale of a draft would be a copy whose download is a 404 `no-original`. Catalog's `GET /videos/{id}/editions` answers 404 for a draft, as `GET /videos/{id}` does.
+- **Inventory learns the status from the call it already makes.** `GET /videos/{id}/owner` carries the video's `Status`; Inventory's `CreatorId` check is followed by a status check, and a draft is refused with 409 `video-not-published`. The endpoint still answers for drafts, because Media calls it for uploads.
+- **The check is at creation, not at reserve.** The reserve path (the last-copy load test, ADR 0011) gets no extra call.
+- **Alternative: Inventory consumes `VideoPublished`.** No call at creation, but Inventory would need an inbox and a local copy of video state for this one check, and a creator who creates right after publishing could be refused until the event arrives.
+- **Cost if wrong:** a creator cannot prepare editions before publishing. Easy to relax: drop the status check.
+- Editions that already exist for a draft are not migrated; Catalog's check hides them, and a stack started fresh has none.

@@ -17,7 +17,7 @@ A viewer becomes a creator by opening a channel (A-1). From then on the creator 
 Creator is a rule about a resource, checked in the service that owns the resource.
 
 - **Editions: a resource-based handler.** `EditionOwnerHandler` (`AuthorizationHandler<EditionOwnerRequirement, Edition>`) succeeds when the token's `sub` equals `edition.CreatorId`. The PATCH, end-sale and copies endpoints require `SignedIn`, load the edition, and call `IAuthorizationService.AuthorizeAsync(user, edition, new EditionOwnerRequirement())`. A refusal is a 403 `not-your-edition`.
-- **Creating an edition: ask the owner of the video.** Inventory asks Catalog, `GET /videos/{id}/owner`, and compares the answer with the token's `sub`. Someone else's video is a 403 `not-your-video`; an unknown video is a 400 on `videoId`; an unreachable Catalog is a 503 `dependency-unavailable`. That endpoint accepts only the client `inventory`.
+- **Creating an edition: ask the owner of the video.** Inventory asks Catalog, `GET /videos/{id}/owner`, and compares the answer with the token's `sub`. Someone else's video is a 403 `not-your-video`; an unknown video is a 400 on `videoId`; a video that is not Published is a 409 `video-not-published` (ADR 0019, 2026-11-24); an unreachable Catalog is a 503 `dependency-unavailable`. That endpoint accepts only the client `inventory`.
 - **`CreatorId` never comes from the request.** `CreateEditionRequest` has no creator field. The edition's `CreatorId` is the token's `sub`, so no caller can create an edition as someone else.
 - **Reading an edition stays public.**
 

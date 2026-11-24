@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 
 using NewStore.Messaging;
 
@@ -38,7 +39,7 @@ public class CatalogClientTests
         var client = ClientThatThrows(rejection);
 
         var thrown = await Assert.ThrowsAsync<TransientFailureException>(() =>
-            client.GetVideoOwnerAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+            client.GetVideoAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
 
         Assert.Same(rejection, thrown.InnerException);
     }
@@ -50,7 +51,7 @@ public class CatalogClientTests
         var client = new CatalogClient(new HttpClient(stub) { BaseAddress = new Uri("http://catalog.test") });
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
-            client.GetVideoOwnerAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+            client.GetVideoAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -59,6 +60,20 @@ public class CatalogClientTests
         var stub = new StubHttpHandler().On(HttpMethod.Get, "/videos/{id}/owner", _ => new HttpResponseMessage(HttpStatusCode.NotFound));
         var client = new CatalogClient(new HttpClient(stub) { BaseAddress = new Uri("http://catalog.test") });
 
-        Assert.Null(await client.GetVideoOwnerAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+        Assert.Null(await client.GetVideoAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task The_status_comes_from_the_owner_reply()
+    {
+        var stub = new StubHttpHandler().On(HttpMethod.Get, "/videos/{id}/owner", _ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { videoId = Guid.NewGuid(), creatorId = Guid.NewGuid(), status = "Draft" }),
+        });
+        var client = new CatalogClient(new HttpClient(stub) { BaseAddress = new Uri("http://catalog.test") });
+
+        var video = await client.GetVideoAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+
+        Assert.False(video!.IsPublished);
     }
 }

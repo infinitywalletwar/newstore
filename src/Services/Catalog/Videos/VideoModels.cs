@@ -17,6 +17,6 @@ public sealed record MyVideo(
 
 /// <summary>
 /// Who owns a video: the creator of its channel, and the video's status. Inventory asks before it lets a creator sell
-/// the video (it ignores the status); Media asks before it lets a creator upload.
+/// the video (only a published one, ADR 0019); Media asks before it lets a creator upload.
 /// </summary>
 public sealed record VideoOwner(Guid VideoId, Guid CreatorId, string Status);
