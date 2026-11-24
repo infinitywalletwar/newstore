@@ -3,10 +3,12 @@ using System.Text.Json;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
 using NewStore.Contracts.Inventory;
 using NewStore.Messaging.Outbox;
+using NewStore.ServiceDefaults.HealthChecks;
 
 namespace NewStore.Inventory.Tests;
 
@@ -600,14 +602,20 @@ public abstract class ReservationTests(InventoryFixture fixture)
     [Fact]
     public async Task Sweeper_heartbeat_is_live()
     {
-        using var client = fixture.CreateClient();
+        var health = fixture.Services.GetRequiredService<HealthCheckService>();
 
         // A minute is far past the check's limit (3 sweep intervals + 5 s). Only a sweeper that looped
         // after the jump has stamped a fresh heartbeat.
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
 
+        // The live checks, as /health/live runs them, but only the sweeper's answer counts. The jump makes every heartbeat on
+        // this clock stale, and the outbox relay's and the snapshot publisher's are fresh again only after their own next pass,
+        // which under load can take longer than this wait.
         await Eventually(async () =>
-            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live", Ct)).StatusCode));
+        {
+            var report = await health.CheckHealthAsync(r => r.Tags.Contains(HealthCheckExtensions.LiveTag), Ct);
+            Assert.Equal(HealthStatus.Healthy, report.Entries["reservation-sweeper"].Status);
+        });
     }
 
     /// <summary>The sweeper runs in the background: poll an assertion for up to 2 seconds.</summary>

@@ -12,7 +12,8 @@ using NewStore.Messaging.Kafka;
 
 namespace NewStore.Catalog.Tests;
 
-public class VideoPublishedTests(SeededCatalogAppFactory factory, KafkaServer kafka) : IClassFixture<SeededCatalogAppFactory>
+// Its messages name videos only this class's app has, so it publishes them on a broker of its own (OwnKafkaCatalogAppFactory).
+public class VideoPublishedTests(OwnKafkaCatalogAppFactory factory) : IClassFixture<OwnKafkaCatalogAppFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -28,7 +29,7 @@ public class VideoPublishedTests(SeededCatalogAppFactory factory, KafkaServer ka
             DurationSeconds = seconds,
         };
 
-    private Task PublishAsync(VideoPublished e) => kafka.PublishAsync(VideoPublished.Topic, e.VideoId.ToString(), e, Ct);
+    private Task PublishAsync(VideoPublished e) => factory.Kafka.PublishAsync(VideoPublished.Topic, e.VideoId.ToString(), e, Ct);
 
     /// <summary>A new creator with a channel and one draft video.</summary>
     private async Task<(Guid VideoId, string Slug)> DraftAsync()
@@ -145,7 +146,7 @@ public class VideoPublishedTests(SeededCatalogAppFactory factory, KafkaServer ka
         var unknown = Event(Guid.NewGuid());
         using var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
         {
-            BootstrapServers = kafka.BootstrapServers,
+            BootstrapServers = factory.Kafka.BootstrapServers,
             GroupId = $"dlt-reader-{Guid.NewGuid():N}",
             AutoOffsetReset = AutoOffsetReset.Earliest,
         }).Build();
