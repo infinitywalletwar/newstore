@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace NewStore.Media.Tests;
@@ -105,7 +105,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         Settings["Auth:ClientSecret"] = "media";
         Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
 
-        await MigrateAsync<MediaDbContext>();
+        MigrateBeforeStart<MediaDbContext>();
         if (SetUpBucket)
         {
             await Services.GetRequiredService<StorageSetup>().EnsureAsync(ct);

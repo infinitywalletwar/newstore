@@ -23,7 +23,11 @@ public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture sto
         _ = media.Services;
         await Task.Delay(TimeSpan.FromSeconds(1), Ct);
 
-        var errors = media.Logs.Snapshot().Where(log => log.Level >= LogLevel.Error).ToList();
+        // EF logs its own first probe of a new database ("SELECT ... FROM __EFMigrationsHistory" fails: no table yet) at Error level,
+        // in the migrate job too. That is not the app failing, so it is left out.
+        var errors = media.Logs.Snapshot()
+            .Where(log => log.Level >= LogLevel.Error && !log.Message.Contains("__EFMigrationsHistory", StringComparison.Ordinal))
+            .ToList();
 
         Assert.True(errors.Count == 0, string.Join(Environment.NewLine, errors.Select(e => $"{e.Category}: {e.Message} {e.Exception?.Message}")));
     }

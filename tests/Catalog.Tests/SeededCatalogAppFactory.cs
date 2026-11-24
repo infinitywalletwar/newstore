@@ -17,7 +17,7 @@ public class SeededCatalogAppFactory(PostgresServer postgres, KafkaServer kafka)
         this.UseKafka(kafka);
         await ConfigureSettingsAsync();
 
-        await MigrateAsync<CatalogDbContext>();
+        MigrateBeforeStart<CatalogDbContext>();
         await using var scope = Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<IDatabaseSeeder<CatalogDbContext>>()
             .SeedAsync(scope.ServiceProvider.GetRequiredService<CatalogDbContext>(), ct);
