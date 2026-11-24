@@ -27,6 +27,12 @@ public sealed class ThingsDbContext(DbContextOptions<ThingsDbContext> options) :
     }
 }
 
+/// <summary>A service that publishes but consumes nothing, as Inventory does: an outbox and no inbox.</summary>
+public sealed class OutboxOnlyDbContext(DbContextOptions<OutboxOnlyDbContext> options) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.AddOutbox();
+}
+
 /// <summary>What the test handlers record, registered as a singleton so the test can read it.</summary>
 public sealed class HandlerProbe
 {
