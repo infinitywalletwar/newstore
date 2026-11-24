@@ -10,12 +10,13 @@ internal sealed record HandlerRegistration(string Topic, string TypeName, Handle
 /// <summary>A stream topic and the message type its handler takes: one <c>KafkaStreamConsumer</c> each.</summary>
 internal sealed record StreamRegistration(string Topic, Type MessageType);
 
-/// <summary>What the service declared in <c>AddMessaging</c>: its topics, its event handlers and its streams.</summary>
+/// <summary>What the service declared in <c>AddMessaging</c>: its topics, its event handlers, the event types it ignores and its streams.</summary>
 internal sealed class MessagingRegistry
 {
     private readonly List<TopicRegistration> _topics = [];
     private readonly Dictionary<(string Topic, string TypeName), HandlerRegistration> _handlers = [];
     private readonly List<StreamRegistration> _streams = [];
+    private readonly HashSet<(string Topic, string TypeName)> _ignoredTypes = [];
 
     public IReadOnlyList<TopicRegistration> Topics => _topics;
 
@@ -35,6 +36,11 @@ internal sealed class MessagingRegistry
     public void AddHandler(HandlerRegistration handler) => _handlers[(handler.Topic, handler.TypeName)] = handler;
 
     public void AddStream(StreamRegistration stream) => _streams.Add(stream);
+
+    public void AddIgnoredType(string topic, string typeName) => _ignoredTypes.Add((topic, typeName));
+
+    /// <summary>True for an event type the service declared it does not handle on <paramref name="topic"/>.</summary>
+    public bool IsIgnored(string topic, string typeName) => _ignoredTypes.Contains((topic, typeName));
 
     public HandlerRegistration? FindHandler(string topic, string typeName) =>
         _handlers.GetValueOrDefault((topic, typeName));

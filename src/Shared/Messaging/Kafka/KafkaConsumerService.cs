@@ -154,6 +154,14 @@ internal sealed class KafkaConsumerService<TContext>(
 
         if (registry.FindHandler(result.Topic, typeName) is not { } handler)
         {
+            // The service declared it does not handle this event on a shared topic: skip it quietly.
+            if (registry.IsIgnored(result.Topic, typeName))
+            {
+                MessagingLog.IgnoredType(logger, result.Topic, result.Partition.Value, result.Offset.Value, typeName);
+                Store(consumer, result);
+                return;
+            }
+
             // A newer producer may send an event this version does not know: additive changes must not break us.
             MessagingLog.UnknownType(logger, result.Topic, result.Partition.Value, result.Offset.Value, typeName);
             Store(consumer, result);

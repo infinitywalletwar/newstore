@@ -38,6 +38,9 @@ internal static partial class MessagingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "Message {Topic}[{Partition}]@{Offset} has type '{Type}', which has no handler on this topic; skipped.")]
     public static partial void UnknownType(ILogger logger, string topic, int partition, long offset, string type);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Message {Topic}[{Partition}]@{Offset} has type '{Type}', which this service ignores on this topic; skipped.")]
+    public static partial void IgnoredType(ILogger logger, string topic, int partition, long offset, string type);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Consuming failed: {Error}")]
     public static partial void ConsumeFailed(ILogger logger, string error);
 

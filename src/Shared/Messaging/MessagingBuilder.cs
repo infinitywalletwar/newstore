@@ -53,6 +53,19 @@ public sealed class MessagingBuilder
     }
 
     /// <summary>
+    /// Declares an event type on a shared <paramref name="topic"/> that this service does not handle. The consumer skips it
+    /// with a Debug log instead of the Warning it logs for a type nobody declared, and writes no inbox row.
+    /// </summary>
+    public MessagingBuilder AddIgnoredType<TEvent>(string topic)
+        where TEvent : IIntegrationEvent
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+
+        _registry.AddIgnoredType(topic, typeof(TEvent).FullName!);
+        return this;
+    }
+
+    /// <summary>
     /// Consumes the stream <paramref name="topic"/> in batches with <typeparamref name="THandler"/>, in a consumer group of
     /// its own (<c>&lt;ClientId&gt;.&lt;topic&gt;</c>), without the inbox and without a dead-letter topic. Messages whose
     /// <c>type</c> header is not <typeparamref name="TMessage"/>'s full name are skipped. Declare the topic with
