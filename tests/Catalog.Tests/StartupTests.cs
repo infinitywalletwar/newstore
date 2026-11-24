@@ -1,3 +1,7 @@
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
 namespace NewStore.Catalog.Tests;
 
 public class StartupTests(KafkaServer kafka)
@@ -31,9 +35,15 @@ public class StartupTests(KafkaServer kafka)
         };
         factory.UseKafka(kafka);
         factory.Settings["Catalog:MediaBaseUrl"] = value;
+        var logs = new LogCapture();
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddLogging(l => l.AddProvider(logs))));
 
-        var ex = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        // The validation fails inside the app's own Run, which then disposes the host. The factory waits for that start on
+        // another thread and may reach the disposed host first: then it throws ObjectDisposedException, not the validation
+        // error. Either way the host logged the error before it was disposed, so the test reads the log.
+        Assert.ThrowsAny<Exception>(() => app.CreateClient());
 
-        Assert.Contains("Catalog:MediaBaseUrl must be an absolute http or https URL", ex.ToString());
+        var failure = Assert.Single(logs.Snapshot(), l => l.EventId.Name == "HostedServiceStartupFaulted");
+        Assert.Contains("Catalog:MediaBaseUrl must be an absolute http or https URL", failure.Exception?.Message);
     }
 }
