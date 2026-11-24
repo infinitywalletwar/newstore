@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using NewStore.ServiceDefaults.Data;
@@ -14,6 +15,18 @@ namespace NewStore.Media.Tests;
 public sealed class MediaStartupTests(MediaFixture media, StorageDownFixture storageDown) : IClassFixture<MediaFixture>, IClassFixture<StorageDownFixture>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Media_starts_without_logging_an_error()
+    {
+        // The fixture started the app and migrated it. Production migrates first (the *-migrate job), so a started app has no errors to log.
+        _ = media.Services;
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+
+        var errors = media.Logs.Snapshot().Where(log => log.Level >= LogLevel.Error).ToList();
+
+        Assert.True(errors.Count == 0, string.Join(Environment.NewLine, errors.Select(e => $"{e.Category}: {e.Message} {e.Exception?.Message}")));
+    }
 
     [Fact]
     public async Task Media_is_ready_with_its_tables()
