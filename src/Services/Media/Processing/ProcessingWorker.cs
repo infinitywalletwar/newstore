@@ -13,10 +13,21 @@ public sealed partial class ProcessingWorker(
     /// <summary>This process in <c>locked_by</c>: the host name (in a container, its id) and a random part, so two processes differ.</summary>
     public string WorkerId { get; } = $"{Environment.MachineName[..Math.Min(Environment.MachineName.Length, 60)]}/{Guid.NewGuid():N}";
 
+    /// <summary>
+    /// Empties <c>{WorkDirectory}/jobs</c> before the host finishes starting. A job that was running when this container last died
+    /// left its files there; its lease runs out and another claim redoes it. This is not in <see cref="ExecuteAsync"/>: since
+    /// .NET 10 all of <c>ExecuteAsync</c> runs on a background thread, so the host could report started before the folder is
+    /// empty, while the synchronous part of <c>StartAsync</c> still runs during startup
+    /// (https://learn.microsoft.com/dotnet/core/compatibility/extensions/10.0/backgroundservice-executeasync-task).
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        EmptyJobsDirectory();
+        return base.StartAsync(cancellationToken);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // A job that was running when this container last died left its files here; its lease runs out and another claim redoes it.
-        EmptyJobsDirectory();
         using var timer = new PeriodicTimer(options.Value.PollInterval, time);
         try
         {
