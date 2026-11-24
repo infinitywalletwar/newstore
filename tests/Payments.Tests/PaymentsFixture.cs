@@ -42,7 +42,8 @@ public sealed class PaymentsFixture(PostgresServer postgres, KafkaServer kafka) 
         Settings["Payments:Provider:BaseUrl"] = "http://fakepay.test";
         Settings["Payments:Provider:ApiKey"] = "test-key";
         Settings["Payments:Provider:WebhookSecret"] = TestWebhooks.Secret;
-        await MigrateAsync<PaymentsDbContext>();
+        MigrateBeforeStart<PaymentsDbContext>();
+        _ = Services; // starts the app now, as before: a test must not start it inside its own trace
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace NewStore.Media.Tests;
@@ -31,6 +32,9 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
 
     /// <summary>Catalog, as a table of videos (<see cref="FakeCatalog"/>).</summary>
     internal StubHttpHandler Catalog { get; } = FakeCatalog.Create();
+
+    /// <summary>Every log record the app writes, from the moment it starts.</summary>
+    public LogCapture Logs { get; } = new();
 
     public S3Server S3 => s3;
 
@@ -101,7 +105,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         Settings["Auth:ClientSecret"] = "media";
         Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
 
-        await MigrateAsync<MediaDbContext>();
+        MigrateBeforeStart<MediaDbContext>();
         if (SetUpBucket)
         {
             await Services.GetRequiredService<StorageSetup>().EnsureAsync(ct);
@@ -113,6 +117,7 @@ public class MediaFixture(PostgresServer postgres, KafkaServer kafka, S3Server s
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
+            services.AddLogging(logging => logging.AddProvider(Logs));
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
             services.UseStubHandler<CatalogClient>(Catalog);

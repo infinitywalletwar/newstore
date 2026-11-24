@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 using OpenTelemetry;
 using OpenTelemetry.Trace;
@@ -39,6 +40,8 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
     /// <summary>The spans of this app's requests (and their children). Other tests share the app, so don't assume it starts empty.</summary>
     public SpanCollection ExportedSpans { get; }
 
+    private readonly List<Func<IServiceProvider, CancellationToken, Task>> _beforeStart = [];
+
     public NewStoreAppFactory()
     {
         ExportedSpans = new SpanCollection(TraceIdPrefix);
@@ -64,7 +67,21 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
         return null!;
     }
 
-    /// <summary>Applies <typeparamref name="TContext"/>'s migrations to the configured database.</summary>
+    /// <summary>
+    /// Makes the app apply <typeparamref name="TContext"/>'s migrations when it starts, before any hosted service (the outbox relay,
+    /// workers, consumers) starts, as the one-shot <c>*-migrate</c> job does in Compose. Call it before the app first starts.
+    /// </summary>
+    public void MigrateBeforeStart<TContext>()
+        where TContext : DbContext => _beforeStart.Add(async (services, ct) =>
+        {
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<TContext>().Database.MigrateAsync(ct);
+        });
+
+    /// <summary>
+    /// Applies <typeparamref name="TContext"/>'s migrations now. It resolves <see cref="WebApplicationFactory{TEntryPoint}.Services"/>,
+    /// which starts the app first, so use <see cref="MigrateBeforeStart{TContext}"/> unless a test migrates on purpose after the start.
+    /// </summary>
     public async Task MigrateAsync<TContext>()
         where TContext : DbContext
     {
@@ -92,6 +109,9 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
 
         builder.ConfigureTestServices(services =>
         {
+            // First in the list, so no other hosted service's StartingAsync runs before it. The host calls every StartingAsync
+            // before any StartAsync, so the app's own hosted services (registered as plain IHostedService) start after it.
+            services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(sp => new BeforeStartService(sp, _beforeStart)));
             services.ConfigureOpenTelemetryTracerProvider(t => t.AddInMemoryExporter(ExportedSpans));
 
             // Tokens are checked against the test key, and calls to other services carry a test token.
@@ -110,5 +130,28 @@ public class NewStoreAppFactory<TProgram> : WebApplicationFactory<TProgram>
         var traceId = TraceIdPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(12));
         var parentId = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
         client.DefaultRequestHeaders.Add("traceparent", $"00-{traceId}-{parentId}-01");
+    }
+
+    /// <summary>Runs the before-start steps in <c>StartingAsync</c>, the first stage of the host's start.</summary>
+    private sealed class BeforeStartService(IServiceProvider services, List<Func<IServiceProvider, CancellationToken, Task>> steps)
+        : IHostedLifecycleService
+    {
+        public async Task StartingAsync(CancellationToken cancellationToken)
+        {
+            foreach (var step in steps)
+            {
+                await step(services, cancellationToken);
+            }
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

@@ -65,7 +65,8 @@ public abstract class InventoryFixture(PostgresServer postgres, KafkaServer kafk
         Settings["Auth:TokenEndpoint"] = "http://keycloak.test/token";
         Settings["Inventory:ReserveStrategy"] = strategy.ToString();
         Settings["Inventory:ExpirySweepInterval"] = SweepInterval;
-        await MigrateAsync<InventoryDbContext>();
+        MigrateBeforeStart<InventoryDbContext>();
+        _ = Services; // starts the app now, as before: a test must not start it inside its own trace
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

@@ -61,7 +61,8 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
         Settings["Services:Inventory"] = "http://inventory.test";
         Settings["Services:Payments"] = "http://payments.test";
         Settings["Orders:WebBaseUrl"] = "http://shop.test";
-        await MigrateAsync<OrdersDbContext>();
+        MigrateBeforeStart<OrdersDbContext>();
+        _ = Services; // starts the app now, as before: a test must not start it inside its own trace
     }
 
     /// <summary>Every test starts with the stubs' normal answers.</summary>
