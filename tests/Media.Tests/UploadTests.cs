@@ -173,13 +173,17 @@ public sealed class UploadTests(MediaFixture media, ShortLifetimeFixture shortLi
 
         var both = Task.WhenAll(client.PostCompleteAsync(creator, upload.Id, etags), client.PostCompleteAsync(creator, upload.Id, etags));
 
-        // Wait until both requests are blocked on the row.
+        // Wait until both requests are blocked on the row. The count runs on a connection of its own, outside the lock's transaction:
+        // PostgreSQL reads the list of sessions once per transaction, so inside it a session that connected after the first count
+        // (the second request on a new pooled connection) is never listed.
+        await using var observer = new NpgsqlConnection(media.Settings["ConnectionStrings:Media"]);
+        await observer.OpenAsync(Ct);
         var deadline = DateTime.UtcNow.AddSeconds(30);
         var waiting = 0L;
         while (waiting < 2 && DateTime.UtcNow < deadline)
         {
             await using var count = new NpgsqlCommand(
-                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", connection, lockTransaction);
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", observer);
             waiting = (long)(await count.ExecuteScalarAsync(Ct))!;
             await Task.Delay(TimeSpan.FromMilliseconds(50), Ct);
         }
