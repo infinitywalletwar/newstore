@@ -195,9 +195,22 @@ public class ConsumerTests(PostgresServer postgres, KafkaServer kafka)
 
         using var second = await scenario.StartHostAsync(scenario.ClientId, Configure, services: Register);
 
+        // CreateTopics returns once the controller has committed the topics; the broker that answers a metadata request
+        // lists them when it has applied that commit, which can be seconds later under load (#114). So wait until the
+        // broker lists both. The controller writes a request's topics and partitions together, so a listed topic is complete.
         using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = scenario.BootstrapServers }).Build();
-        var metadata = admin.GetMetadata(TimeSpan.FromSeconds(10));
-        Assert.Equal(3, metadata.Topics.Single(t => t.Topic == topic).Partitions.Count);
+        Metadata? metadata = null;
+        await Scenario.EventuallyAsync(
+            () =>
+            {
+                metadata = admin.GetMetadata(TimeSpan.FromSeconds(10));
+                return Task.FromResult(
+                    metadata.Topics.Any(t => t.Topic == topic) && metadata.Topics.Any(t => t.Topic == topic + ".dlt"));
+            },
+            s_wait,
+            "the broker lists the topic and its dead-letter topic");
+
+        Assert.Equal(3, metadata!.Topics.Single(t => t.Topic == topic).Partitions.Count);
         Assert.Single(metadata.Topics.Single(t => t.Topic == topic + ".dlt").Partitions);
     }
 }
