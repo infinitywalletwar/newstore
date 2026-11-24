@@ -36,7 +36,7 @@ internal static class MessagingTelemetry
     /// </summary>
     public static Activity? StartProcessBatch(string topic, int messageCount)
     {
-        var activity = Source.StartActivity($"process {topic}", ActivityKind.Consumer);
+        var activity = Source.StartActivity($"process {topic}", ActivityKind.Consumer, parentContext: default);
         activity?.SetTag("messaging.system", "kafka");
         activity?.SetTag("messaging.destination.name", topic);
         activity?.SetTag("messaging.batch.message_count", messageCount);

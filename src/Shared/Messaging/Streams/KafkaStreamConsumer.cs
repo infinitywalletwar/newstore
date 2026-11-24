@@ -163,21 +163,31 @@ internal sealed class KafkaStreamConsumer<TMessage>(
         var messages = _batch.Where(g => g.Message is not null).Select(g => g.Message!).ToList();
         if (messages.Count > 0)
         {
-            using var activity = MessagingTelemetry.StartProcessBatch(topic, messages.Count);
-            try
+            Exception? failure = null;
+
+            // The span covers the handler only: it ends before a retry's seek and pause.
+            using (var activity = MessagingTelemetry.StartProcessBatch(topic, messages.Count))
             {
-                InvokeHandlerAsync(messages, stoppingToken).GetAwaiter().GetResult();
+                try
+                {
+                    InvokeHandlerAsync(messages, stoppingToken).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Stopped inside the handler: nothing is committed, so the next start reads the batch again.
+                    _batch.Clear();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    failure = ex;
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+
+            if (failure is not null)
             {
-                // Stopped inside the handler: nothing is committed, so the next start reads the batch again.
-                _batch.Clear();
-                return;
-            }
-            catch (Exception ex)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                ReadAgainLater(consumer, settings, ex, messages.Count, stoppingToken);
+                ReadAgainLater(consumer, settings, failure, messages.Count, stoppingToken);
                 return;
             }
         }
@@ -202,8 +212,9 @@ internal sealed class KafkaStreamConsumer<TMessage>(
 
     /// <summary>
     /// The handler threw: seek every partition of the batch back to its first offset in the batch, so the next polls read
-    /// the same messages again, and wait. The pause is at most <see cref="MessagingOptions.MaxTransientRetryPause"/>, far
-    /// below <c>max.poll.interval.ms</c>, so the consumer stays in its group however long the failure lasts.
+    /// the same messages again, and wait. A seek that fails is logged, not thrown. The pause is at most
+    /// <see cref="MessagingOptions.MaxTransientRetryPause"/>, far below <c>max.poll.interval.ms</c>, so the consumer stays
+    /// in its group however long the failure lasts.
     /// </summary>
     private void ReadAgainLater(
         IConsumer<string, string> consumer, MessagingOptions settings, Exception exception, int count, CancellationToken stoppingToken)
@@ -214,7 +225,16 @@ internal sealed class KafkaStreamConsumer<TMessage>(
 
         foreach (var first in _batch.GroupBy(g => g.Position.TopicPartition).Select(p => p.First().Position))
         {
-            consumer.Seek(first);
+            try
+            {
+                consumer.Seek(first);
+            }
+            catch (KafkaException ex)
+            {
+                // An exception out of Run would end the hosted service, and by default the host with it. Log and keep
+                // polling: this partition's position stays past the batch, so those messages may not be read again.
+                MessagingLog.StreamSeekFailed(logger, first.Topic, first.Partition.Value, first.Offset.Value, ex.Error.Reason);
+            }
         }
 
         _batch.Clear();

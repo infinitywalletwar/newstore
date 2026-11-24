@@ -35,7 +35,23 @@ internal sealed class MessagingRegistry
 
     public void AddHandler(HandlerRegistration handler) => _handlers[(handler.Topic, handler.TypeName)] = handler;
 
-    public void AddStream(StreamRegistration stream) => _streams.Add(stream);
+    public void AddStream(StreamRegistration stream)
+    {
+        // The container resolves IStreamHandler<TMessage> to one class, so a second stream of the same type would get the
+        // first one's handler without a word.
+        if (_streams.Any(s => s.MessageType == stream.MessageType))
+        {
+            throw new InvalidOperationException($"{stream.MessageType.FullName} already has a stream handler.");
+        }
+
+        // Two consumers of one topic share its group, so each would read only some of the partitions.
+        if (_streams.Any(s => s.Topic == stream.Topic))
+        {
+            throw new InvalidOperationException($"The stream {stream.Topic} already has a handler.");
+        }
+
+        _streams.Add(stream);
+    }
 
     public void AddIgnoredType(string topic, string typeName) => _ignoredTypes.Add((topic, typeName));
 

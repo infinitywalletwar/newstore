@@ -59,6 +59,9 @@ internal static partial class MessagingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "The stream handler failed for a batch of {Count} from {Topic} (attempt {Attempt}); the batch is read again in {Pause}.")]
     public static partial void StreamBatchFailed(ILogger logger, Exception exception, int count, string topic, int attempt, TimeSpan pause);
 
+    [LoggerMessage(Level = LogLevel.Error, Message = "Seeking {Topic}[{Partition}] back to {Offset} failed: {Error}. Messages of the failed batch on this partition may not be read again.")]
+    public static partial void StreamSeekFailed(ILogger logger, string topic, int partition, long offset, string error);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Deleted {Outbox} outbox and {Inbox} inbox rows older than their retention")]
     public static partial void CleanupDeleted(ILogger logger, int outbox, int inbox);
 

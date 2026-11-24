@@ -46,6 +46,20 @@ public sealed class RecordingPingHandler(PingRecorder recorder) : IStreamHandler
     }
 }
 
+/// <summary>A second stream message type, only for the registration tests.</summary>
+public sealed record Pong(int N);
+
+public sealed class IgnoringPongHandler : IStreamHandler<Pong>
+{
+    public Task HandleAsync(IReadOnlyList<Pong> batch, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>A second handler of <see cref="Ping"/>, which the container would never resolve: the first one wins.</summary>
+public sealed class OtherPingHandler : IStreamHandler<Ping>
+{
+    public Task HandleAsync(IReadOnlyList<Ping> batch, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
 public class StreamTests(PostgresServer postgres, KafkaServer kafka)
 {
     internal const int Partitions = 6;
@@ -260,6 +274,34 @@ public class StreamTests(PostgresServer postgres, KafkaServer kafka)
         Assert.NotEmpty(a.Handled);
         Assert.NotEmpty(b.Handled);
         Assert.Equal(Enumerable.Range(1, 60), a.Handled.Concat(b.Handled).Select(p => p.N).Distinct().Order());
+    }
+
+    [Fact]
+    public void A_second_stream_handler_for_the_same_message_type_throws()
+    {
+        // IStreamHandler<Ping> resolves to one class, so a second stream of Ping would silently get the first handler.
+        var ex = Assert.Throws<InvalidOperationException>(() => MessagingHost.CreateBuilder(
+            kafka.BootstrapServers,
+            "Host=unused",
+            "streams-twice",
+            b => b
+                .AddStreamHandler<Ping, RecordingPingHandler>("pings-a")
+                .AddStreamHandler<Ping, OtherPingHandler>("pings-b")));
+        Assert.Contains(typeof(Ping).FullName!, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_second_stream_handler_on_the_same_topic_throws()
+    {
+        // Two consumers of one topic in one group would each get only some of its partitions.
+        var ex = Assert.Throws<InvalidOperationException>(() => MessagingHost.CreateBuilder(
+            kafka.BootstrapServers,
+            "Host=unused",
+            "streams-twice",
+            b => b
+                .AddStreamHandler<Ping, RecordingPingHandler>("pings")
+                .AddStreamHandler<Pong, IgnoringPongHandler>("pings")));
+        Assert.Contains("pings", ex.Message, StringComparison.Ordinal);
     }
 
     internal static async Task<Scenario> CreateScenarioAsync(PostgresServer postgres, KafkaServer kafka)

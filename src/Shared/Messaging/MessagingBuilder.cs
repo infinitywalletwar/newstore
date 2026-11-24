@@ -69,7 +69,8 @@ public sealed class MessagingBuilder
     /// Consumes the stream <paramref name="topic"/> in batches with <typeparamref name="THandler"/>, in a consumer group of
     /// its own (<c>&lt;ClientId&gt;.&lt;topic&gt;</c>), without the inbox and without a dead-letter topic. Messages whose
     /// <c>type</c> header is not <typeparamref name="TMessage"/>'s full name are skipped. Declare the topic with
-    /// <see cref="AddTopic"/> too.
+    /// <see cref="AddTopic"/> too. Throws <see cref="InvalidOperationException"/> when <typeparamref name="TMessage"/> or
+    /// <paramref name="topic"/> already has a stream handler.
     /// </summary>
     public MessagingBuilder AddStreamHandler<TMessage, THandler>(string topic)
         where TMessage : class
@@ -77,8 +78,9 @@ public sealed class MessagingBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
 
-        _services.TryAddScoped<IStreamHandler<TMessage>, THandler>();
+        // Register the stream first: it throws for a second handler of the type or the topic.
         _registry.AddStream(new StreamRegistration(topic, typeof(TMessage)));
+        _services.TryAddScoped<IStreamHandler<TMessage>, THandler>();
         return this;
     }
 }
