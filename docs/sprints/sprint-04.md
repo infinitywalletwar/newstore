@@ -81,11 +81,8 @@ The next round re-asks V3, V5 and the CSRF header.
 
 ## Retro
 
-### What I learned
+The owner skipped their part of this retro on 2026-11-24, and the manual run on the Mac (check 3) is postponed.
 
-### What was hard
-
-### Open questions
 
 ### What the sprint built (Claude)
 
