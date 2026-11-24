@@ -15,14 +15,14 @@ namespace NewStore.Inventory;
 public sealed class CatalogClient(HttpClient http)
 {
     /// <summary>
-    /// The creator who owns the video, or null when Catalog has no such video. A failure to get an answer throws
+    /// The video's creator and status, or null when Catalog has no such video. A failure to get an answer throws
     /// <see cref="HttpRequestException"/> or <see cref="TransientFailureException"/>.
     /// </summary>
-    public async Task<Guid?> GetVideoOwnerAsync(Guid videoId, CancellationToken ct)
+    public async Task<CatalogVideo?> GetVideoAsync(Guid videoId, CancellationToken ct)
     {
         try
         {
-            return await GetOwnerCoreAsync(videoId, ct);
+            return await GetVideoCoreAsync(videoId, ct);
         }
         catch (ExecutionRejectedException ex)
         {
@@ -32,7 +32,7 @@ public sealed class CatalogClient(HttpClient http)
         }
     }
 
-    private async Task<Guid?> GetOwnerCoreAsync(Guid videoId, CancellationToken ct)
+    private async Task<CatalogVideo?> GetVideoCoreAsync(Guid videoId, CancellationToken ct)
     {
         using var response = await http.GetAsync($"/videos/{videoId}/owner", ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -41,10 +41,12 @@ public sealed class CatalogClient(HttpClient http)
         }
 
         response.EnsureSuccessStatusCode();
-        var owner = await response.Content.ReadFromJsonAsync<VideoOwner>(ct);
-        return owner?.CreatorId;
+        return await response.Content.ReadFromJsonAsync<CatalogVideo>(ct);
     }
+}
 
-    // The part of Catalog's reply Inventory reads. Catalog owns the full shape.
-    private sealed record VideoOwner(Guid VideoId, Guid CreatorId);
+/// <summary>The part of Catalog's <c>/videos/{id}/owner</c> reply Inventory reads. Catalog owns the full shape.</summary>
+public sealed record CatalogVideo(Guid VideoId, Guid CreatorId, string Status)
+{
+    public bool IsPublished => Status == "Published";
 }

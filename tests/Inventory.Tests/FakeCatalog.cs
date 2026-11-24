@@ -10,10 +10,11 @@ namespace NewStore.Inventory.Tests;
 /// </summary>
 internal static class FakeCatalog
 {
-    private static readonly ConcurrentDictionary<Guid, Guid> Owners = new();
+    private static readonly ConcurrentDictionary<Guid, (Guid CreatorId, string Status)> Owners = new();
     private static readonly ConcurrentDictionary<Guid, bool> Unreachable = new();
 
-    public static void SetOwner(Guid videoId, Guid creatorId) => Owners[videoId] = creatorId;
+    /// <summary>Registers a video. Like Catalog's reply, it is <c>Published</c> unless the test says <c>Draft</c>.</summary>
+    public static void SetOwner(Guid videoId, Guid creatorId, string status = "Published") => Owners[videoId] = (creatorId, status);
 
     /// <summary>Catalog answers 503 for this video, as when it is down.</summary>
     public static void Break(Guid videoId) => Unreachable[videoId] = true;
@@ -26,8 +27,11 @@ internal static class FakeCatalog
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
         }
 
-        return Owners.TryGetValue(videoId, out var creatorId)
-            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { videoId, creatorId }) }
+        return Owners.TryGetValue(videoId, out var video)
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { videoId, creatorId = video.CreatorId, status = video.Status }),
+            }
             : new HttpResponseMessage(HttpStatusCode.NotFound);
     });
 }

@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 
+using NewStore.Catalog.Videos;
+
 namespace NewStore.Catalog.Editions;
 
 public sealed record EditionView(Guid Id, string Format, decimal Price, int CopiesTotal, int CopiesLeft, bool OnSale);
@@ -10,7 +12,8 @@ public static class EditionEndpoints
     {
         app.MapGet("/videos/{id:guid}/editions", async (CatalogDbContext db, Guid id, CancellationToken ct) =>
         {
-            if (!await db.Videos.AnyAsync(v => v.Id == id, ct))
+            // A draft is a 404 here as on GET /videos/{id}: a draft is one only its creator sees (V-1).
+            if (!await db.Videos.AnyAsync(v => v.Id == id && v.Status == VideoStatus.Published, ct))
             {
                 return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Video not found.");
             }
