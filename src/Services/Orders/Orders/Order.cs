@@ -35,6 +35,13 @@ public sealed class Order
 
     public int? CopyNumber { get; set; }
 
+    /// <summary>Where a DVD goes, copied from the buy request. All three are null for a digital order.</summary>
+    public string? DeliveryAddress { get; init; }
+
+    public double? DeliveryLatitude { get; init; }
+
+    public double? DeliveryLongitude { get; init; }
+
     public DateTimeOffset CreatedAt { get; init; }
 
     public DateTimeOffset UpdatedAt { get; set; }

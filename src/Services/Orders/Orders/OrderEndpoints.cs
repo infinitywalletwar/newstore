@@ -24,11 +24,18 @@ public static class OrderEndpoints
 
     private static async Task<IResult> BuyAsync(
         BuyRequest request, ClaimsPrincipal user, OrdersDbContext db, InventoryClient inventory, TimeProvider time,
-        HttpContext http, CancellationToken ct)
+        HttpContext http, ILoggerFactory loggers, CancellationToken ct)
     {
         if (request.EditionId == Guid.Empty)
         {
             return Problems.Validation(new() { ["editionId"] = ["editionId is required."] });
+        }
+
+        // The delivery's shape is checked before any call to Inventory, and for every request: a malformed one is a 400 even when
+        // the buyer already has an open order. Its format is known only after the reservation (below).
+        if (request.Delivery is not null && ValidateDelivery(request.Delivery) is { Count: > 0 } invalid)
+        {
+            return Problems.Validation(invalid);
         }
 
         var buyer = user.UserId();
@@ -68,6 +75,18 @@ public static class OrderEndpoints
         }
 
         var reservation = ((ReserveResult.Reserved)result).Reservation;
+
+        // Orders learns the format only from Inventory's answer, so the check comes after the reservation, and a mismatch gives the
+        // copy back at once. No order is kept.
+        var isDvd = reservation.Format == EditionFormats.Dvd;
+        if (isDvd != (request.Delivery is not null))
+        {
+            await ReleaseQuietlyAsync(inventory, reservationId, loggers.CreateLogger("NewStore.Orders.Orders.OrderEndpoints"));
+            return isDvd
+                ? Problems.BadRequest("delivery-required", "A DVD needs a delivery address and a pin.")
+                : Problems.BadRequest("delivery-not-allowed", "Only a physical copy is delivered.");
+        }
+
         var order = new Order
         {
             Id = Guid.CreateVersion7(),
@@ -78,6 +97,9 @@ public static class OrderEndpoints
             Price = reservation.Price,
             ReservationId = reservationId,
             ReservedUntil = reservation.ExpiresAt,
+            DeliveryAddress = request.Delivery?.Address!.Trim(),
+            DeliveryLatitude = request.Delivery?.Latitude,
+            DeliveryLongitude = request.Delivery?.Longitude,
             Status = OrderStatus.Reserved,
             CreatedAt = now,
             UpdatedAt = now,
@@ -87,6 +109,46 @@ public static class OrderEndpoints
         // without an order. What still leaks is a crash between the two calls (ADR 0017).
         await db.SaveChangesAsync(CancellationToken.None);
         return Results.Created($"/orders/{order.Id}", OrderResponse.From(order));
+    }
+
+    private const int MaxAddressLength = 200;
+
+    private static Dictionary<string, string[]> ValidateDelivery(DeliveryDetails delivery)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var length = delivery.Address?.Trim().Length ?? 0;
+        if (length is 0 or > MaxAddressLength)
+        {
+            errors["delivery.address"] = [$"The address must have 1 to {MaxAddressLength} characters."];
+        }
+
+        if (delivery.Latitude is not (>= -90 and <= 90))
+        {
+            errors["delivery.latitude"] = ["The latitude is required and must be between -90 and 90."];
+        }
+
+        if (delivery.Longitude is not (>= -180 and <= 180))
+        {
+            errors["delivery.longitude"] = ["The longitude is required and must be between -180 and 180."];
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Gives the copy back, never failing the buyer's answer: with no token to cancel it (the buyer may have closed the tab), and a
+    /// <see cref="TransientFailureException"/> only logged, because Inventory frees an unpaid reservation after 10 minutes anyway.
+    /// </summary>
+    private static async Task ReleaseQuietlyAsync(InventoryClient inventory, Guid reservationId, ILogger logger)
+    {
+        try
+        {
+            await inventory.ReleaseAsync(reservationId, CancellationToken.None);
+        }
+        catch (TransientFailureException ex)
+        {
+            OrdersLog.ReleaseFailed(logger, reservationId, ex);
+        }
     }
 
     private static Task<Order?> FindOpenOrderAsync(OrdersDbContext db, Guid buyer, Guid editionId, DateTimeOffset now, CancellationToken ct) =>
@@ -217,7 +279,7 @@ public static class OrderEndpoints
             .Where(o => o.BuyerId == buyer && o.Status == OrderStatus.Completed)
             .OrderByDescending(o => o.CompletedAt)
             .Select(o => new CopyResponse(
-                o.Id, o.EditionId, o.VideoId, o.Format, o.CopyNumber!.Value, o.Price, o.CompletedAt!.Value, null))
+                o.Id, o.EditionId, o.VideoId, o.Format, o.CopyNumber!.Value, o.Price, o.CompletedAt!.Value))
             .ToListAsync(ct);
         return Results.Ok(copies);
     }
