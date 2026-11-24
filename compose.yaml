@@ -106,12 +106,15 @@ services:
 
   # One-shot job: applies Catalog's migrations, seeds the sample catalog and exits (ADR 0005). The image's entrypoint is
   # `dotnet NewStore.Catalog.dll`, so `command` supplies the argument.
+  # Every .NET service sets `init: true`: Docker runs a small init (tini) as PID 1, so a crash exits instead of hanging
+  # (AGENTS.md, "Local stack"; #136).
   catalog-migrate:
     build:
       context: .
       dockerfile: src/Services/Catalog/Dockerfile
     image: newstore/catalog:local
     pull_policy: build
+    init: true
     command: ["migrate", "seed"]
     restart: "no"
     environment:
@@ -128,6 +131,7 @@ services:
       dockerfile: src/Services/Catalog/Dockerfile
     image: newstore/catalog:local
     pull_policy: build
+    init: true
     environment:
       ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=catalog;Password=catalog
       ConnectionStrings__Redis: redis:6379
@@ -165,6 +169,7 @@ services:
       dockerfile: src/Services/Inventory/Dockerfile
     image: newstore/inventory:local
     pull_policy: build
+    init: true
     command: ["migrate", "seed"]
     restart: "no"
     environment:
@@ -181,6 +186,7 @@ services:
       dockerfile: src/Services/Inventory/Dockerfile
     image: newstore/inventory:local
     pull_policy: build
+    init: true
     environment:
       ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=inventory;Password=inventory
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
@@ -220,6 +226,7 @@ services:
       dockerfile: src/Gateway/Dockerfile
     image: newstore/gateway:local
     pull_policy: build
+    init: true
     environment:
       ConnectionStrings__Redis: redis:6379
       # Browsers are sent to the public issuer; the gateway itself fetches discovery and keys from the keycloak container (ADR 0012).
@@ -263,6 +270,7 @@ services:
       dockerfile: src/Services/Payments/Dockerfile
     image: newstore/payments:local
     pull_policy: build
+    init: true
     command: ["migrate"]
     restart: "no"
     environment:
@@ -279,6 +287,7 @@ services:
       dockerfile: src/Services/Payments/Dockerfile
     image: newstore/payments:local
     pull_policy: build
+    init: true
     environment:
       ConnectionStrings__Payments: Host=postgres;Database=payments;Username=payments;Password=payments
       Messaging__BootstrapServers: kafka:9092
@@ -313,6 +322,7 @@ services:
       dockerfile: src/Services/Orders/Dockerfile
     image: newstore/orders:local
     pull_policy: build
+    init: true
     command: ["migrate"]
     restart: "no"
     environment:
@@ -330,6 +340,7 @@ services:
       dockerfile: src/Services/Orders/Dockerfile
     image: newstore/orders:local
     pull_policy: build
+    init: true
     environment:
       ConnectionStrings__Orders: Host=postgres;Database=orders;Username=orders;Password=orders
       Messaging__BootstrapServers: kafka:9092
@@ -374,6 +385,7 @@ services:
       target: worker
     image: newstore/media-worker:local
     pull_policy: build
+    init: true
     command: ["migrate", "seed"]
     restart: "no"
     environment:
@@ -401,6 +413,7 @@ services:
       target: api
     image: newstore/media:local
     pull_policy: build
+    init: true
     environment:
       Media__Role: Api
       ConnectionStrings__Media: Host=postgres;Database=media;Username=media;Password=media
@@ -448,6 +461,7 @@ services:
       target: worker
     image: newstore/media-worker:local
     pull_policy: build
+    init: true
     environment:
       Media__Role: Worker
       ConnectionStrings__Media: Host=postgres;Database=media;Username=media;Password=media
@@ -484,6 +498,7 @@ services:
       dockerfile: src/Fakes/FakePay/Dockerfile
     image: newstore/fakepay:local
     pull_policy: build
+    init: true
     environment:
       FakePay__ApiKey: fakepay
       FakePay__WebhookSecret: fakepay-webhook

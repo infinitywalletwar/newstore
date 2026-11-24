@@ -105,6 +105,7 @@ Every walkthrough also has at least one Mermaid diagram (a `mermaid` code block,
 
 - Every container image runs on arm64, because the owner's Mac is Apple Silicon. Pin exact image tags in `compose.yaml`.
 - Every Compose service has a memory limit, and the whole stack stays under 12 GB.
+- Every .NET service in `compose.yaml` sets `init: true`, so Docker's init ([`docker-init`, backed by tini](https://docs.docker.com/reference/cli/docker/container/run/#init)) is PID 1 and `dotnet` is not. On the Mac's arm64, a .NET 10 process that is PID 1 doesn't exit after an unhandled exception: it spins at about 100% CPU, and `docker compose up --wait` hangs on a failed migrate job ([dotnet/runtime#118049](https://github.com/dotnet/runtime/issues/118049), fixed for .NET 12 in [dotnet/runtime#137998](https://github.com/dotnet/runtime/pull/137998); #136). With the init, the process exits with code 134 and `up --wait` names the job.
 - Local-only credentials appear only in `compose.yaml`, `deploy/compose/` and `appsettings.Development.json`: `postgres/postgres`, one `<service>/<service>` role per service, `admin/admin` for Keycloak, `test`/`test` for Floci, and the realm's client secrets (each equals its client id) and sample users (username and password are the channel slug). The FakePay key and secret are local-only too. Compose publishes every port on 127.0.0.1 only, so these credentials stay on the Mac.
 - Media's local credentials: the database role `media/media` and the Keycloak client secret `media`.
 - `media-worker` runs FFmpeg; it has no port.
