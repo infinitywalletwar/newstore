@@ -551,7 +551,7 @@ Branch `phase-3/delivery-service`. Issue #TBD. Owns the Compose stack in wave B.
 
 - **`DeliveryFixture`** (for Tasks 4 and 5): a `NewStoreAppFactory<Program>` on `PostgresServer` and `KafkaServer`, `IAsyncLifetime`, with:
   - `FakeTimeProvider Clock`, started a few 100 ns ticks past a whole microsecond, as `MediaFixture`'s is;
-  - `protected virtual DeliveryRole Role => DeliveryRole.Api` and `protected virtual void Configure(Dictionary<string, string?> settings)` for subclasses (courier times, Redis, `ConsumePositions`);
+  - `protected virtual DeliveryRole Role => DeliveryRole.Api` and `protected virtual void ConfigureSettings(Dictionary<string, string?> settings)` for subclasses (courier times, Redis, `ConsumePositions`);
   - `public string ConnectionString { get; }` and `public virtual string ClientId` (default `delivery-<fixture class>-<new GUID>`), so Task 5's second host can share both;
   - `HttpClient BuyerClient(Guid buyerId)` (a `TestTokens.User(buyerId, "delivery")` bearer), `Task<Shipment> CreateShipmentAsync(Guid? buyerId = null, double latitude = 52.5219, double longitude = 13.4132)` (inserts as the handler does), `Task<T> QueryAsync<T>(Func<DeliveryDbContext, Task<T>>)`, `static Task WaitAsync(Func<Task<bool>> condition, string what, TimeSpan? timeout = null)`;
   - `MigrateBeforeStart<DeliveryDbContext>()`.
@@ -699,13 +699,13 @@ Commit: `feat(delivery): couriers claim shipments with a lease`.
 
 - [ ] **Step 3: The courier end to end, failing tests, then code**
 
-`CourierFixture : DeliveryFixture` sets `PrepareTime` 4 s, `TravelTime` 6 s, `TickInterval` 2 s (so `LastSeq` is 5), `Lease` 9 s, `LeaseRenewInterval` 3 s. `CourierTests` read the topic with `PositionsTopic`:
-- `Courier_reports_a_position_every_tick_until_delivered`: in a fixture with role `Courier`, advance the clock 2 s at a time. The topic gets seqs 0 to 5 for the shipment, with statuses `Preparing`, `Preparing`, `PickedUp`, `InTransit`, `InTransit`, `Delivered`, and `courier_finished_at` is set.
+`CourierFixture : DeliveryFixture` sets `PrepareTime` 4 s, `TravelTime` 6 s, `TickInterval` 2 s (so `LastSeq` is 5, and `PickedUp` is seq 2), `Lease` 9 s, `LeaseRenewInterval` 3 s, and keeps role `Api`, so no `CourierService` runs and the tests drive runners `a` and `b` by hand (`ActivatorUtilities.CreateInstance<CourierRunner>(Services)`). `RunningCourierFixture : CourierFixture` has role `Courier`, so its `CourierService` ticks on the fake clock. `CourierTests` read the topic with `PositionsTopic`:
+- `Courier_reports_a_position_every_tick_until_delivered`: in `RunningCourierFixture`, advance the clock 2 s at a time. The topic gets seqs 0 to 5 for the shipment, with statuses `Preparing`, `Preparing`, `PickedUp`, `InTransit`, `InTransit`, `Delivered`, and `courier_finished_at` is set.
 - `Lost_lease_is_taken_over_and_the_seqs_repeat` (Review Focus 3): runner `a` ticks to seq 2 and then stops ticking, without releasing. Move the clock past the lease; runner `b` ticks. `b`'s message for its seq equals `CourierTimeline.At(seq, …)` for `a`'s start time, field for field, and the topic has no seq whose two copies differ.
 - `Delivered_waits_for_the_ack_before_the_run_is_finished` (Review Focus 3): in a class with its own paused `KafkaServer` and `ProduceTimeout` 1 s, move past the end and tick. `courier_finished_at` stays null. Unpause and tick: it is set, and seq 5 `Delivered` is on the topic.
 - `Two_couriers_split_new_shipments`: 10 shipments, `ClaimsPerTick` 2, runners `a` and `b` ticking in turn. Each holds some, and together all 10.
-- `Stopping_the_courier_releases_its_leases`: stop the host of a `Courier` fixture mid-trip. `courier_locked_until` is at most the clock's now.
-- `Courier_role_serves_no_api`: in the `Courier` fixture, `GET /me/shipments` is 404 and `/health/ready` is 200.
+- `Stopping_the_courier_releases_its_leases`: stop a `RunningCourierFixture` host mid-trip. `courier_locked_until` is at most the clock's now.
+- `Courier_role_serves_no_api`: in `RunningCourierFixture`, `GET /me/shipments` is 404 and `/health/ready` is 200.
 
 Expected: they pass after `CourierRunner` and `CourierService` are written. Commit: `feat(delivery): the courier produces each position straight to Kafka`.
 
@@ -732,7 +732,7 @@ Branch `phase-3/live-tracking`. Issue #TBD. Owns the Compose stack in wave C. Ad
   - `docs/adr/0023-live-tracking-and-csrf-by-origin.md`
 - **Modify:**
   - Delivery's `Program.cs` (the lines marked Task 5); `Directory.Packages.props` (the two packages); Delivery's `.csproj` (`Microsoft.AspNetCore.SignalR.StackExchangeRedis`); `tests/Delivery.Tests/NewStore.Delivery.Tests.csproj` (`Microsoft.AspNetCore.SignalR.Client`, `Testcontainers.Redis`)
-  - `src/Gateway/Proxy/ProxyExtensions.cs`, `Auth/CsrfMiddleware.cs`, `appsettings.Development.json`; `tests/Gateway.Tests/GatewayApp.cs` (the new settings), `Browser.cs` (`SendAsync` takes optional extra headers), `ProxyTests.cs` (`Internal_paths_are_not_routed` gains `POST /api/hubs/tracking/negotiate`)
+  - `src/Gateway/Proxy/ProxyExtensions.cs`, `Auth/CsrfMiddleware.cs`, `appsettings.Development.json`; `tests/Gateway.Tests/GatewayApp.cs` (the new settings), `Browser.cs` (`SendAsync` gains a last parameter, `IReadOnlyDictionary<string, string>? headers = null`, added to the request), `ProxyTests.cs` (`Internal_paths_are_not_routed` gains `POST /api/hubs/tracking/negotiate`)
   - `compose.yaml`: `ConnectionStrings__Redis` and a redis dependency on `delivery` and `delivery-b`; the gateway's `Services__Delivery__0/1`, `Gateway__PublicOrigins__0/1` and its dependency on both; `ci.yml` (compose-smoke)
   - `web/proxy.conf.json`: `"ws": true` on `/api`, so `npm start` forwards the hub's WebSocket ([Angular, proxying to a backend server](https://angular.dev/tools/cli/serve#proxying-to-a-backend-server); the task checks the option there). Task 6 owns the rest of `web/`.
 
@@ -745,7 +745,7 @@ Branch `phase-3/live-tracking`. Issue #TBD. Owns the Compose stack in wave C. Ad
      - `INSERT INTO shipment_positions (…) SELECT * FROM unnest(@shipment_ids, @seqs, @latitudes, @longitudes, @statuses, @recorded_ats) ON CONFLICT DO NOTHING RETURNING shipment_id, seq`: those are the new positions.
      - For each shipment, with the batch's highest seq: `UPDATE shipments SET status = @status, last_seq = @seq, last_latitude, last_longitude, last_position_at = @recorded_at, picked_up_at = COALESCE(picked_up_at, CASE WHEN @status <> 'Preparing' THEN @recorded_at END), delivered_at = COALESCE(delivered_at, CASE WHEN @status = 'Delivered' THEN @recorded_at END) WHERE id = @id AND last_seq < @seq`.
   2. After the commit, send each new position, by shipment and seq, with `hub.Clients.Group(TrackingHub.Group(id)).SendAsync(TrackingHub.PositionMethod, position)`. A failed send is logged and doesn't fail the batch: the rows are stored, and the snapshot gives them to the browser later.
-- **`TrackingHub(ShipmentReader shipments) : Hub`**, `[Authorize(Policies.SignedIn)]`, with `const string Path = "/hubs/tracking"`, `const string PositionMethod = "position"`, `static string Group(Guid id) => $"shipment:{id}"`, and `Track` and `Untrack` as in Contracts. `Track` adds the connection to the group before it reads the snapshot, so a position stored in between arrives twice instead of never; the client drops the repeat by seq.
+- **`TrackingHub(ShipmentReader shipments) : Hub`**, `[Authorize(Policies.SignedIn)]`, with `const string Path = "/hubs/tracking"`, `const string PositionMethod = "position"`, `static string Group(Guid id) => $"shipment:{id}"`, and `Track` and `Untrack` as in Contracts. `Track` checks the shipment with `ShipmentReader.GetAsync(id, Context.User.UserId())` (null throws `HubException("not-found")`), then adds the connection to the group, then reads the snapshot with a second `GetAsync`. A position stored between the join and the read then arrives twice instead of never, and the client drops the repeat by seq.
 - **`AddTracking()`:** `AddSignalR()`; when `ConnectionStrings:Redis` is set, `.AddStackExchangeRedis(o => { o.Configuration = ConfigurationOptions.Parse(cs); o.Configuration.AbortOnConnectFail = false; o.Configuration.ChannelPrefix = RedisChannel.Literal("newstore-delivery"); })` ([Redis backplane](https://learn.microsoft.com/aspnet/core/signalr/redis-backplane?view=aspnetcore-10.0)), else a startup Warning "no Redis: SignalR runs without a backplane".
 - **`MapTrackingHub()`:** `MapHub<TrackingHub>(TrackingHub.Path, o => { o.Transports = HttpTransportType.WebSockets; o.CloseOnAuthenticationExpiration = true; })` ([HttpConnectionDispatcherOptions](https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.http.connections.httpconnectiondispatcheroptions.closeonauthenticationexpiration)). The token arrives in the `Authorization` header that the gateway's `AccessTokenTransform` sets on the upgrade, so Delivery reads no `access_token` query string. If `Connection_closes_when_the_token_expires` shows that JwtBearer leaves the ticket's `ExpiresUtc` empty, Delivery sets it in its own `JwtBearerEvents.OnTokenValidated` from the token's `ValidTo`, and the walkthrough says so.
 - **The gateway:**
@@ -775,7 +775,7 @@ Commit: `feat(delivery): store courier positions in batches, idempotent by seq`.
 
 `TrackingHubTests`:
 - `Track_returns_the_snapshot_then_streams_new_positions`
-- `Stranger_and_missing_shipment_both_get_not_found`: both throw `HubException` with message `not-found`.
+- `Stranger_and_missing_shipment_both_get_not_found`: on the client both throw `HubException` whose message ends with `not-found` (SignalR passes a `HubException`'s message to the caller, prefixed with its own text; the task checks the exact form), and the connection is in no group: a later position for that shipment doesn't reach it.
 - `Hub_refuses_a_connection_without_a_user_token`: no token fails the handshake with 401, and a service token with 403.
 - `Untrack_stops_the_messages`
 - `Reconnected_client_tracks_again_and_the_snapshot_has_what_it_missed` (Review Focus 1): connect and track, stop the connection, store seqs 3 to 5, connect again and track. The snapshot's path holds 3 to 5.
@@ -787,7 +787,7 @@ Commit: `feat(delivery): the tracking hub, WebSockets only`.
 
 - [ ] **Step 3: Two hosts, failing test, then code**
 
-`RedisFixture` (a class fixture) starts `new RedisBuilder("redis:8.10.3")`. `TwoHostTests` start host A and host B from `DeliveryFixture` subclasses on one database, one Kafka and one `ClientId`; A has `ConsumePositions=false`:
+`RedisFixture` (a class fixture) starts `new RedisBuilder("redis:8.10.3")`. `TwoHostTests` start host A and host B from `DeliveryFixture` subclasses on one database, one Kafka and one `ClientId`; A has `ConsumePositions=false`. A starts first and migrates; B starts after A is ready and does not call `MigrateBeforeStart`, so the two never run migrations at once.
 - `Position_consumed_by_host_b_reaches_a_client_on_host_a` (the design's test): with Redis on both, a client tracks on A; a position produced to the topic is stored by B (the row appears) and arrives at A's client within 10 s.
 - `Without_redis_a_client_on_the_other_host_misses_the_position`: the same with no Redis. The row appears and A's client gets nothing within 5 s. This proves the backplane is what carries it.
 
@@ -799,7 +799,7 @@ Commit: `test(delivery): a position consumed by one host reaches a browser on th
 - `[Theory] Delivery_routes_reach_delivery_with_the_users_token`: `GET /api/me/shipments` and `GET /api/shipments/{id}` reach `delivery-a.test` or `delivery-b.test` on the path without `/api`, with a bearer token and no cookie.
 - `Warehouse_route_is_anonymous`: forwarded with no `Authorization` header.
 - `Delivery_cluster_round_robins_between_its_two_destinations`: four calls alternate between the two hosts.
-- `Unready_delivery_destination_gets_no_requests` (Review Focus 2): health checks on, interval 1 s; the stub answers 503 to `delivery-a.test/health/ready` and 200 to `b`. After 3 s, four calls all reach `b`.
+- `Unready_delivery_destination_gets_no_requests` (Review Focus 2): health checks on, interval 1 s. The stub's `On(HttpMethod.Get, "/health/ready", …)` reply reads `RequestUri.Host`: 503 for `delivery-a.test`, 200 for `delivery-b.test`. After 3 s, four calls to `/api/me/shipments` all reach `delivery-b.test` (the test counts only the non-probe requests).
 - `Hub_upgrade_with_the_gateways_origin_is_forwarded_without_the_csrf_header`: signed in, `Origin: http://localhost` and the upgrade headers, no `X-CSRF`. The stub got the request, with a bearer token and no cookie.
 - `Hub_upgrade_from_another_origin_is_403_csrf`: `Origin: http://evil.test`. 403 `urn:newstore:problem:csrf`, nothing forwarded.
 - `Hub_upgrade_without_an_origin_is_403_csrf`
