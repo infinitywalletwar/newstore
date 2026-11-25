@@ -13,7 +13,7 @@ using NewStore.Messaging.Telemetry;
 namespace NewStore.Messaging.Kafka;
 
 /// <summary>
-/// The service's one Kafka consumer. It handles one message at a time through <see cref="IdempotentDispatcher{TContext}"/>,
+/// The service's one consumer of events (each stream has its own, <c>KafkaStreamConsumer</c>). It handles one message at a time through <see cref="IdempotentDispatcher{TContext}"/>,
 /// stores the offset after the handler's transaction committed, and commits the stored offsets every
 /// <see cref="CommitEveryMessages"/> messages or <see cref="CommitEvery"/>, and before a rebalance revokes its
 /// partitions. Offsets are stored only after the work, so a crash re-reads at most the uncommitted tail, and the
@@ -154,6 +154,14 @@ internal sealed class KafkaConsumerService<TContext>(
 
         if (registry.FindHandler(result.Topic, typeName) is not { } handler)
         {
+            // The service declared it does not handle this event on a shared topic: skip it quietly.
+            if (registry.IsIgnored(result.Topic, typeName))
+            {
+                MessagingLog.IgnoredType(logger, result.Topic, result.Partition.Value, result.Offset.Value, typeName);
+                Store(consumer, result);
+                return;
+            }
+
             // A newer producer may send an event this version does not know: additive changes must not break us.
             MessagingLog.UnknownType(logger, result.Topic, result.Partition.Value, result.Offset.Value, typeName);
             Store(consumer, result);
