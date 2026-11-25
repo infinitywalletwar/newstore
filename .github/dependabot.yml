@@ -13,7 +13,13 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     # .NET 11 is one deliberate move (#92); until then no semver-major bump of the .NET packages.
+    # Npgsql and EFCore.NamingConventions are in it too: the EF providers 11 target net11.0 only,
+    # and Npgsql 11 alone failed the build (#167, CS0121: Npgsql 11 took in Npgsql.DependencyInjection).
     ignore:
+      - dependency-name: "Npgsql*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "EFCore.NamingConventions"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.AspNetCore.*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.Extensions.*"
