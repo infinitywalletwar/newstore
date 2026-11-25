@@ -87,6 +87,9 @@ internal sealed class InventoryStub
 
     public StubHttpHandler Handler { get; }
 
+    /// <summary>The format of the edition every reservation answers with. <see cref="Reset"/> restores <c>Hd</c>, so a test that needs a DVD sets <c>Dvd</c>.</summary>
+    public string Format { get; set; } = "Hd";
+
     public Func<HttpRequestMessage, HttpResponseMessage> Reserve { get; set; } = null!;
 
     public Func<HttpRequestMessage, HttpResponseMessage> Hold { get; set; } = null!;
@@ -97,6 +100,7 @@ internal sealed class InventoryStub
 
     public void Reset()
     {
+        Format = "Hd";
         Reserve = r =>
         {
             var body = StubReplies.Body(r);
@@ -116,13 +120,13 @@ internal sealed class InventoryStub
         Release = _ => new HttpResponseMessage(HttpStatusCode.NoContent);
     }
 
-    private static object Reservation(Guid id, Guid editionId, Guid buyerId, string status, int? copyNumber, bool held = false) => new
+    private object Reservation(Guid id, Guid editionId, Guid buyerId, string status, int? copyNumber, bool held = false) => new
     {
         id,
         editionId,
         buyerId,
         videoId = VideoId,
-        format = "Hd",
+        format = Format,
         price = 9.99m,
         status,
         reservedAt = WholeMicrosecond(DateTimeOffset.UtcNow),

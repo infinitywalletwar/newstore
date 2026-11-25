@@ -125,6 +125,19 @@ namespace NewStore.Orders.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("DeliveryAddress")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("delivery_address");
+
+                    b.Property<double?>("DeliveryLatitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("delivery_latitude");
+
+                    b.Property<double?>("DeliveryLongitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("delivery_longitude");
+
                     b.Property<Guid>("EditionId")
                         .HasColumnType("uuid")
                         .HasColumnName("edition_id");

@@ -22,7 +22,8 @@ internal static class SagaOrders
 
 /// <summary>The money arrived: take the copy, or give the money back.</summary>
 public sealed class PaymentSucceededHandler(
-    OrdersDbContext db, InventoryClient inventory, IOutbox outbox, TimeProvider time) : IIntegrationEventHandler<PaymentSucceeded>
+    OrdersDbContext db, InventoryClient inventory, IOutbox outbox, TimeProvider time, ILogger<PaymentSucceededHandler> logger)
+    : IIntegrationEventHandler<PaymentSucceeded>
 {
     public async Task HandleAsync(PaymentSucceeded integrationEvent, CancellationToken cancellationToken)
     {
@@ -42,6 +43,7 @@ public sealed class PaymentSucceededHandler(
                         order.PaymentId = integrationEvent.PaymentId;
                         order.CompletedAt = now;
                         order.UpdatedAt = now;
+                        RequestShipment(order, confirmed.CopyNumber, now);
                         break;
                     default:
                         Refund(order, integrationEvent.PaymentId, now);
@@ -59,6 +61,42 @@ public sealed class PaymentSucceededHandler(
                 // Completed, Refunding or Refunded: a repeat of an event already acted on.
                 break;
         }
+    }
+
+    /// <summary>
+    /// A completed DVD asks Delivery to ship it. The row goes into the outbox with the status change, so a completed DVD order
+    /// always has its one request, and a repeat of the payment event finds the order completed and adds none.
+    /// </summary>
+    private void RequestShipment(Order order, int copyNumber, DateTimeOffset now)
+    {
+        if (order.Format != EditionFormats.Dvd)
+        {
+            return;
+        }
+
+        if (order.DeliveryAddress is null || order.DeliveryLatitude is null || order.DeliveryLongitude is null)
+        {
+            // Bought before addresses existed: nothing to ship to.
+            OrdersLog.DvdWithoutAddress(logger, order.Id);
+            return;
+        }
+
+        outbox.Enqueue(
+            new ShipmentRequested
+            {
+                EventId = Guid.CreateVersion7(),
+                OccurredAt = now,
+                OrderId = order.Id,
+                BuyerId = order.BuyerId,
+                EditionId = order.EditionId,
+                VideoId = order.VideoId,
+                CopyNumber = copyNumber,
+                Address = order.DeliveryAddress,
+                Latitude = order.DeliveryLatitude.Value,
+                Longitude = order.DeliveryLongitude.Value,
+            },
+            OrderEvents.Topic,
+            order.Id.ToString());
     }
 
     private void Refund(Order order, Guid paymentId, DateTimeOffset now)
