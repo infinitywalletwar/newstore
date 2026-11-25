@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Logging;
 
 using NewStore.Messaging.Outbox;
 using NewStore.Orders.Clients;
@@ -31,6 +32,9 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
     internal ConflictInjector Conflicts { get; } = new();
 
     public KafkaServer Kafka => kafka;
+
+    /// <summary>Every log record the app writes.</summary>
+    public LogCapture Logs { get; } = new();
 
     /// <summary>Runs Orders' startup warm-up (off by default, see <see cref="InitializeAsync"/>).</summary>
     public bool WarmUp { get; init; }
@@ -77,6 +81,8 @@ public sealed class OrdersFixture(PostgresServer postgres, KafkaServer kafka) : 
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
+            services.AddLogging(logging => logging.AddProvider(Logs));
+
             // The stubs go below the resilience and token handlers, so a test sees every request on the wire, retries included.
             services.UseStubHandler<InventoryClient>(Inventory.Handler);
             services.UseStubHandler<PaymentsClient>(Payments.Handler);

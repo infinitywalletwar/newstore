@@ -304,9 +304,8 @@ public class SagaTests
         Assert.Equal(completed.Id, copy.GetProperty("orderId").GetGuid());
         // The names Task 8's models.ts reads.
         Assert.Equal(
-            ["completedAt", "copyNumber", "deliveryStatus", "editionId", "format", "orderId", "price", "videoId"],
+            ["completedAt", "copyNumber", "editionId", "format", "orderId", "price", "videoId"],
             copy.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
-        Assert.Equal(JsonValueKind.Null, copy.GetProperty("deliveryStatus").ValueKind);
         Assert.NotEqual(paying.Id, copy.GetProperty("orderId").GetGuid());
         Assert.NotEqual(reserved.Id, copy.GetProperty("orderId").GetGuid());
     }

@@ -419,7 +419,7 @@ Branch `phase-3/orders-delivery`. Issue #156. Owns the Compose stack in wave A. 
 - **`CopyResponse`** drops `DeliveryStatus`, and `CopiesAsync` its `null` argument.
 - **`InventoryStub`** gains `public string Format { get; set; } = "Digital";`, used by its reservation body instead of `"Hd"` and restored by `Reset()`.
 
-- [ ] **Step 1: Failing buy tests**
+- [x] **Step 1: Failing buy tests**
 
 `DeliveryBuyTests`, on `OrdersFixture`:
 - `Dvd_buy_with_delivery_stores_the_address`: `Format = "Dvd"`. 201, and the order row has the trimmed address and both coordinates.
@@ -432,11 +432,11 @@ Branch `phase-3/orders-delivery`. Issue #156. Owns the Compose stack in wave A. 
 
 Expected: they fail.
 
-- [ ] **Step 2: Implement buy, generate the migration, run**
+- [x] **Step 2: Implement buy, generate the migration, run**
 
 `ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add DeliveryAddress --project src/Services/Orders`. Check that it adds three nullable columns and nothing else. Expected: Orders.Tests pass. Commit: `feat(orders): a DVD order takes a delivery address and a pin`.
 
-- [ ] **Step 3: Failing saga tests, then code**
+- [x] **Step 3: Failing saga tests, then code**
 
 `ShipmentSagaTests`, with `KafkaServer.PublishAsync` as `SagaTests` does:
 - `Completed_dvd_order_enqueues_ShipmentRequested_with_the_address`: one outbox row of type `NewStore.Contracts.Orders.ShipmentRequested`, topic `orders.orders`, key = order id; its JSON has the order's ids, the copy number and the three delivery fields.
@@ -448,7 +448,7 @@ Expected: they fail.
 
 Expected: they pass after the change. Commit: `feat(orders): the saga requests a shipment for a completed DVD order`.
 
-- [ ] **Step 4: The stack, pull request**
+- [x] **Step 4: The stack, pull request**
 
 1. `docker compose build orders`, then `docker compose up -d --wait`. `orders-migrate` applies `DeliveryAddress`, and `curl -s http://localhost:8103/health/ready` is `Healthy`. Payments logs a Warning for each `ShipmentRequested` until Task 3 adds the ignore line; the walkthrough says so.
 2. **Walkthrough diagram:** the saga's state diagram with the new step marked: `Paying → Completed` now also enqueues `ShipmentRequested` for a DVD, in the same transaction; plus a flowchart of `POST /orders`'s checks (shape before the reservation, format after, release on mismatch). Interview questions:

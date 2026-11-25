@@ -18,6 +18,7 @@ public class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbCont
             order.Property(o => o.Price).HasColumnType("numeric(10,2)");
             order.Property(o => o.Status).HasConversion<string>().HasMaxLength(16);
             order.Property(o => o.CheckoutUrl).HasMaxLength(2048);
+            order.Property(o => o.DeliveryAddress).HasMaxLength(200);
 
             // xmin is a PostgreSQL system column: the migration lists it only so EF knows the property is mapped, and it creates nothing. EF puts it in the WHERE of every UPDATE.
             // A pay request and a payment event that change the same order meet here: the later save fails and reloads.
@@ -30,7 +31,7 @@ public class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbCont
             order.HasIndex(o => new { o.BuyerId, o.Status });
         });
 
-        // Orders publishes RefundRequested, and consumes PaymentSucceeded, PaymentFailed and PaymentRefunded.
+        // Orders publishes RefundRequested and ShipmentRequested, and consumes PaymentSucceeded, PaymentFailed and PaymentRefunded.
         modelBuilder.AddOutbox();
         modelBuilder.AddInbox();
     }
