@@ -38,6 +38,9 @@ internal static partial class MessagingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "Message {Topic}[{Partition}]@{Offset} has type '{Type}', which has no handler on this topic; skipped.")]
     public static partial void UnknownType(ILogger logger, string topic, int partition, long offset, string type);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Message {Topic}[{Partition}]@{Offset} has type '{Type}', which this service ignores on this topic; skipped.")]
+    public static partial void IgnoredType(ILogger logger, string topic, int partition, long offset, string type);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Consuming failed: {Error}")]
     public static partial void ConsumeFailed(ILogger logger, string error);
 
@@ -46,6 +49,18 @@ internal static partial class MessagingLog
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Committing offsets failed: {Error}")]
     public static partial void CommitFailed(ILogger logger, string error);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Message {Topic}[{Partition}]@{Offset} has type '{Type}', not the stream's {StreamType}; skipped.")]
+    public static partial void StreamTypeSkipped(ILogger logger, string topic, int partition, long offset, string type, string streamType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Message {Topic}[{Partition}]@{Offset} is not a readable {StreamType}; skipped.")]
+    public static partial void StreamMessageUnreadable(ILogger logger, Exception? exception, string topic, int partition, long offset, string streamType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The stream handler failed for a batch of {Count} from {Topic} (attempt {Attempt}); the batch is read again in {Pause}.")]
+    public static partial void StreamBatchFailed(ILogger logger, Exception exception, int count, string topic, int attempt, TimeSpan pause);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Seeking {Topic}[{Partition}] back to {Offset} failed: {Error}. Messages of the failed batch on this partition may not be read again.")]
+    public static partial void StreamSeekFailed(ILogger logger, string topic, int partition, long offset, string error);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Deleted {Outbox} outbox and {Inbox} inbox rows older than their retention")]
     public static partial void CleanupDeleted(ILogger logger, int outbox, int inbox);

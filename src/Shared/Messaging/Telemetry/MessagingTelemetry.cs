@@ -4,8 +4,8 @@ using System.Diagnostics.Metrics;
 namespace NewStore.Messaging.Telemetry;
 
 /// <summary>
-/// The library's <see cref="ActivitySource"/>, its <see cref="Meter"/> and the two spans it starts. The name starts with
-/// <c>NewStore.</c>, so <c>AddServiceDefaults</c> collects it. Both methods return null when nothing listens.
+/// The library's <see cref="ActivitySource"/>, its <see cref="Meter"/> and the spans it starts. The name starts with
+/// <c>NewStore.</c>, so <c>AddServiceDefaults</c> collects it. Each Start method returns null when nothing listens.
 /// </summary>
 internal static class MessagingTelemetry
 {
@@ -29,6 +29,19 @@ internal static class MessagingTelemetry
     /// <summary><c>process &lt;topic&gt;</c>, a child of the publish span whose id travelled in the message's <c>traceparent</c> header.</summary>
     public static Activity? StartProcess(string topic, Guid messageId, string? traceParent) =>
         Start($"process {topic}", ActivityKind.Consumer, topic, messageId, traceParent);
+
+    /// <summary>
+    /// <c>process &lt;topic&gt;</c> for one stream batch, with <c>messaging.batch.message_count</c>. A batch mixes messages
+    /// from many producers' traces, so it takes none of them as its parent.
+    /// </summary>
+    public static Activity? StartProcessBatch(string topic, int messageCount)
+    {
+        var activity = Source.StartActivity($"process {topic}", ActivityKind.Consumer, parentContext: default);
+        activity?.SetTag("messaging.system", "kafka");
+        activity?.SetTag("messaging.destination.name", topic);
+        activity?.SetTag("messaging.batch.message_count", messageCount);
+        return activity;
+    }
 
     private static Activity? Start(string name, ActivityKind kind, string topic, Guid messageId, string? traceParent)
     {

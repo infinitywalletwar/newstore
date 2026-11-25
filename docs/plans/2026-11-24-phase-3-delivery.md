@@ -344,7 +344,7 @@ Branch `phase-3/streams`. Issue #155. Read: topic 03 (high-frequency events) and
   - when a rebalance revokes partitions, the gathered messages of those partitions are dropped unhandled (their new owner reads them);
   - one span per batch, `process <topic>`, `ActivityKind.Consumer`, with `messaging.batch.message_count`.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 `StreamTests`, with `MessagingHost.CreateBuilder` on the assembly's Kafka and PostgreSQL, a recorded `record Ping(int N)`, and a `PingRecorder` singleton that the test's `IStreamHandler<Ping>` appends each batch to. Each test uses its own topic (6 partitions) and client id.
 - `Stream_producer_awaits_the_ack_and_writes_the_type_header`: after `ProduceAsync` returns, a plain consumer reads the message with header `type` = `typeof(Ping).FullName` and no `message-id` header.
@@ -364,11 +364,11 @@ Branch `phase-3/streams`. Issue #155. Read: topic 03 (high-frequency events) and
 
 Run `dotnet test --project tests/Messaging.Tests`. Expected: the new tests fail to compile, then fail.
 
-- [ ] **Step 2: Implement, then run the tests**
+- [x] **Step 2: Implement, then run the tests**
 
 Expected: Messaging.Tests pass, and so does the whole solution (`dotnet test --solution NewStore.slnx`): `AddMessaging`'s new registrations must not change any existing service. Commit: `feat(messaging): streams, consumed in batches without the inbox`, then `feat(messaging): declare event types a consumer ignores on a shared topic`.
 
-- [ ] **Step 3: ADR 0022, pull request**
+- [x] **Step 3: ADR 0022, pull request**
 
 1. **ADR 0022, positions are a stream.**
    - Context: a position every 2 s per shipment, regenerated from the timeline at any moment; Delivery's own courier is the producer.
