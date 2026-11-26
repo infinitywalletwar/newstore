@@ -63,8 +63,8 @@ public sealed partial class CourierRunner(
     public async Task ReleaseAsync(CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<CourierLeases>().ReleaseAsync(CourierId, ct);
-        Released(logger, CourierId, _held.Count);
+        var released = await scope.ServiceProvider.GetRequiredService<CourierLeases>().ReleaseAsync(CourierId, ct);
+        Released(logger, CourierId, released);
         _held.Clear();
     }
 
@@ -105,37 +105,39 @@ public sealed partial class CourierRunner(
 
     /// <summary>
     /// Step 3: each held trip's point for <paramref name="now"/>, when its seq is above the last one sent, all at once. A trip whose
-    /// message isn't acknowledged keeps its last seq, so the next tick sends that trip's point for its own now.
+    /// message isn't acknowledged keeps its last seq, so the next tick sends that trip's point for its own now. In a Kafka outage
+    /// every send fails, so the tick logs one Warning with the count and the first error, and each trip only at Debug.
     /// </summary>
-    private Task ProduceAsync(DateTimeOffset now, CancellationToken ct) =>
-        Task.WhenAll(_held.Values
+    private async Task ProduceAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        var errors = await Task.WhenAll(_held.Values
             .Select(trip => (Trip: trip, Seq: CourierTimeline.SeqAt(now, trip.Shipment.StartedAt, Options)))
             .Where(due => due.Seq > due.Trip.SentSeq)
             .Select(due => ProduceAsync(due.Trip, due.Seq, ct)));
 
-    private async Task ProduceAsync(Trip trip, int seq, CancellationToken ct)
+        var failed = errors.OfType<Exception>().ToList();
+        if (failed.Count > 0)
+        {
+            ProducesFailed(logger, CourierId, failed.Count, errors.Length, failed[0]);
+        }
+    }
+
+    /// <summary>Sends one trip's point; returns the error when Kafka didn't acknowledge it, or null.</summary>
+    private async Task<Exception?> ProduceAsync(Trip trip, int seq, CancellationToken ct)
     {
         var shipment = trip.Shipment;
-        var point = CourierTimeline.At(seq, shipment.StartedAt, shipment.From, shipment.To, Options);
-        var position = new CourierPosition
-        {
-            ShipmentId = shipment.Id,
-            Seq = point.Seq,
-            Status = point.Status.ToString(),
-            Latitude = point.Position.Latitude,
-            Longitude = point.Position.Longitude,
-            RecordedAt = point.RecordedAt,
-        };
-
+        var position = CourierTimeline.At(seq, shipment.StartedAt, shipment.From, shipment.To, Options).ToPosition(shipment.Id);
         try
         {
             // Completes only when Kafka acknowledged the message (IStreamProducer: idempotent, acks=all).
             await producer.ProduceAsync(CourierPosition.Topic, shipment.Id.ToString(), position, ct);
             trip.SentSeq = seq;
+            return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             ProduceFailed(logger, shipment.Id, seq, ex);
+            return ex;
         }
     }
 
@@ -179,12 +181,15 @@ public sealed partial class CourierRunner(
     [LoggerMessage(Level = LogLevel.Warning, Message = "Courier {CourierId} lost shipment {ShipmentId} to another courier.")]
     private static partial void LeaseLost(ILogger logger, string courierId, Guid shipmentId);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Position {Seq} of shipment {ShipmentId} was not acknowledged; a later tick sends a newer one.")]
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Position {Seq} of shipment {ShipmentId} was not acknowledged; a later tick sends a newer one.")]
     private static partial void ProduceFailed(ILogger logger, Guid shipmentId, int seq, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Courier {CourierId}: {Failed} of {Sent} positions were not acknowledged; later ticks send newer ones. The first error follows.")]
+    private static partial void ProducesFailed(ILogger logger, string courierId, int failed, int sent, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Courier {CourierId}'s tick failed; the next tick starts over.")]
     private static partial void TickFailed(ILogger logger, string courierId, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Courier {CourierId} released its {Count} shipments.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Courier {CourierId} released {Count} shipments.")]
     private static partial void Released(ILogger logger, string courierId, int count);
 }

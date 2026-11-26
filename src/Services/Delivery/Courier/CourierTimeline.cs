@@ -1,9 +1,22 @@
 using NewStore.Delivery.Shipments;
+using NewStore.Delivery.Tracking;
 
 namespace NewStore.Delivery.Courier;
 
 /// <summary>The courier's position number <see cref="Seq"/> on a trip: what it reports for that tick.</summary>
-public sealed record TimelinePoint(int Seq, ShipmentStatus Status, GeoPoint Position, DateTimeOffset RecordedAt);
+public sealed record TimelinePoint(int Seq, ShipmentStatus Status, GeoPoint Position, DateTimeOffset RecordedAt)
+{
+    /// <summary>The message on <see cref="CourierPosition.Topic"/> for this point of <paramref name="shipmentId"/>'s trip.</summary>
+    public CourierPosition ToPosition(Guid shipmentId) => new()
+    {
+        ShipmentId = shipmentId,
+        Seq = Seq,
+        Status = Status.ToString(),
+        Latitude = Position.Latitude,
+        Longitude = Position.Longitude,
+        RecordedAt = RecordedAt,
+    };
+}
 
 /// <summary>
 /// A trip as a pure function of its start (<c>courier_started_at</c>) and <see cref="CourierOptions"/>: point <c>n</c> is at

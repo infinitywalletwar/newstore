@@ -95,12 +95,13 @@ public sealed class CourierLeases(DeliveryDbContext db, TimeProvider time, IOpti
 
     /// <summary>
     /// The courier is stopping: each of its open shipments' leases ends now, so another courier claims it on its next tick instead
-    /// of waiting for the lease to run out. <c>courier_locked_by</c> stays, as a record of who drove it last.
+    /// of waiting for the lease to run out. <c>courier_locked_by</c> stays, as a record of who drove it last. Returns how many
+    /// shipments were released.
     /// </summary>
-    public async Task ReleaseAsync(string courierId, CancellationToken ct)
+    public async Task<int> ReleaseAsync(string courierId, CancellationToken ct)
     {
         var now = time.GetUtcNowToMicrosecond();
-        await Held(courierId).ExecuteUpdateAsync(set => set.SetProperty(s => s.CourierLockedUntil, now), ct);
+        return await Held(courierId).ExecuteUpdateAsync(set => set.SetProperty(s => s.CourierLockedUntil, now), ct);
     }
 
     /// <summary>The open shipments this courier holds.</summary>
