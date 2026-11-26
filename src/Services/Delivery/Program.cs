@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using NewStore.Contracts.Orders;
 using NewStore.Delivery;
+using NewStore.Delivery.Courier;
 using NewStore.Delivery.Shipments;
 using NewStore.Delivery.Tracking;
 using NewStore.Messaging;
@@ -40,7 +41,8 @@ if (api)
     // Task 5: builder.AddTracking();        // SignalR, WebSockets only, the Redis backplane when ConnectionStrings:Redis is set
 }
 
-// Task 4: builder.AddCourier(runCourier: role is DeliveryRole.All or DeliveryRole.Courier);
+// The courier's leases and runner in every role, so a test drives a runner by hand; its timer only in the Courier and All roles.
+builder.AddCourier(runCourier: role is DeliveryRole.All or DeliveryRole.Courier);
 
 var app = builder.Build();
 
