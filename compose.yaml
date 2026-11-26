@@ -242,6 +242,12 @@ services:
       Services__Inventory: http://inventory:8080
       Services__Orders: http://orders:8080
       Services__Media: http://media:8080
+      # Delivery's two API instances, in round robin; the gateway probes each one's /health/ready (ADR 0023).
+      Services__Delivery__0: http://delivery:8080
+      Services__Delivery__1: http://delivery-b:8080
+      # Where a browser loads the app: the gateway itself, and `npm start` on 4200. The hub's WebSocket must come from one of them.
+      Gateway__PublicOrigins__0: http://localhost:8100
+      Gateway__PublicOrigins__1: http://localhost:4200
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME: gateway
     ports: ["127.0.0.1:8100:8080"]
@@ -252,6 +258,8 @@ services:
       inventory: { condition: service_healthy }
       orders: { condition: service_healthy }
       media: { condition: service_healthy }
+      delivery: { condition: service_healthy }
+      delivery-b: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
       # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
@@ -521,6 +529,8 @@ services:
       Delivery__Role: Api
       ConnectionStrings__Delivery: Host=postgres;Database=delivery;Username=delivery;Password=delivery
       Messaging__BootstrapServers: kafka:9092
+      # The SignalR backplane: a position one instance consumes reaches a browser connected to the other.
+      ConnectionStrings__Redis: redis:6379
       # Tokens carry the public issuer; the keys are fetched on the internal address (ADR 0012). Delivery calls no service, so it
       # has no client of its own.
       Auth__Issuer: http://localhost:8180/realms/newstore
@@ -533,6 +543,7 @@ services:
       postgres: { condition: service_healthy }
       delivery-migrate: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
@@ -556,6 +567,7 @@ services:
       Delivery__Role: Api
       ConnectionStrings__Delivery: Host=postgres;Database=delivery;Username=delivery;Password=delivery
       Messaging__BootstrapServers: kafka:9092
+      ConnectionStrings__Redis: redis:6379
       Auth__Issuer: http://localhost:8180/realms/newstore
       Auth__MetadataAddress: http://keycloak:8080/realms/newstore/.well-known/openid-configuration
       Auth__RequireHttpsMetadata: "false"
@@ -565,6 +577,7 @@ services:
       postgres: { condition: service_healthy }
       delivery-migrate: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     healthcheck:
