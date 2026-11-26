@@ -14,8 +14,26 @@ namespace NewStore.Delivery.Tests;
 public sealed class PositionsTopic(string bootstrapServers)
 {
     /// <summary>Every message for <paramref name="shipmentId"/> on the topic now, in the order its partition holds them.</summary>
-    public Task<IReadOnlyList<CourierPosition>> ReadAsync(Guid shipmentId) =>
-        Task.Run<IReadOnlyList<CourierPosition>>(() => Read(shipmentId), TestContext.Current.CancellationToken);
+    /// <remarks>
+    /// Under load (every test project at once) the broker once answered the offset query with "Not leader for partition", so a
+    /// read that throws a <see cref="KafkaException"/> is tried again for up to 30 s.
+    /// </remarks>
+    public async Task<IReadOnlyList<CourierPosition>> ReadAsync(Guid shipmentId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while (true)
+        {
+            try
+            {
+                return await Task.Run(() => Read(shipmentId), ct);
+            }
+            catch (KafkaException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(200, ct);
+            }
+        }
+    }
 
     /// <summary>Reads until <paramref name="done"/> holds for the shipment's messages; fails after <paramref name="timeout"/> (30 s).</summary>
     public async Task<IReadOnlyList<CourierPosition>> WaitForAsync(
