@@ -143,3 +143,65 @@ export interface DownloadLink {
   expiresAt: string;
   fileName: string;
 }
+
+/** What `POST /api/orders` takes for a DVD: where to send it, and the pin the buyer dropped. */
+export interface DeliveryDetails {
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface Warehouse {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export type ShipmentStatus = 'Preparing' | 'PickedUp' | 'InTransit' | 'Delivered';
+
+/** One point of the courier's path. `seq` grows by one per tick and is what a client orders and de-duplicates by. */
+export interface Position {
+  seq: number;
+  status: ShipmentStatus;
+  latitude: number;
+  longitude: number;
+  recordedAt: string;
+}
+
+/** The hub's `position` message: a `Position` and the shipment it belongs to. */
+export interface PositionMessage extends Position {
+  shipmentId: string;
+}
+
+/** `GET /api/me/shipments` (Delivery's `ShipmentSummary`), newest first. */
+export interface ShipmentSummary {
+  id: string;
+  orderId: string;
+  copyNumber: number;
+  videoId: string;
+  status: ShipmentStatus;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+/** `GET /api/shipments/{id}` and the hub's `Track` answer. `path` is every stored position, oldest first. */
+export interface ShipmentDetails {
+  id: string;
+  orderId: string;
+  copyNumber: number;
+  videoId: string;
+  status: ShipmentStatus;
+  address: string;
+  destination: GeoPoint;
+  warehouse: Warehouse;
+  lastPosition: Position | null;
+  path: Position[];
+  createdAt: string;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+}
