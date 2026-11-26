@@ -65,6 +65,8 @@ jobs:
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8105/health/ready
       - name: Media is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8106/health/ready
+      - name: Delivery is ready
+        run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8107/health/ready
       - name: Gateway is ready
         run: curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8100/health/ready
       - name: Floci is ready
@@ -122,9 +124,9 @@ jobs:
           url="$(curl --fail --silent --show-error http://localhost:8101/videos/00000000-0000-7000-8001-000000000011 | jq -er '.playbackUrl')"
           echo "playbackUrl: $url"
           test "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 200
-      - name: Media and the worker are healthy
+      - name: Media, the worker and the second Delivery instance are healthy
         run: |
-          for service in media media-worker; do
+          for service in media media-worker delivery-b; do
             id="$(docker compose -f compose.yaml -f compose.load.yaml ps --quiet "$service")"
             health="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
             echo "$service: $health"

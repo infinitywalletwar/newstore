@@ -291,6 +291,7 @@ newstore/
 │   ├── Messaging.Tests/  the outbox, relay and consumer against real Kafka and PostgreSQL
 │   ├── Orders.Tests/     buy, pay and the checkout saga against real PostgreSQL and Kafka, with stubs for Inventory and Payments
 │   ├── Media.Tests/      uploads, the worker and downloads against real PostgreSQL, Kafka and Floci (the local S3), with the test playing the browser; `LargeUploadTests` is the 1 GB test, run by the nightly workflow
+│   ├── Delivery.Tests/   shipments from Orders' event and the shipments API against real PostgreSQL and Kafka
 │   ├── Gateway.Tests/    sign-in, sessions and routing against real Keycloak and Redis
 │   └── Shared/       NewStore.TestSupport: the app factory, span sink, and the PostgreSQL and Kafka servers every test project uses
 ├── .config/          dotnet-tools.json: the pinned `dotnet-ef` tool

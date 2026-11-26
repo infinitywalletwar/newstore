@@ -593,7 +593,7 @@ Expected: they fail.
 
 Expected: Delivery.Tests pass. Commit: `feat(delivery): shipments from Orders' event, and the shipments API`.
 
-- [ ] **Step 4: Payments, Compose, realm, CI, pull request**
+- [x] **Step 4: Payments, Compose, realm, CI, pull request**
 
 1. Payments' ignore line. `dotnet test --project tests/Payments.Tests` passes.
 2. Compose, `init.sql`, the realm mapper. A Mac stack from before this change needs `docker compose down -v` once (a new database role and a realm change, AGENTS.md); the walkthrough says so. Run `docker compose build delivery`, then `docker compose up -d --wait`. Check:
