@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 using NewStore.Contracts.Orders;
+using NewStore.Delivery.Shipments;
 
 namespace NewStore.Delivery.Tests;
 
@@ -80,6 +82,25 @@ public class DeliveryFixture(PostgresServer postgres, KafkaServer kafka) : NewSt
 
     /// <summary>A client that carries a signed-in buyer's token, issued by the gateway for audience <c>delivery</c>.</summary>
     public HttpClient BuyerClient(Guid buyerId) => CreateClient().WithBearer(TestTokens.User(buyerId, "delivery"));
+
+    /// <summary>
+    /// Creates a shipment the way Orders' event does: it runs <see cref="ShipmentRequestedHandler"/> on a new event, outside Kafka.
+    /// The handler is built here, not resolved, because only the Api role registers it.
+    /// </summary>
+    public async Task<Shipment> CreateShipmentAsync(Guid? buyerId = null, double latitude = 52.5219, double longitude = 13.4132)
+    {
+        var request = NewShipmentRequested(buyerId ?? Guid.NewGuid(), latitude, longitude);
+        await using (var scope = Services.CreateAsyncScope())
+        {
+            var handler = new ShipmentRequestedHandler(
+                scope.ServiceProvider.GetRequiredService<DeliveryDbContext>(),
+                scope.ServiceProvider.GetRequiredService<IOptions<WarehouseOptions>>(),
+                scope.ServiceProvider.GetRequiredService<TimeProvider>());
+            await handler.HandleAsync(request, TestContext.Current.CancellationToken);
+        }
+
+        return await QueryAsync(db => db.Shipments.AsNoTracking().SingleAsync(s => s.OrderId == request.OrderId, TestContext.Current.CancellationToken));
+    }
 
     /// <summary>A new event for a new order of <paramref name="buyerId"/>, to Alexanderplatz unless told otherwise.</summary>
     public static ShipmentRequested NewShipmentRequested(Guid buyerId, double latitude = 52.5219, double longitude = 13.4132) => new()

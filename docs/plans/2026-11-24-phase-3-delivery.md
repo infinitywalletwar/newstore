@@ -561,7 +561,7 @@ Branch `phase-3/delivery-service`. Issue #157. Owns the Compose stack in wave B.
   - `delivery-b`: the same, with no `ports`.
 - **CI `compose-smoke`:** Delivery is ready (`curl --fail … --retry 30 … http://localhost:8107/health/ready`), and `delivery-b` is healthy, in the loop that checks `media` and `media-worker`.
 
-- [ ] **Step 1: The service starts**
+- [x] **Step 1: The service starts**
 
 `DeliveryStartupTests`:
 - `Delivery_is_ready_with_its_tables`: `/health/ready` is 200, and `shipments`, `shipment_positions`, `outbox_messages` and `inbox_messages` exist.
@@ -572,7 +572,7 @@ Branch `phase-3/delivery-service`. Issue #157. Owns the Compose stack in wave B.
 
 Write the project so these pass. Commit: `feat(delivery): the Delivery service with its database and warehouse`.
 
-- [ ] **Step 2: Failing tests for shipments and the API**
+- [x] **Step 2: Failing tests for shipments and the API**
 
 `ShipmentRequestedTests`, with `KafkaServer.PublishAsync`:
 - `ShipmentRequested_creates_a_preparing_shipment_with_the_warehouse`: every field from the event, status `Preparing`, `last_seq` −1, the warehouse's three values copied.
@@ -589,7 +589,7 @@ Write the project so these pass. Commit: `feat(delivery): the Delivery service w
 
 Expected: they fail.
 
-- [ ] **Step 3: Implement, run**
+- [x] **Step 3: Implement, run**
 
 Expected: Delivery.Tests pass. Commit: `feat(delivery): shipments from Orders' event, and the shipments API`.
 

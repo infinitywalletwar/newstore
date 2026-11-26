@@ -25,6 +25,7 @@ builder.AddMessaging<DeliveryDbContext>(m =>
     m.AddTopic(CourierPosition.Topic, CourierPosition.Partitions);
     if (api)
     {
+        m.AddHandler<ShipmentRequested, ShipmentRequestedHandler>(OrderEvents.Topic);
         m.AddIgnoredType<RefundRequested>(OrderEvents.Topic);   // Payments' event on the same topic
         // Task 5: if (builder.Configuration.GetValue("Delivery:Tracking:ConsumePositions", true))
         //             m.AddStreamHandler<CourierPosition, CourierPositionHandler>(CourierPosition.Topic);
@@ -35,6 +36,7 @@ if (api)
 {
     // Buyers' tokens are validated here (the gateway signs them in). Delivery calls no service, so it has no client of its own.
     builder.AddNewStoreAuth();
+    builder.AddShipments();                  // ShipmentReader
     // Task 5: builder.AddTracking();        // SignalR, WebSockets only, the Redis backplane when ConnectionStrings:Redis is set
 }
 
