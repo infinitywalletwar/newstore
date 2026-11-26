@@ -141,3 +141,18 @@ public class DeliveryFixture(PostgresServer postgres, KafkaServer kafka) : NewSt
         Assert.Fail($"Timed out waiting for: {what}.");
     }
 }
+
+/// <summary>A warehouse other than the defaults, so a test can tell configuration from the class's initial values.</summary>
+public sealed class OtherWarehouseFixture(PostgresServer postgres, KafkaServer kafka) : DeliveryFixture(postgres, kafka)
+{
+    public const string Name = "Test depot, Spandau";
+    public const double Latitude = 52.5355;
+    public const double Longitude = 13.1975;
+
+    protected override void ConfigureSettings(Dictionary<string, string?> settings)
+    {
+        settings["Delivery:Warehouse:Name"] = Name;
+        settings["Delivery:Warehouse:Latitude"] = Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        settings["Delivery:Warehouse:Longitude"] = Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+}

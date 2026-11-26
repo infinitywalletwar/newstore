@@ -96,11 +96,14 @@ public sealed class ShipmentApiTests(DeliveryFixture delivery) : IClassFixture<D
 
         var someoneElses = await stranger.GetAsync($"/shipments/{shipment.Id}", Ct);
         var missing = await stranger.GetAsync($"/shipments/{Guid.CreateVersion7()}", Ct);
+        var malformed = await stranger.GetAsync("/shipments/not-a-guid", Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, someoneElses.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, malformed.StatusCode);
         Assert.Equal("urn:newstore:problem:not-found", (await someoneElses.ProblemAsync()).Type);
         Assert.Equal(await BodyWithoutTraceIdAsync(missing), await BodyWithoutTraceIdAsync(someoneElses));
+        Assert.Equal(await BodyWithoutTraceIdAsync(missing), await BodyWithoutTraceIdAsync(malformed));
     }
 
     [Theory]

@@ -59,13 +59,13 @@ public static class DeliveryOptionsExtensions
     /// <summary>
     /// Binds <c>Delivery:Warehouse</c>, <c>Delivery:Courier</c> and <c>Delivery:Tracking</c> in every role, checks them when the host
     /// starts, and returns <c>Delivery:Role</c> (default <see cref="DeliveryRole.All"/>). A bad value fails the start with a message that
-    /// names the setting.
+    /// names the setting: a role that is not one of the three throws here, before the host is built.
     /// </summary>
     public static DeliveryRole AddDeliveryOptions(this IHostApplicationBuilder builder)
     {
         builder.Services.AddOptions<WarehouseOptions>()
             .BindConfiguration(WarehouseOptions.SectionName)
-            .Validate(o => o.Name is { Length: >= 1 and <= 100 }, "Delivery:Warehouse:Name must have 1 to 100 characters.")
+            .Validate(o => !string.IsNullOrWhiteSpace(o.Name) && o.Name.Length <= 100, "Delivery:Warehouse:Name must have 1 to 100 characters, not all blank.")
             .Validate(o => o.Latitude is >= -90 and <= 90, "Delivery:Warehouse:Latitude must be between -90 and 90.")
             .Validate(o => o.Longitude is >= -180 and <= 180, "Delivery:Warehouse:Longitude must be between -180 and 180.")
             .ValidateOnStart();
@@ -86,6 +86,13 @@ public static class DeliveryOptionsExtensions
             .BindConfiguration(TrackingOptions.SectionName)
             .ValidateOnStart();
 
-        return builder.Configuration.GetValue("Delivery:Role", DeliveryRole.All);
+        // The binder turns a number into the enum without checking it, so "5" would run a process with no role at all.
+        var role = builder.Configuration.GetValue("Delivery:Role", DeliveryRole.All);
+        if (!Enum.IsDefined(role))
+        {
+            throw new InvalidOperationException($"Delivery:Role must be All, Api or Courier, not '{builder.Configuration["Delivery:Role"]}'.");
+        }
+
+        return role;
     }
 }

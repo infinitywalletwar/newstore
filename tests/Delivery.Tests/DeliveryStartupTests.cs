@@ -4,7 +4,8 @@ using NewStore.Delivery.Shipments;
 
 namespace NewStore.Delivery.Tests;
 
-public sealed class DeliveryStartupTests(DeliveryFixture delivery) : IClassFixture<DeliveryFixture>
+public sealed class DeliveryStartupTests(DeliveryFixture delivery, OtherWarehouseFixture otherWarehouse)
+    : IClassFixture<DeliveryFixture>, IClassFixture<OtherWarehouseFixture>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -34,5 +35,16 @@ public sealed class DeliveryStartupTests(DeliveryFixture delivery) : IClassFixtu
         var warehouse = await (await client.GetAsync("/delivery/warehouse", Ct)).ReadAsync<WarehouseResponse>();
 
         Assert.Equal(new WarehouseResponse("newstore warehouse, Tempelhof, Berlin", 52.4836, 13.3897), warehouse);
+    }
+
+    [Fact]
+    public async Task Warehouse_answers_the_configured_values()
+    {
+        // The default fixture's values equal the class's initial ones, so only other settings show they are read.
+        using var client = otherWarehouse.CreateClient();
+
+        var warehouse = await (await client.GetAsync("/delivery/warehouse", Ct)).ReadAsync<WarehouseResponse>();
+
+        Assert.Equal(new WarehouseResponse(OtherWarehouseFixture.Name, OtherWarehouseFixture.Latitude, OtherWarehouseFixture.Longitude), warehouse);
     }
 }
