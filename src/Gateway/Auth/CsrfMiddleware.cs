@@ -28,15 +28,21 @@ public static class CsrfExtensions
             if (guarded
                 && !GatewayAuthExtensions.IsBearerRequest(request)
                 && context.User.Identity?.IsAuthenticated == true
-                && !(IsHubUpgrade(request) ? HasPublicOrigin(request, publicOrigins) : request.Headers["X-CSRF"] == "1"))
+                && Refusal(request, publicOrigins) is { } refusal)
             {
-                await Problems.Csrf().ExecuteAsync(context);
+                await refusal.ExecuteAsync(context);
                 return;
             }
 
             await next(context);
         });
     }
+
+    /// <summary>The problem for a cookie request that fails its CSRF check, or null when it passes.</summary>
+    private static IResult? Refusal(HttpRequest request, HashSet<string> publicOrigins) =>
+        IsHubUpgrade(request)
+            ? (HasPublicOrigin(request, publicOrigins) ? null : Problems.CsrfOrigin())
+            : (request.Headers["X-CSRF"] == "1" ? null : Problems.Csrf());
 
     /// <summary>
     /// A WebSocket upgrade to a hub, told by its headers: the gateway has no WebSockets middleware (YARP tunnels the upgrade

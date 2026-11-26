@@ -17,6 +17,10 @@ internal static class Problems
     public static IResult Csrf() =>
         Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Requests that use the session cookie must send the X-CSRF: 1 header.", type: Type("csrf"));
 
+    /// <summary>The same <c>csrf</c> problem for a hub's WebSocket upgrade, which a browser can't add <c>X-CSRF</c> to (ADR 0023).</summary>
+    public static IResult CsrfOrigin() =>
+        Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "The WebSocket must come from one of the app's own origins.", type: Type("csrf"));
+
     public static IResult NotFound() =>
         Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "No such resource.", type: Type("not-found"));
 

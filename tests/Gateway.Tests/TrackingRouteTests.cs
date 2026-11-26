@@ -116,7 +116,10 @@ public sealed class TrackingRouteTests(GatewayKeycloak keycloak)
             app.Stub.On(HttpMethod.Get, "/me/shipments", _ => Ok());
         });
 
-        await Task.Delay(TimeSpan.FromSeconds(3), Ct);
+        // ConsecutiveFailures marks a destination unhealthy at its second failed probe in a row (the default threshold), and the
+        // policy runs once a round of probes has completed. A third probe to delivery-a.test means the round with the second
+        // failure is over and evaluated.
+        await WaitAsync(() => gateway.Stub.Requests.Count(IsProbeOf("delivery-a.test")) >= 3, "three probes of delivery-a.test");
         for (var i = 0; i < 4; i++)
         {
             Assert.Equal(HttpStatusCode.OK, (await BearerGetAsync(gateway, "/api/me/shipments")).StatusCode);
@@ -126,7 +129,21 @@ public sealed class TrackingRouteTests(GatewayKeycloak keycloak)
         Assert.Equal(4, calls.Count);
         Assert.All(calls, r => Assert.Equal("delivery-b.test", r.RequestUri!.Host));
         // The probes went through the same stub, to both destinations.
-        Assert.Contains(gateway.Stub.Requests, r => r.RequestUri!.AbsolutePath == "/health/ready" && r.RequestUri.Host == "delivery-a.test");
+        Assert.True(gateway.Stub.Requests.Any(IsProbeOf("delivery-b.test")), "No probe reached delivery-b.test.");
+    }
+
+    private static Func<HttpRequestMessage, bool> IsProbeOf(string host) =>
+        r => r.RequestUri!.AbsolutePath == "/health/ready" && r.RequestUri.Host == host;
+
+    /// <summary>Polls until <paramref name="condition"/> holds; fails the test after 10 s.</summary>
+    private static async Task WaitAsync(Func<bool> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"Timed out waiting for: {what}.");
+            await Task.Delay(50, Ct);
+        }
     }
 
     [Fact]
@@ -154,6 +171,41 @@ public sealed class TrackingRouteTests(GatewayKeycloak keycloak)
 
         // A page on another site opens the socket; the browser adds the session cookie and its own Origin, which no script can change.
         var response = await gateway.Browser.SendAsync(HttpMethod.Get, Hub, headers: Upgrade("http://evil.test"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal("urn:newstore:problem:csrf", problem.GetProperty("type").GetString());
+        // Not the X-CSRF title: a browser can't add that header to a WebSocket.
+        Assert.Equal("The WebSocket must come from one of the app's own origins.", problem.GetProperty("title").GetString());
+        Assert.Empty(gateway.Stub.Requests);
+    }
+
+    [Theory]
+    [InlineData("http://localhost/")]
+    [InlineData("HTTP://LOCALHOST")]
+    public async Task Hub_upgrade_origin_matches_without_a_trailing_slash_and_ignoring_case(string origin)
+    {
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        gateway.Stub.On(HttpMethod.Get, "/hubs/tracking", _ => Ok());
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var response = await gateway.Browser.SendAsync(HttpMethod.Get, Hub, headers: Upgrade(origin));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Single(gateway.Stub.Requests);
+    }
+
+    [Theory]
+    [InlineData("http://localhost.evil.test")]
+    [InlineData("http://localhost:8100.evil.test")]
+    [InlineData("https://localhost")]
+    public async Task Hub_upgrade_from_a_look_alike_origin_is_403_csrf(string origin)
+    {
+        // The whole origin must match: a host that starts like ours, or another scheme, is another origin.
+        await using var gateway = await GatewayHarness.StartAsync(keycloak);
+        await gateway.Browser.SignInAsync(Users.OrbitalKitchen);
+
+        var response = await gateway.Browser.SendAsync(HttpMethod.Get, Hub, headers: Upgrade(origin));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("urn:newstore:problem:csrf", await ProblemTypeAsync(response));
