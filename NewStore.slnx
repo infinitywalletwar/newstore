@@ -16,6 +16,9 @@
   <Folder Name="/src/Services/Media/">
     <Project Path="src/Services/Media/NewStore.Media.csproj" />
   </Folder>
+  <Folder Name="/src/Services/Delivery/">
+    <Project Path="src/Services/Delivery/NewStore.Delivery.csproj" />
+  </Folder>
   <Folder Name="/src/Fakes/FakePay/">
     <Project Path="src/Fakes/FakePay/NewStore.FakePay.csproj" />
   </Folder>
@@ -63,5 +66,8 @@
   </Folder>
   <Folder Name="/tests/Media.Tests/">
     <Project Path="tests/Media.Tests/NewStore.Media.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Delivery.Tests/">
+    <Project Path="tests/Delivery.Tests/NewStore.Delivery.Tests.csproj" />
   </Folder>
 </Solution>
