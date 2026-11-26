@@ -785,7 +785,7 @@ Commit: `feat(delivery): store courier positions in batches, idempotent by seq`.
 
 Commit: `feat(delivery): the tracking hub, WebSockets only`.
 
-- [ ] **Step 3: Two hosts, failing test, then code**
+- [x] **Step 3: Two hosts, failing test, then code**
 
 `RedisFixture` (a class fixture) starts `new RedisBuilder("redis:8.10.3")`. `TwoHostTests` start host A and host B from `DeliveryFixture` subclasses on one database, one Kafka and one `ClientId`; A has `ConsumePositions=false`. A starts first and migrates; B starts after A is ready and does not call `MigrateBeforeStart`, so the two never run migrations at once.
 - `Position_consumed_by_host_b_reaches_a_client_on_host_a` (the design's test): with Redis on both, a client tracks on A; a position produced to the topic is stored by B (the row appears) and arrives at A's client within 10 s.

@@ -3,6 +3,7 @@
     <ProjectReference Include="..\..\Shared\ServiceDefaults\NewStore.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\Shared\Contracts\NewStore.Contracts.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="NewStore.Delivery.Tests" />
