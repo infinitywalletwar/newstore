@@ -126,7 +126,7 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 200
       - name: Media, the worker and the second Delivery instance are healthy
         run: |
-          for service in media media-worker delivery-b; do
+          for service in media media-worker delivery-b delivery-courier; do
             id="$(docker compose -f compose.yaml -f compose.load.yaml ps --quiet "$service")"
             health="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
             echo "$service: $health"

@@ -576,6 +576,35 @@ services:
       start_period: 10s
     deploy: { resources: { limits: { memory: 512m } } }
 
+  # The courier (Delivery:Role Courier): it claims shipments with a lease and produces each position to delivery.positions.
+  # It serves no API and validates no token, so it has no port and no Auth settings; the health check probes inside the container.
+  delivery-courier:
+    build:
+      context: .
+      dockerfile: src/Services/Delivery/Dockerfile
+    image: newstore/delivery:local
+    pull_policy: build
+    init: true
+    environment:
+      Delivery__Role: Courier
+      ConnectionStrings__Delivery: Host=postgres;Database=delivery;Username=delivery;Password=delivery
+      Messaging__BootstrapServers: kafka:9092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: delivery-courier
+    depends_on:
+      postgres: { condition: service_healthy }
+      delivery-migrate: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    healthcheck:
+      # The runtime image has bash but no curl, so the probe speaks HTTP through /dev/tcp, as Keycloak's does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'HTTP/1.1 200' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 256m } } }
+
   # A stand-in for a hosted payment page such as Stripe's (ADR 0014). Not a store service: no database, no outbox.
   # The browser reaches it on localhost:8105; it calls Payments' webhook on the Compose network.
   fakepay:

@@ -673,7 +673,7 @@ Branch `phase-3/courier`. Issue #158. Advances D-2. Read: topic 03 (idempotency 
 - **`CourierService`'s stop** calls `ReleaseAsync` with a 5-second budget.
 - **Compose `delivery-courier`:** the `delivery` image, `Delivery__Role: Courier`, the database, Kafka and `OTEL_*` env (`OTEL_SERVICE_NAME: delivery-courier`), no ports, no `Auth__*`, the health check, 256m. Depends on postgres, delivery-migrate (completed), kafka and otel-collector.
 
-- [ ] **Step 1: The timeline, failing tests, then code**
+- [x] **Step 1: The timeline, failing tests, then code**
 
 `CourierTimelineTests`, with the defaults (from (0, 0) to (1, 2) for easy arithmetic):
 - `Before_the_prepare_time_the_courier_is_at_the_warehouse_preparing`: seqs 0 and 14.
@@ -686,7 +686,7 @@ Branch `phase-3/courier`. Issue #158. Advances D-2. Read: topic 03 (idempotency 
 
 Commit: `feat(delivery): the courier's timeline, a pure function of the start time`.
 
-- [ ] **Step 2: The lease, failing tests, then code**
+- [x] **Step 2: The lease, failing tests, then code**
 
 `CourierLeaseTests`, on `DeliveryFixture` (role `Api`, so no courier runs) and its fake clock:
 - `Claim_sets_started_at_once_and_keeps_it_on_a_takeover` (Review Focus 3): claim as `a`, move 31 s, claim as `b`. Same shipment, same `courier_started_at`, locked by `b`.
@@ -697,7 +697,7 @@ Commit: `feat(delivery): the courier's timeline, a pure function of the start ti
 
 Commit: `feat(delivery): couriers claim shipments with a lease`.
 
-- [ ] **Step 3: The courier end to end, failing tests, then code**
+- [x] **Step 3: The courier end to end, failing tests, then code**
 
 `CourierFixture : DeliveryFixture` sets `PrepareTime` 4 s, `TravelTime` 6 s, `TickInterval` 2 s (so `LastSeq` is 5, and `PickedUp` is seq 2), `Lease` 9 s, `LeaseRenewInterval` 3 s, and keeps role `Api`, so no `CourierService` runs and the tests drive runners `a` and `b` by hand (`ActivatorUtilities.CreateInstance<CourierRunner>(Services)`). `RunningCourierFixture : CourierFixture` has role `Courier`, so its `CourierService` ticks on the fake clock. `CourierTests` read the topic with `PositionsTopic`:
 - `Courier_reports_a_position_every_tick_until_delivered`: in `RunningCourierFixture`, advance the clock 2 s at a time. The topic gets seqs 0 to 5 for the shipment, with statuses `Preparing`, `Preparing`, `PickedUp`, `InTransit`, `InTransit`, `Delivered`, and `courier_finished_at` is set.
@@ -709,7 +709,7 @@ Commit: `feat(delivery): couriers claim shipments with a lease`.
 
 Expected: they pass after `CourierRunner` and `CourierService` are written. Commit: `feat(delivery): the courier produces each position straight to Kafka`.
 
-- [ ] **Step 4: Compose, CI, pull request**
+- [x] **Step 4: Compose, CI, pull request**
 
 1. The `delivery-courier` service and the CI check. `docker compose build delivery` succeeds. This task doesn't run the stack (Task 5 owns it in wave C); CI's `compose-smoke` proves the container starts.
 2. **Walkthrough, deep: one trip from claim to `Delivered`, and a courier that dies.** Diagrams: a sequence diagram of claim, ticks, renewals, the awaited ack and `FinishAsync`; a timeline chart (a Mermaid `gantt` or a flowchart) of seq against status for the defaults, with the takeover marked. Interview questions:
