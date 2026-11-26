@@ -5,9 +5,9 @@ namespace NewStore.Delivery.Tests;
 public sealed class DeliveryOptionsTests
 {
     /// <summary>
-    /// Each case is one bad setting. The options are checked when the host starts (<c>ValidateOnStart</c>), before any hosted service
-    /// runs, so the app needs no reachable database or broker: the addresses below are never used. Without the check the host would
-    /// go on to start and wait for the broker, so the timeout turns that into a failure instead of a hang.
+    /// Each case is one bad setting. The host checks the options when it starts (<c>ValidateOnStart</c>) and throws, so the test needs
+    /// no database or broker: the addresses below point at a closed port. Without a check the host goes on to wait for that broker, so
+    /// the timeout turns a missing check into a failure instead of a hang.
     /// </summary>
     [Theory(Timeout = 30_000)]
     [InlineData("Delivery:Warehouse:Latitude", "Delivery:Warehouse:Latitude=91")]
