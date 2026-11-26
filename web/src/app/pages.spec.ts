@@ -3,12 +3,44 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BROWSER_LOCATION } from './api/browser-location';
-import { Edition, MyCopy, Order } from './api/models';
+import { Edition, MyCopy, Order, ShipmentSummary } from './api/models';
 import { AuthService } from './auth/auth.service';
 import { MyCopiesComponent } from './copies/my-copies.component';
 import { OrderPageComponent } from './orders/order-page.component';
 import { VideoListComponent } from './videos/video-list.component';
 import { VideoPageComponent } from './videos/video-page.component';
+
+// Leaflet needs a real browser layout. The fake keeps the map's handlers, so a test can click the map.
+const leaflet = vi.hoisted(() => ({
+  maps: [] as Array<{ view?: unknown[]; handlers: Record<string, (event: unknown) => void> }>,
+  markers: [] as Array<{ latLng: number[] }>,
+}));
+vi.mock('leaflet', () => {
+  const layer = <T extends object>(self: T) => Object.assign(self, { addTo: vi.fn(() => self), setLatLng: vi.fn() });
+  return {
+    Icon: { Default: {} },
+    map: vi.fn(() => {
+      const m = {
+        view: undefined as unknown[] | undefined,
+        handlers: {} as Record<string, (event: unknown) => void>,
+        setView(...args: unknown[]) {
+          m.view = args;
+          return m;
+        },
+        on: (name: string, handler: (event: unknown) => void) => (m.handlers[name] = handler),
+        remove: vi.fn(),
+      };
+      leaflet.maps.push(m);
+      return m;
+    }),
+    tileLayer: vi.fn(() => layer({})),
+    marker: vi.fn((latLng: number[]) => {
+      const m = layer({ latLng });
+      leaflet.markers.push(m);
+      return m;
+    }),
+  };
+});
 
 const fakeLocation = { origin: 'http://localhost:8100', pathname: '/', search: '', href: '' };
 const video = {
@@ -19,6 +51,12 @@ const edition = (over: Partial<Edition> = {}): Edition => ({ id: 'e1', format: '
 const order = (over: Partial<Order> = {}): Order => ({
   id: 'o1', editionId: 'e1', videoId: 'v1', format: 'Digital', price: 9.5, status: 'Reserved',
   reservedUntil: '2026-01-01T01:00:00Z', checkoutUrl: null, copyNumber: null, ...over,
+});
+
+const warehouse = { name: 'newstore warehouse', latitude: 52.4836, longitude: 13.3897 };
+const dvd = () => edition({ id: 'e2', format: 'Dvd' });
+const summary = (over: Partial<ShipmentSummary> = {}): ShipmentSummary => ({
+  id: 'sh1', orderId: 'o1', copyNumber: 7, videoId: 'v1', status: 'InTransit', createdAt: '2026-01-01T00:00:00Z', deliveredAt: null, ...over,
 });
 
 function setup(routeId: string) {
@@ -41,6 +79,10 @@ async function signIn(backend: HttpTestingController, auth: AuthService, signedI
 }
 
 describe('pages', () => {
+  beforeEach(() => {
+    leaflet.maps.length = 0;
+    leaflet.markers.length = 0;
+  });
   afterEach(() => vi.useRealTimers());
 
   it('Video_page_shows_sign_in_to_buy_when_signed_out', async () => {
@@ -186,7 +228,7 @@ describe('pages', () => {
     f.detectChanges();
     const copy = (n: number): MyCopy => ({
       orderId: `o${n}`, editionId: 'e1', videoId: 'v1', format: 'Digital', copyNumber: n, price: 9.5,
-      completedAt: '2026-01-01T00:00:00Z', deliveryStatus: null,
+      completedAt: '2026-01-01T00:00:00Z',
     });
     backend.expectOne('/api/me/copies').flush([copy(3), copy(2)]);
     f.detectChanges();
@@ -195,6 +237,216 @@ describe('pages', () => {
     expect(rows.length).toBe(2);
     expect(rows[0].textContent).toContain('#3');
     expect(rows[0].textContent).toContain('—');
+  });
+
+  /** Signs in, opens the video page with one DVD edition and the Digital one, and clicks Buy on the DVD. */
+  async function openCheckout() {
+    const { backend, auth } = setup('v1');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await signIn(backend, auth, true);
+    const f = TestBed.createComponent(VideoPageComponent);
+    backend.expectOne('/api/videos/v1').flush(video);
+    backend.expectOne('/api/videos/v1/editions').flush([edition(), dvd()]);
+    f.detectChanges();
+    (f.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-format="Dvd"] [data-testid="buy"]')!.click();
+    f.detectChanges();
+    return { backend, f, navigate };
+  }
+
+  const typeAddress = (f: ComponentFixture<unknown>, text: string) => {
+    const input = q(f, 'delivery-address') as HTMLInputElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  };
+  const clickMap = (f: ComponentFixture<unknown>, lat: number, lng: number) => {
+    leaflet.maps[0].handlers['click']({ latlng: { lat, lng, wrap() { return this; } } });
+    f.detectChanges();
+  };
+  const confirm = (f: ComponentFixture<unknown>) => q(f, 'confirm-buy') as HTMLButtonElement;
+
+  it('Dvd_buy_asks_for_an_address_and_a_pin_before_posting', async () => {
+    const { backend, f } = await openCheckout();
+
+    expect(q(f, 'delivery-form')).not.toBeNull();
+    expect(confirm(f).disabled).toBe(true);
+    backend.expectNone('/api/orders');
+
+    q(f, 'cancel-buy')!.click();
+    f.detectChanges();
+    expect(q(f, 'delivery-form')).toBeNull();
+    backend.expectNone('/api/orders');
+  });
+
+  it('Checkout_map_starts_on_the_warehouse', async () => {
+    const { backend, f } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    f.detectChanges();
+
+    expect(leaflet.maps).toHaveLength(1);
+    expect(leaflet.maps[0].view).toEqual([[52.4836, 13.3897], 12]);
+    expect(q(f, 'delivery-pin')?.textContent).toContain('Click the map to drop a pin');
+  });
+
+  it('Map_click_drops_the_pin_and_enables_confirm', async () => {
+    const { backend, f } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    typeAddress(f, 'Alexanderplatz 1, 10178 Berlin');
+    expect(confirm(f).disabled).toBe(true);
+
+    clickMap(f, 52.5219, 13.4132);
+    expect(q(f, 'delivery-pin')?.textContent).toContain('52.52190, 13.41320');
+    expect(confirm(f).disabled).toBe(false);
+
+    // A second click moves the one marker.
+    clickMap(f, 52.5, 13.4);
+    expect(leaflet.markers).toHaveLength(1);
+    expect(q(f, 'delivery-pin')?.textContent).toContain('52.50000, 13.40000');
+  });
+
+  it('Confirm_posts_the_order_with_the_delivery', async () => {
+    const { backend, f, navigate } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    typeAddress(f, '  Alexanderplatz 1, 10178 Berlin ');
+    clickMap(f, 52.5219, 13.4132);
+
+    confirm(f).click();
+    const post = backend.expectOne('/api/orders');
+    expect(post.request.body).toEqual({
+      editionId: 'e2', delivery: { address: 'Alexanderplatz 1, 10178 Berlin', latitude: 52.5219, longitude: 13.4132 },
+    });
+    post.flush(order({ id: 'o9' }), { status: 201, statusText: 'Created' });
+    expect(navigate).toHaveBeenCalledWith(['/orders', 'o9']);
+  });
+
+  it('Address_over_200_characters_keeps_confirm_disabled', async () => {
+    const { backend, f } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    clickMap(f, 52.5219, 13.4132);
+
+    typeAddress(f, 'x'.repeat(200));
+    expect(confirm(f).disabled).toBe(false);
+    typeAddress(f, 'x'.repeat(201));
+    expect(confirm(f).disabled).toBe(true);
+    typeAddress(f, '   ');
+    expect(confirm(f).disabled).toBe(true);
+  });
+
+  it('Digital_buy_posts_without_delivery', async () => {
+    const { backend, auth } = setup('v1');
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await signIn(backend, auth, true);
+    const f = TestBed.createComponent(VideoPageComponent);
+    backend.expectOne('/api/videos/v1').flush(video);
+    backend.expectOne('/api/videos/v1/editions').flush([edition(), dvd()]);
+    f.detectChanges();
+
+    (f.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-format="Digital"] [data-testid="buy"]')!.click();
+
+    expect(backend.expectOne('/api/orders').request.body).toEqual({ editionId: 'e1' });
+    expect(q(f, 'delivery-form')).toBeNull();
+  });
+
+  it('Delivery_problem_shows_its_title', async () => {
+    const { backend, f } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    typeAddress(f, 'Alexanderplatz 1');
+    clickMap(f, 52.5219, 13.4132);
+
+    confirm(f).click();
+    backend.expectOne('/api/orders').flush(
+      { type: 'urn:newstore:problem:delivery-required', title: 'A DVD needs a delivery address and a pin.', status: 400 },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    f.detectChanges();
+
+    expect(q(f, 'buy-error')?.textContent).toContain('A DVD needs a delivery address and a pin.');
+    expect(confirm(f).disabled).toBe(false);
+  });
+
+  it('Order_page_links_a_completed_dvd_order_to_its_tracking_page', () => {
+    vi.useFakeTimers();
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Completed', format: 'Dvd', copyNumber: 7 }));
+    backend.expectOne('/api/me/shipments').flush([]);
+    f.detectChanges();
+    expect(q(f, 'shipment-pending')?.textContent).toContain('Preparing your shipment…');
+    expect(q(f, 'track-link')).toBeNull();
+
+    vi.advanceTimersByTime(1999);
+    backend.expectNone('/api/me/shipments');
+    vi.advanceTimersByTime(1);
+    backend.expectOne('/api/me/shipments').flush([summary({ id: 'other', orderId: 'o0' }), summary()]);
+    f.detectChanges();
+
+    expect(q(f, 'shipment-pending')).toBeNull();
+    expect(q(f, 'track-link')?.getAttribute('href')).toBe('/shipments/sh1');
+    vi.advanceTimersByTime(10_000);
+    backend.expectNone('/api/me/shipments');
+  });
+
+  it('Order_page_gives_up_looking_for_the_shipment_after_a_minute', () => {
+    vi.useFakeTimers();
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Completed', format: 'Dvd', copyNumber: 7 }));
+    backend.expectOne('/api/me/shipments').flush([]);
+    for (let i = 0; i < 30; i++) {
+      vi.advanceTimersByTime(2000);
+      backend.expectOne('/api/me/shipments').flush([]);
+    }
+    f.detectChanges();
+
+    expect(q(f, 'shipment-pending')).toBeNull();
+    vi.advanceTimersByTime(10_000);
+    backend.expectNone('/api/me/shipments');
+  });
+
+  it('Order_page_shows_no_track_link_for_a_digital_order', () => {
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Completed', format: 'Digital', copyNumber: 7 }));
+    f.detectChanges();
+
+    backend.expectNone('/api/me/shipments');
+    expect(q(f, 'track-link')).toBeNull();
+    expect(q(f, 'shipment-pending')).toBeNull();
+  });
+
+  it('My_copies_shows_each_physical_copys_status_and_a_track_link', () => {
+    const { backend } = setup('');
+    const f = TestBed.createComponent(MyCopiesComponent);
+    f.detectChanges();
+    const copy = (n: number, format: string): MyCopy => ({
+      orderId: `o${n}`, editionId: 'e1', videoId: 'v1', format, copyNumber: n, price: 9.5, completedAt: '2026-01-01T00:00:00Z',
+    });
+    backend.expectOne('/api/me/copies').flush([copy(2, 'Dvd'), copy(1, 'Digital')]);
+    backend.expectOne('/api/me/shipments').flush([summary({ id: 'sh2', orderId: 'o2', status: 'PickedUp' })]);
+    f.detectChanges();
+
+    const rows = (f.nativeElement as HTMLElement).querySelectorAll('[data-testid="copy-row"]');
+    expect(rows[0].querySelector('[data-testid="delivery-status"]')?.textContent).toContain('Picked up');
+    expect(rows[0].querySelector('[data-testid="track-link"]')?.getAttribute('href')).toBe('/shipments/sh2');
+    expect(rows[1].querySelector('[data-testid="delivery-status"]')?.textContent?.trim()).toBe('—');
+    expect(rows[1].querySelector('[data-testid="track-link"]')).toBeNull();
+  });
+
+  it('My_copies_stay_listed_when_the_shipments_call_fails', () => {
+    const { backend } = setup('');
+    const f = TestBed.createComponent(MyCopiesComponent);
+    f.detectChanges();
+    backend.expectOne('/api/me/copies').flush([
+      { orderId: 'o2', editionId: 'e1', videoId: 'v1', format: 'Dvd', copyNumber: 2, price: 9.5, completedAt: '2026-01-01T00:00:00Z' },
+    ]);
+    backend.expectOne('/api/me/shipments').flush({}, { status: 503, statusText: 'Service Unavailable' });
+    f.detectChanges();
+
+    expect(f.nativeElement.querySelectorAll('[data-testid="copy-row"]')).toHaveLength(1);
+    expect(q(f, 'delivery-status')?.textContent?.trim()).toBe('—');
   });
 
   it('Video_list_shows_thumbnails', () => {
@@ -217,7 +469,7 @@ describe('pages', () => {
     const f = TestBed.createComponent(MyCopiesComponent);
     f.detectChanges();
     const copy = (n: number, format: string) => ({
-      orderId: `o${n}`, editionId: 'e1', videoId: 'v1', format, copyNumber: n, price: 9.5, completedAt: '2026-01-01T00:00:00Z', deliveryStatus: null,
+      orderId: `o${n}`, editionId: 'e1', videoId: 'v1', format, copyNumber: n, price: 9.5, completedAt: '2026-01-01T00:00:00Z',
     });
     backend.expectOne('/api/me/copies').flush([copy(1, 'Digital'), copy(2, 'Physical')]);
     f.detectChanges();

@@ -1,15 +1,19 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { BROWSER_LOCATION } from '../api/browser-location';
-import { FINAL_STATUSES, Order } from '../api/models';
+import { FINAL_STATUSES, Order, ShipmentSummary } from '../api/models';
 import { problemTitle } from '../api/problem';
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_LIMIT_MS = 2 * 60 * 1000;
+// A DVD's shipment is created by an event after the order completes, so it appears a moment later.
+const SHIPMENT_POLL_INTERVAL_MS = 2000;
+const SHIPMENT_POLL_LIMIT_MS = 60 * 1000;
 
 @Component({
   selector: 'app-order-page',
+  imports: [RouterLink],
   template: `
     @if (order(); as o) {
       <h1>Order</h1>
@@ -24,6 +28,15 @@ const POLL_LIMIT_MS = 2 * 60 * 1000;
         }
         @case ('Completed') {
           <p>Your copy number is <strong data-testid="copy-number">{{ o.copyNumber }}</strong>.</p>
+          @if (o.format === 'Dvd') {
+            @if (shipmentId(); as shipment) {
+              <p><a data-testid="track-link" [routerLink]="['/shipments', shipment]">Track your delivery</a></p>
+            } @else if (shipmentGaveUp()) {
+              <p data-testid="shipment-late">Your shipment isn't listed yet. Look in My copies later.</p>
+            } @else {
+              <p data-testid="shipment-pending">Preparing your shipment…</p>
+            }
+          }
         }
         @case ('Expired') {
           <p>The hold ended before the payment arrived.</p>
@@ -52,6 +65,8 @@ export class OrderPageComponent {
   private readonly id = inject(ActivatedRoute).snapshot.paramMap.get('id');
   private readonly startedAt = Date.now();
   private timer?: ReturnType<typeof setTimeout>;
+  private shipmentTimer?: ReturnType<typeof setTimeout>;
+  private shipmentStartedAt?: number;
 
   protected readonly order = signal<Order | null>(null);
   protected readonly loadError = signal<string | null>(null);
@@ -59,9 +74,14 @@ export class OrderPageComponent {
   protected readonly refreshFailed = signal(false);
   protected readonly paying = signal(false);
   protected readonly timedOut = signal(false);
+  protected readonly shipmentId = signal<string | null>(null);
+  protected readonly shipmentGaveUp = signal(false);
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => clearTimeout(this.timer));
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.timer);
+      clearTimeout(this.shipmentTimer);
+    });
     this.refresh();
   }
 
@@ -72,6 +92,10 @@ export class OrderPageComponent {
         this.order.set(order);
         this.refreshFailed.set(false);
         this.schedulePoll(order);
+        if (order.status === 'Completed' && order.format === 'Dvd' && this.shipmentStartedAt === undefined) {
+          this.shipmentStartedAt = Date.now();
+          this.findShipment(order.id);
+        }
       },
       error: (error: unknown) => {
         // A poll that fails after the first load is not the end: keep the last status and try again until the limit.
@@ -84,6 +108,24 @@ export class OrderPageComponent {
         this.loadError.set(error instanceof HttpErrorResponse && error.status === 404 ? 'No such order.' : problemTitle(error));
       },
     });
+  }
+
+  /** Looks for the order's shipment, and asks again every 2 s for at most a minute. A failed call counts as "not yet". */
+  private findShipment(orderId: string): void {
+    this.http.get<ShipmentSummary[]>('/api/me/shipments').subscribe({
+      next: (shipments) => this.afterShipments(orderId, shipments.find((s) => s.orderId === orderId)?.id ?? null),
+      error: () => this.afterShipments(orderId, null),
+    });
+  }
+
+  private afterShipments(orderId: string, shipmentId: string | null): void {
+    if (shipmentId) {
+      this.shipmentId.set(shipmentId);
+    } else if (Date.now() - this.shipmentStartedAt! >= SHIPMENT_POLL_LIMIT_MS) {
+      this.shipmentGaveUp.set(true);
+    } else {
+      this.shipmentTimer = setTimeout(() => this.findShipment(orderId), SHIPMENT_POLL_INTERVAL_MS);
+    }
   }
 
   private schedulePoll(order: Order): void {

@@ -76,7 +76,6 @@ export interface MyCopy {
   copyNumber: number;
   price: number;
   completedAt: string;
-  deliveryStatus: string | null;
 }
 
 /** `GET /api/me/videos`: the creator's own videos, in every status. */

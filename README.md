@@ -283,6 +283,7 @@ newstore/
 ├── web/              the Angular app
 │   src/app: auth/ (session state, CSRF header, guard), videos/, orders/, copies/, api/ (JSON types); the gateway image builds and serves it
 │   studio/ (video creation, resumable uploads straight to S3, processing status), videos/ also holds the hls.js player; copies/ has the Download button
+│   maps/ (the Leaflet map with OpenStreetMap tiles), delivery/ (the checkout form with the pin), shipments/ (the tracking page and the SignalR client); copies/ also shows each DVD's delivery status
 ├── .github/workflows/  ci.yml (every pull request) and nightly.yml (the 1 GB upload, nightly and on demand)
 ├── compose.load.yaml overlay for the k6 load test: a short reservation TTL, FakePay's test endpoints and the k6 service
 ├── tests/            unit, integration, contract and load tests
