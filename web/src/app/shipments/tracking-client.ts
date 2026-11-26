@@ -6,6 +6,8 @@ export interface TrackingHandlers {
   snapshot(details: ShipmentDetails): void;
   position(message: PositionMessage): void;
   connection(state: 'connected' | 'reconnecting'): void;
+  /** The hub answered `not-found`: the shipment is missing or not the buyer's. Final, so the client stops. */
+  notFound?(): void;
 }
 
 export interface TrackingSubscription {
@@ -24,9 +26,18 @@ export function nextRetryDelay(previousRetryCount: number): number {
 
 @Injectable({ providedIn: 'root' })
 export class TrackingClient {
-  /** Connects, calls Track, and calls it again after every reconnect. Resolves after the first snapshot. */
-  async track(shipmentId: string, handlers: TrackingHandlers): Promise<TrackingSubscription> {
+  /**
+   * Connects, calls Track, and calls it again after every reconnect. Resolves after the first snapshot, or when the
+   * session ended before one. `signal` ends it from outside: a page that is left before the first snapshot has no
+   * subscription to stop yet, and without this the retries would never end.
+   */
+  async track(shipmentId: string, handlers: TrackingHandlers, signal?: AbortSignal): Promise<TrackingSubscription> {
     const session = new TrackingSession(shipmentId, handlers);
+    if (signal?.aborted) {
+      await session.stop();
+      return session;
+    }
+    signal?.addEventListener('abort', () => void session.stop(), { once: true });
     await session.begin();
     return session;
   }
@@ -58,6 +69,9 @@ class TrackingSession implements TrackingSubscription {
   async stop(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.timer);
+    // A stop before the first snapshot still lets `track()` resolve.
+    this.firstSnapshot?.();
+    this.firstSnapshot = undefined;
     const connection = this.connection;
     this.connection = undefined;
     await connection?.stop();
@@ -79,8 +93,8 @@ class TrackingSession implements TrackingSubscription {
     connection.onreconnected(async () => {
       try {
         await this.subscribe(connection);
-      } catch {
-        this.drop(connection);
+      } catch (error) {
+        this.fail(connection, error);
       }
     });
     // Closed for good: the server closed it (the token expired) or the automatic reconnect was stopped.
@@ -89,8 +103,8 @@ class TrackingSession implements TrackingSubscription {
     try {
       await connection.start();
       await this.subscribe(connection);
-    } catch {
-      this.drop(connection);
+    } catch (error) {
+      this.fail(connection, error);
     }
   }
 
@@ -103,6 +117,15 @@ class TrackingSession implements TrackingSubscription {
     this.handlers.connection('connected');
     this.firstSnapshot?.();
     this.firstSnapshot = undefined;
+  }
+
+  /** `not-found` is final (the hub's `HubException("not-found")`); anything else is a fault that may pass. */
+  private fail(connection: HubConnection, error: unknown): void {
+    if (error instanceof Error && error.message.includes('not-found') && this.connection === connection) {
+      void this.stop().then(() => this.handlers.notFound?.());
+    } else {
+      this.drop(connection);
+    }
   }
 
   /** Forgets `connection` and opens a new one after a pause. Called from every failure path, so the first caller wins. */

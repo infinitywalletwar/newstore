@@ -260,7 +260,8 @@ describe('pages', () => {
     f.detectChanges();
   };
   const clickMap = (f: ComponentFixture<unknown>, lat: number, lng: number) => {
-    leaflet.maps[0].handlers['click']({ latlng: { lat, lng, wrap() { return this; } } });
+    // Like Leaflet's wrap(): a longitude past the date line comes back inside [-180, 180].
+    leaflet.maps[0].handlers['click']({ latlng: { lat, lng, wrap() { return { lat, lng: lng > 180 ? lng - 360 : lng }; } } });
     f.detectChanges();
   };
   const confirm = (f: ComponentFixture<unknown>) => q(f, 'confirm-buy') as HTMLButtonElement;
@@ -302,6 +303,28 @@ describe('pages', () => {
     clickMap(f, 52.5, 13.4);
     expect(leaflet.markers).toHaveLength(1);
     expect(q(f, 'delivery-pin')?.textContent).toContain('52.50000, 13.40000');
+  });
+
+  it('Map_click_past_the_date_line_is_wrapped_before_it_is_sent', async () => {
+    const { backend, f } = await openCheckout();
+    backend.expectOne('/api/delivery/warehouse').flush(warehouse);
+    typeAddress(f, 'Somewhere');
+    clickMap(f, 52.5, 193);
+
+    expect(q(f, 'delivery-pin')?.textContent).toContain('52.50000, -167.00000');
+    confirm(f).click();
+    expect(backend.expectOne('/api/orders').request.body.delivery).toMatchObject({ latitude: 52.5, longitude: -167 });
+  });
+
+  it('Cancel_before_the_warehouse_answers_creates_no_map', async () => {
+    const { backend, f } = await openCheckout();
+    const request = backend.expectOne('/api/delivery/warehouse');
+
+    q(f, 'cancel-buy')!.click();
+    f.detectChanges();
+
+    expect(request.cancelled).toBe(true);
+    expect(leaflet.maps).toHaveLength(0);
   });
 
   it('Confirm_posts_the_order_with_the_delivery', async () => {
@@ -401,8 +424,25 @@ describe('pages', () => {
     f.detectChanges();
 
     expect(q(f, 'shipment-pending')).toBeNull();
+    expect(q(f, 'shipment-late')?.textContent).toContain('Look in My copies later');
     vi.advanceTimersByTime(10_000);
     backend.expectNone('/api/me/shipments');
+  });
+
+  it('Order_page_asks_for_nothing_more_after_it_is_left', () => {
+    vi.useFakeTimers();
+    const { backend } = setup('o1');
+    const f = TestBed.createComponent(OrderPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/orders/o1').flush(order({ status: 'Completed', format: 'Dvd', copyNumber: 7 }));
+    const pending = backend.expectOne('/api/me/shipments');
+
+    f.destroy();
+    pending.flush([]);
+    vi.advanceTimersByTime(10_000);
+
+    backend.expectNone('/api/me/shipments');
+    backend.expectNone('/api/orders/o1');
   });
 
   it('Order_page_shows_no_track_link_for_a_digital_order', () => {

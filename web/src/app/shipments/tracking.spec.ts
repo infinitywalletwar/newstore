@@ -12,6 +12,7 @@ const hub = vi.hoisted(() => ({
   connections: [] as Array<Record<string, any>>,
   snapshot: undefined as unknown,
   startFails: 0,
+  invokeError: undefined as Error | undefined,
 }));
 vi.mock('@microsoft/signalr', () => {
   class FakeConnection {
@@ -24,7 +25,12 @@ vi.mock('@microsoft/signalr', () => {
       }
     });
     stop = vi.fn(async () => {});
-    invoke = vi.fn(async () => hub.snapshot);
+    invoke = vi.fn(async () => {
+      if (hub.invokeError) {
+        throw hub.invokeError;
+      }
+      return hub.snapshot;
+    });
     on = (name: string, handler: (...args: any[]) => any) => (this.handlers[name] = handler);
     onreconnecting = (handler: () => void) => (this.handlers['reconnecting'] = handler);
     onreconnected = (handler: () => void) => (this.handlers['reconnected'] = handler);
@@ -128,7 +134,8 @@ async function openPage(shipment: ShipmentDetails, snapshot: ShipmentDetails = s
   f.detectChanges();
   await tick();
   f.detectChanges();
-  return { f, backend, connection: hub.connections[0] };
+  // The newest connection: a test that opens a second page gets the second page's.
+  return { f, backend, connection: hub.connections.at(-1)! };
 }
 
 const handlers = () => ({ snapshot: vi.fn(), position: vi.fn(), connection: vi.fn() });
@@ -138,6 +145,7 @@ describe('tracking', () => {
     vi.useFakeTimers();
     hub.connections.length = 0;
     hub.startFails = 0;
+    hub.invokeError = undefined;
     hub.snapshot = details();
     leaflet.maps.length = leaflet.tiles.length = leaflet.lines.length = leaflet.markers.length = leaflet.circles.length = 0;
   });
@@ -193,12 +201,25 @@ describe('tracking', () => {
   });
 
   it('Tracking_page_loads_the_shipment_then_tracks_it', async () => {
-    const { f, connection } = await openPage(details());
+    hub.snapshot = details([position(2)]);
+    const backend = setup();
+    const f = TestBed.createComponent(TrackingPageComponent);
+    f.detectChanges();
+    await tick();
+    expect(hub.connections).toHaveLength(0); // nothing connects before the REST answer
 
+    backend.expectOne('/api/shipments/s1').flush(details([position(2)]));
+    f.detectChanges();
+    await tick();
+    f.detectChanges();
+
+    const connection = hub.connections[0];
     expect(connection['invoke']).toHaveBeenCalledWith('Track', 's1');
     expect(q(f, 'tracking-address')?.textContent).toContain('Alexanderplatz 1, Berlin');
     expect(leaflet.maps).toHaveLength(1);
     expect(leaflet.markers.map((m) => m.latLng)).toEqual([[52.4836, 13.3897], [52.5219, 13.4132]]);
+    expect(leaflet.lines[0].points).toEqual([[position(2).latitude, position(2).longitude]]);
+    expect(leaflet.circles[0].latLng).toEqual([position(2).latitude, position(2).longitude]);
   });
 
   it('Tracking_page_ignores_positions_it_has_already_shown', async () => {
@@ -235,7 +256,9 @@ describe('tracking', () => {
 
     // A late position from before the gap changes nothing.
     connection['handlers']['position'](message(5));
+    f.detectChanges();
     expect(leaflet.lines[0].points).toHaveLength(6);
+    expect(q(f, 'courier-position')?.dataset['seq']).toBe('6');
   });
 
   it('Tracking_page_shows_the_four_steps', async () => {
@@ -262,6 +285,62 @@ describe('tracking', () => {
     second.f.destroy();
     await tick();
     expect(second.connection['stop']).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tracking_page_left_before_the_first_snapshot_stops_retrying', async () => {
+    hub.startFails = 1000;
+    const backend = setup();
+    const f = TestBed.createComponent(TrackingPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/shipments/s1').flush(details());
+    f.detectChanges();
+    await tick();
+    expect(hub.connections).toHaveLength(1);
+
+    f.destroy();
+    await tick(60_000);
+
+    expect(hub.connections).toHaveLength(1);
+  });
+
+  it('Tracking_page_left_before_the_shipment_loads_never_connects', async () => {
+    const backend = setup();
+    const f = TestBed.createComponent(TrackingPageComponent);
+    f.detectChanges();
+    const request = backend.expectOne('/api/shipments/s1');
+
+    f.destroy();
+    request.flush(details());
+    await tick(60_000);
+
+    expect(hub.connections).toHaveLength(0);
+  });
+
+  it('Tracking_page_treats_a_not_found_from_the_hub_as_final', async () => {
+    hub.invokeError = new Error("An unexpected error occurred invoking 'Track' on the server. HubException: not-found");
+    const backend = setup();
+    const f = TestBed.createComponent(TrackingPageComponent);
+    f.detectChanges();
+    backend.expectOne('/api/shipments/s1').flush(details());
+    f.detectChanges();
+    await tick(60_000);
+    f.detectChanges();
+
+    expect(q(f, 'tracking-not-found')).not.toBeNull();
+    expect(hub.connections).toHaveLength(1);
+  });
+
+  it('Tracking_client_keeps_retrying_a_fault_that_is_not_not_found', async () => {
+    hub.invokeError = new Error('Server timeout elapsed');
+    const tracked = TestBed.inject(TrackingClient).track('s1', handlers(), undefined);
+    await tick(REOPEN_DELAY_MS * 3);
+    expect(hub.connections.length).toBeGreaterThanOrEqual(3);
+
+    const subscription = await Promise.race([tracked, Promise.resolve(undefined)]);
+    expect(subscription).toBeUndefined(); // still waiting for a first snapshot
+    hub.invokeError = undefined;
+    await tick(REOPEN_DELAY_MS);
+    await (await tracked).stop();
   });
 
   it('Tracking_page_shows_not_found_for_a_404', async () => {

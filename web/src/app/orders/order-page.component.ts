@@ -67,6 +67,7 @@ export class OrderPageComponent {
   private timer?: ReturnType<typeof setTimeout>;
   private shipmentTimer?: ReturnType<typeof setTimeout>;
   private shipmentStartedAt?: number;
+  private destroyed = false;
 
   protected readonly order = signal<Order | null>(null);
   protected readonly loadError = signal<string | null>(null);
@@ -79,6 +80,7 @@ export class OrderPageComponent {
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
       clearTimeout(this.timer);
       clearTimeout(this.shipmentTimer);
     });
@@ -119,6 +121,9 @@ export class OrderPageComponent {
   }
 
   private afterShipments(orderId: string, shipmentId: string | null): void {
+    if (this.destroyed) {
+      return;
+    }
     if (shipmentId) {
       this.shipmentId.set(shipmentId);
     } else if (Date.now() - this.shipmentStartedAt! >= SHIPMENT_POLL_LIMIT_MS) {
@@ -129,6 +134,9 @@ export class OrderPageComponent {
   }
 
   private schedulePoll(order: Order): void {
+    if (this.destroyed) {
+      return;
+    }
     if (order.status === 'Reserved' || FINAL_STATUSES.includes(order.status)) {
       return;
     }

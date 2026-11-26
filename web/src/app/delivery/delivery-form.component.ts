@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Component, DestroyRef, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import * as L from 'leaflet';
 import { DeliveryDetails, GeoPoint, Warehouse } from '../api/models';
@@ -49,8 +50,10 @@ export class DeliveryFormComponent {
   });
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.map?.remove());
-    this.http.get<Warehouse>('/api/delivery/warehouse').subscribe({
+    const destroyRef = inject(DestroyRef);
+    destroyRef.onDestroy(() => this.map?.remove());
+    // Cancel before the answer: the request is dropped and no map is made for a form that is gone.
+    this.http.get<Warehouse>('/api/delivery/warehouse').pipe(takeUntilDestroyed(destroyRef)).subscribe({
       next: (warehouse) => this.showMap(warehouse),
       error: () => this.showMap(FALLBACK_CENTER),
     });

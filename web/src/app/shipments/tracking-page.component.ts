@@ -47,6 +47,7 @@ export class TrackingPageComponent {
   private readonly mapElement = viewChild<ElementRef<HTMLElement>>('map');
   private subscription?: TrackingSubscription;
   private finished = false;
+  private readonly abort = new AbortController();
   private map?: L.Map;
   private courier?: L.CircleMarker;
   private line?: L.Polyline;
@@ -67,6 +68,8 @@ export class TrackingPageComponent {
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.finished = true;
+      // Ends the session even before its first snapshot, when there is no subscription to stop yet.
+      this.abort.abort();
       void this.subscription?.stop();
       this.map?.remove();
     });
@@ -88,6 +91,10 @@ export class TrackingPageComponent {
   }
 
   private start(details: ShipmentDetails): void {
+    // The page was left while the REST call was on its way.
+    if (this.finished) {
+      return;
+    }
     this.shipment.set(details);
     this.merge(details.path);
     if (this.status() === 'Delivered') {
@@ -95,11 +102,20 @@ export class TrackingPageComponent {
       return;
     }
     this.client
-      .track(this.id, {
-        snapshot: (snapshot) => this.merge(snapshot.path),
-        position: (message) => this.apply(message),
-        connection: (state) => this.reconnecting.set(state === 'reconnecting'),
-      })
+      .track(
+        this.id,
+        {
+          snapshot: (snapshot) => this.merge(snapshot.path),
+          position: (message) => this.apply(message),
+          connection: (state) => this.reconnecting.set(state === 'reconnecting'),
+          notFound: () => {
+            this.finished = true;
+            this.shipment.set(null);
+            this.notFound.set(true);
+          },
+        },
+        this.abort.signal,
+      )
       .then((subscription) => {
         this.subscription = subscription;
         // Delivered or destroyed while the first snapshot was on its way.
