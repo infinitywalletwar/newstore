@@ -1,14 +1,15 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Edition, Order, VideoDetails } from '../api/models';
+import { DeliveryDetails, Edition, Order, VideoDetails } from '../api/models';
 import { problemTitle } from '../api/problem';
 import { AuthService } from '../auth/auth.service';
+import { DeliveryFormComponent } from '../delivery/delivery-form.component';
 import { VideoPlayerComponent } from './video-player.component';
 
 @Component({
   selector: 'app-video-page',
-  imports: [VideoPlayerComponent],
+  imports: [VideoPlayerComponent, DeliveryFormComponent],
   template: `
     @if (video(); as v) {
       <h1>{{ v.title }}</h1>
@@ -33,6 +34,9 @@ import { VideoPlayerComponent } from './video-player.component';
         }
       </div>
     }
+    @if (deliveryFor(); as edition) {
+      <app-delivery-form [busy]="buying()" (confirmed)="post(edition, $event)" (cancelled)="cancelDelivery()" />
+    }
     @if (buyError(); as message) {
       <p class="error" role="alert" data-testid="buy-error">{{ message }}</p>
     }
@@ -49,6 +53,8 @@ export class VideoPageComponent {
   protected readonly notFound = signal(false);
   protected readonly buying = signal(false);
   protected readonly buyError = signal<string | null>(null);
+  /** The DVD edition whose delivery form is open. */
+  protected readonly deliveryFor = signal<Edition | null>(null);
 
   constructor() {
     this.http.get<VideoDetails>(`/api/videos/${this.id}`).subscribe({
@@ -58,10 +64,26 @@ export class VideoPageComponent {
     this.http.get<Edition[]>(`/api/videos/${this.id}/editions`).subscribe({ next: (e) => this.editions.set(e), error: () => {} });
   }
 
+  /** A DVD needs an address and a pin first, so Buy opens the form; any other format is posted at once. */
   protected buy(edition: Edition): void {
+    this.buyError.set(null);
+    if (edition.format === 'Dvd') {
+      this.deliveryFor.set(edition);
+    } else {
+      this.post(edition);
+    }
+  }
+
+  protected cancelDelivery(): void {
+    this.deliveryFor.set(null);
+    this.buyError.set(null);
+  }
+
+  protected post(edition: Edition, delivery?: DeliveryDetails): void {
     this.buying.set(true);
     this.buyError.set(null);
-    this.http.post<Order>('/api/orders', { editionId: edition.id }).subscribe({
+    const body = delivery ? { editionId: edition.id, delivery } : { editionId: edition.id };
+    this.http.post<Order>('/api/orders', body).subscribe({
       next: (order) => void this.router.navigate(['/orders', order.id]),
       error: (error: unknown) => {
         this.buying.set(false);

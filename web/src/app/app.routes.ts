@@ -11,6 +11,12 @@ export const routes: Routes = [
   { path: '', component: VideoListComponent },
   { path: 'videos/:id', component: VideoPageComponent },
   { path: 'orders/:id', component: OrderPageComponent },
+  // Lazy: the tracking page brings Leaflet and the SignalR client, which would push the first load past the 500 kB budget.
+  {
+    path: 'shipments/:id',
+    loadComponent: () => import('./shipments/tracking-page.component').then((m) => m.TrackingPageComponent),
+    canActivate: [signedInGuard],
+  },
   { path: 'studio', component: StudioComponent, canActivate: [signedInGuard] },
   { path: 'me/copies', component: MyCopiesComponent, canActivate: [signedInGuard] },
 ];
