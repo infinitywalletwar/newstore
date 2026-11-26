@@ -20,7 +20,9 @@ public static partial class TrackingExtensions
             signalR.AddStackExchangeRedis(options =>
             {
                 options.Configuration = ConfigurationOptions.Parse(redis);
-                // Start, and keep retrying, while Redis is down: sends fail meanwhile, and the next Track's snapshot covers them.
+                // Start, and keep retrying, while Redis is down. Meanwhile sends fail (the next Track's snapshot covers them), and so
+                // do new connections: each subscribes to its channels in Redis, and the server closes it when that fails (the test
+                // While_redis_is_down_a_new_connection_is_closed_and_track_fails). The page retries until Redis is back.
                 options.Configuration.AbortOnConnectFail = false;
                 // One Redis may serve several SignalR apps; the prefix keeps their channels apart.
                 options.Configuration.ChannelPrefix = RedisChannel.Literal("newstore-delivery");

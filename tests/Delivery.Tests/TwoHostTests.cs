@@ -6,6 +6,8 @@ using NewStore.Delivery.Shipments;
 using NewStore.Delivery.Tracking;
 using NewStore.Messaging;
 
+using Testcontainers.Redis;
+
 namespace NewStore.Delivery.Tests;
 
 /// <summary>Host A: holds the browser's connection and consumes no positions, as an instance whose partitions went elsewhere.</summary>
@@ -63,13 +65,54 @@ public sealed class TwoHostTests(PostgresServer postgres, KafkaServer kafka, Red
         Assert.Contains(hosts.A.Logs.Snapshot(), l => l.Level == LogLevel.Warning && l.Message == "no Redis: SignalR runs without a backplane");
     }
 
+    [Fact]
+    public async Task While_redis_is_down_a_new_connection_is_closed_and_track_fails()
+    {
+        // Not only broadcasts need Redis: with the backplane, a new connection subscribes to its own channels, and that fails while
+        // Redis is down. The page sees an error and reconnects until Redis is back (Task 6's client retries such a failure).
+        // A Redis of its own: the class's Redis must stay up for the other tests.
+        await using var redisToStop = new RedisBuilder("redis:8.10.3").Build();
+        await redisToStop.StartAsync(Ct);
+        await using var host = new HostA(postgres, kafka, redisToStop.GetConnectionString());
+        await host.InitializeAsync();
+        var buyer = Guid.NewGuid();
+        var shipment = await host.CreateShipmentAsync(buyer);
+        await using (var before = await HubClient.ConnectAsync(host, TestTokens.User(buyer, "delivery")))
+        {
+            await before.InvokeAsync<ShipmentDetails>("Track", shipment.Id, Ct);
+        }
+
+        await redisToStop.StopAsync(Ct);
+        await using var connection = await HubClient.ConnectAsync(host, TestTokens.User(buyer, "delivery"));
+
+        // Measured: the handshake completes, then the server closes the connection with an error about 5 s later, and the pending
+        // Track fails with "Websocket closed with error: InternalServerError.".
+        await Assert.ThrowsAnyAsync<Exception>(() => connection.InvokeAsync<ShipmentDetails>("Track", shipment.Id, Ct));
+        await DeliveryFixture.WaitAsync(
+            () => Task.FromResult(connection.State == HubConnectionState.Disconnected), "the connection is closed", TimeSpan.FromSeconds(10));
+        Assert.Contains(host.Logs.Snapshot(), l =>
+            l.Category == "Microsoft.AspNetCore.SignalR.StackExchangeRedis.RedisHubLifetimeManager" && l.Level == LogLevel.Error);
+    }
+
     private async Task<Hosts> StartAsync(string? redis)
     {
         // A first: it migrates the database. B starts once A is ready and never migrates.
+        // The caller gets no Hosts to dispose when a start fails, so a failed start stops what has started, rather than leave a
+        // host's consumers and producer running for the rest of the test run.
         var a = new HostA(postgres, kafka, redis);
-        await a.InitializeAsync();
         var b = new HostB(postgres, kafka, a, redis);
-        await b.InitializeAsync();
+        try
+        {
+            await a.InitializeAsync();
+            await b.InitializeAsync();
+        }
+        catch
+        {
+            await b.DisposeAsync();
+            await a.DisposeAsync();
+            throw;
+        }
+
         return new Hosts(a, b);
     }
 
