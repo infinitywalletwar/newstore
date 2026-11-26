@@ -810,7 +810,7 @@ Commit: `test(delivery): a position consumed by one host reaches a browser on th
 
 Expected: Gateway.Tests and Delivery.Tests pass. Commit: `feat(gateway): route Delivery round robin, and accept the hub's WebSocket by its Origin`.
 
-- [ ] **Step 5: The stack, CI, ADR 0023, pull request**
+- [x] **Step 5: The stack, CI, ADR 0023, pull request**
 
 1. Compose from Files. Run `docker compose build delivery gateway`, then `docker compose up -d --wait`. Check:
    - `curl -s http://localhost:8100/api/delivery/warehouse` answers the warehouse;
