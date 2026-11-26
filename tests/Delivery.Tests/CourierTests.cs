@@ -10,33 +10,6 @@ using Npgsql;
 
 namespace NewStore.Delivery.Tests;
 
-/// <summary>Shared by the courier's test classes: what a shipment's row and its expected messages look like.</summary>
-internal static class Trips
-{
-    public static Task<Shipment> RowAsync(this DeliveryFixture fixture, Guid id) =>
-        fixture.QueryAsync(db => db.Shipments.AsNoTracking().SingleAsync(s => s.Id == id, TestContext.Current.CancellationToken));
-
-    /// <summary>The message any courier must send for <paramref name="seq"/> of <paramref name="shipment"/>'s trip.</summary>
-    public static CourierPosition Expected(Shipment shipment, int seq, CourierOptions options)
-    {
-        var point = CourierTimeline.At(
-            seq,
-            shipment.CourierStartedAt!.Value,
-            new GeoPoint(shipment.WarehouseLatitude, shipment.WarehouseLongitude),
-            new GeoPoint(shipment.Latitude, shipment.Longitude),
-            options);
-        return new CourierPosition
-        {
-            ShipmentId = shipment.Id,
-            Seq = point.Seq,
-            Status = point.Status.ToString(),
-            Latitude = point.Position.Latitude,
-            Longitude = point.Position.Longitude,
-            RecordedAt = point.RecordedAt,
-        };
-    }
-}
-
 /// <summary>
 /// Runners driven by hand on <see cref="CourierFixture"/>: no courier ticks unless a test calls it. The role is Api, so its consumer
 /// also makes the shipments that <c>ShipmentRequestedTests</c> publish to the shared <c>orders.orders</c>; a runner may claim those
@@ -48,8 +21,14 @@ public sealed class CourierTests(CourierFixture courier) : IClassFixture<Courier
 
     private readonly PositionsTopic _topic = new(courier.Kafka.BootstrapServers);
 
+    /// <summary>
+    /// A crash: <c>a</c> stops without releasing, and <c>b</c> takes the trip over once the lease has run out. That is always more
+    /// than <c>Lease − LeaseRenewInterval</c> after <c>a</c>'s last send, so <c>b</c> continues at a later seq (here the last one)
+    /// from the trip's start, not from seq 0. Literal repeats come from a release (the next test) or a crash between the last
+    /// acknowledgement and <c>FinishAsync</c>.
+    /// </summary>
     [Fact]
-    public async Task Lost_lease_is_taken_over_and_the_seqs_repeat()
+    public async Task Lost_lease_is_taken_over_from_the_trip_start()
     {
         await courier.CloseOpenShipmentsAsync();
         var shipment = await courier.CreateShipmentAsync();
@@ -75,9 +54,9 @@ public sealed class CourierTests(CourierFixture courier) : IClassFixture<Courier
         var positions = await _topic.WaitForAsync(shipment.Id, ps => ps.Any(p => p.Seq == last), "b's last seq");
 
         // b's message is the one a would have sent at that seq: same trip start, same point, same time.
-        Assert.Equal(Trips.Expected(row, last, courier.Courier), Assert.Single(positions, p => p.Seq == last));
+        Assert.Equal(CourierTestData.Expected(row, last, courier.Courier), Assert.Single(positions, p => p.Seq == last));
         // Every copy of every seq, whichever courier sent it, is the timeline's point for that seq, so no two copies differ.
-        Assert.All(positions, p => Assert.Equal(Trips.Expected(row, p.Seq, courier.Courier), p));
+        Assert.All(positions, p => Assert.Equal(CourierTestData.Expected(row, p.Seq, courier.Courier), p));
         Assert.NotNull(row.CourierFinishedAt);
         Assert.DoesNotContain(shipment.Id, b.Held);
 
@@ -85,6 +64,39 @@ public sealed class CourierTests(CourierFixture courier) : IClassFixture<Courier
         await a.TickAsync(Ct);
         Assert.DoesNotContain(shipment.Id, a.Held);
         Assert.Equal(positions.Count, (await _topic.ReadAsync(shipment.Id)).Count);
+    }
+
+    /// <summary>
+    /// A graceful stop: <c>a</c> releases right after sending seq 2, and <c>b</c> ticks within the same 2 s tick. <c>b</c> knows
+    /// nothing of what <c>a</c> sent, so it sends seq 2 again. The two copies are the same message, so the repeat changes nothing.
+    /// </summary>
+    [Fact]
+    public async Task Released_trip_is_carried_on_and_its_seq_repeats()
+    {
+        await courier.CloseOpenShipmentsAsync();
+        var shipment = await courier.CreateShipmentAsync();
+        var a = courier.NewRunner();
+        var b = courier.NewRunner();
+        var tick = courier.Courier.TickInterval;
+
+        await a.TickAsync(Ct);
+        courier.Clock.Advance(tick);
+        await a.TickAsync(Ct);
+        courier.Clock.Advance(tick);
+        await a.TickAsync(Ct);   // seq 2 at t = 4 s
+        await a.ReleaseAsync(Ct);
+
+        // t = 5 s: still seq 2's tick, and the released lease (locked until 4 s) is open to b's claim.
+        courier.Clock.Advance(tick / 2);
+        await b.TickAsync(Ct);
+        Assert.Contains(shipment.Id, b.Held);
+
+        var positions = await _topic.WaitForAsync(shipment.Id, ps => ps.Count(p => p.Seq == 2) == 2, "seq 2 from both couriers");
+        var row = await courier.RowAsync(shipment.Id);
+        Assert.Equal(b.CourierId, row.CourierLockedBy);
+        var copies = positions.Where(p => p.Seq == 2).ToList();
+        Assert.Equal(2, copies.Count);
+        Assert.All(copies, copy => Assert.Equal(CourierTestData.Expected(row, 2, courier.Courier), copy));
     }
 
     [Fact]
@@ -138,7 +150,7 @@ public sealed class RunningCourierTests(RunningCourierFixture courier) : IClassF
             ["Preparing", "Preparing", "PickedUp", "InTransit", "InTransit", "Delivered"],
             positions.Select(p => p.Status));
         var row = await courier.RowAsync(shipment.Id);
-        Assert.All(positions, p => Assert.Equal(Trips.Expected(row, p.Seq, courier.Courier), p));
+        Assert.All(positions, p => Assert.Equal(CourierTestData.Expected(row, p.Seq, courier.Courier), p));
         Assert.Null(row.CourierLockedBy);
     }
 

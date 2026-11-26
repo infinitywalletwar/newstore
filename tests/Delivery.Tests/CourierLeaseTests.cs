@@ -50,9 +50,6 @@ public sealed class CourierLeaseTests(DeliveryFixture delivery) : IClassFixture<
         return claimed;
     });
 
-    private Task<Shipment> RowAsync(Guid id) =>
-        delivery.QueryAsync(db => db.Shipments.AsNoTracking().SingleAsync(s => s.Id == id, Ct));
-
     private DateTimeOffset Now => Api.Micro(delivery.Clock.GetUtcNow());
 
     [Fact]
@@ -75,7 +72,7 @@ public sealed class CourierLeaseTests(DeliveryFixture delivery) : IClassFixture<
         Assert.NotNull(second);
         Assert.Equal(shipment.Id, second.Id);
         Assert.Equal(first.StartedAt, second.StartedAt);
-        var row = await RowAsync(shipment.Id);
+        var row = await delivery.RowAsync(shipment.Id);
         Assert.Equal("b", row.CourierLockedBy);
         Assert.Equal(Now + Lease, row.CourierLockedUntil);
         Assert.Equal(first.StartedAt, row.CourierStartedAt);
@@ -108,7 +105,7 @@ public sealed class CourierLeaseTests(DeliveryFixture delivery) : IClassFixture<
 
         Assert.True(await WithLeasesAsync(l => l.FinishAsync(shipment.Id, "a", Ct)));
 
-        var row = await RowAsync(shipment.Id);
+        var row = await delivery.RowAsync(shipment.Id);
         Assert.Equal(Now, row.CourierFinishedAt);
         Assert.Null(row.CourierLockedBy);
         Assert.Null(row.CourierLockedUntil);
@@ -135,8 +132,8 @@ public sealed class CourierLeaseTests(DeliveryFixture delivery) : IClassFixture<
         var held = await WithLeasesAsync(l => l.RenewAsync("a", [older.Id, newer.Id], Ct));
 
         Assert.Equal([newer.Id], held);
-        Assert.Equal(Now + Lease, (await RowAsync(newer.Id)).CourierLockedUntil);
-        Assert.Equal("b", (await RowAsync(older.Id)).CourierLockedBy);
+        Assert.Equal(Now + Lease, (await delivery.RowAsync(newer.Id)).CourierLockedUntil);
+        Assert.Equal("b", (await delivery.RowAsync(older.Id)).CourierLockedBy);
     }
 
     [Fact]
@@ -152,13 +149,13 @@ public sealed class CourierLeaseTests(DeliveryFixture delivery) : IClassFixture<
             await l.ReleaseAsync("a", Ct);
             return true;
         });
-        Assert.Equal(Now, (await RowAsync(shipment.Id)).CourierLockedUntil);
+        Assert.Equal(Now, (await delivery.RowAsync(shipment.Id)).CourierLockedUntil);
 
         // b's next tick, long before a's 30 s lease would have run out.
         delivery.Clock.Advance(new CourierOptions().TickInterval);
         var claim = await ClaimAsync("b", shipment.Id);
 
         Assert.Equal(shipment.Id, claim?.Id);
-        Assert.Equal("b", (await RowAsync(shipment.Id)).CourierLockedBy);
+        Assert.Equal("b", (await delivery.RowAsync(shipment.Id)).CourierLockedBy);
     }
 }

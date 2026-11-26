@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 using NewStore.Delivery.Courier;
+using NewStore.Delivery.Shipments;
+using NewStore.Delivery.Tracking;
 
 namespace NewStore.Delivery.Tests;
 
@@ -35,17 +38,10 @@ public class CourierFixture(PostgresServer postgres, KafkaServer kafka) : Delive
             return ActivatorUtilities.CreateInstance<CourierRunner>(Services);
         }
 
-        var o = Courier;
-        var options = new CourierOptions
-        {
-            PrepareTime = o.PrepareTime,
-            TravelTime = o.TravelTime,
-            TickInterval = o.TickInterval,
-            Lease = o.Lease,
-            LeaseRenewInterval = o.LeaseRenewInterval,
-            ClaimsPerTick = claims,
-            MaxShipments = o.MaxShipments,
-        };
+        // A fresh copy bound from the same section as the app's options, so every setting, including one added later, is the app's.
+        var options = Services.GetRequiredService<IConfiguration>().GetSection(CourierOptions.SectionName).Get<CourierOptions>()
+            ?? new CourierOptions();
+        options.ClaimsPerTick = claims;
         return ActivatorUtilities.CreateInstance<CourierRunner>(Services, Options.Create(options));
     }
 }
@@ -58,6 +54,23 @@ public sealed class RunningCourierFixture(PostgresServer postgres, KafkaServer k
 
 public static class CourierTestData
 {
+    /// <summary>The shipment's row as it is now.</summary>
+    public static Task<Shipment> RowAsync(this DeliveryFixture fixture, Guid id) =>
+        fixture.QueryAsync(db => db.Shipments.AsNoTracking().SingleAsync(s => s.Id == id, TestContext.Current.CancellationToken));
+
+    /// <summary>
+    /// The message any courier must send for <paramref name="seq"/> of <paramref name="shipment"/>'s trip: the timeline's point,
+    /// mapped the way the courier maps it.
+    /// </summary>
+    public static CourierPosition Expected(Shipment shipment, int seq, CourierOptions options) =>
+        CourierTimeline.At(
+                seq,
+                shipment.CourierStartedAt!.Value,
+                new GeoPoint(shipment.WarehouseLatitude, shipment.WarehouseLongitude),
+                new GeoPoint(shipment.Latitude, shipment.Longitude),
+                options)
+            .ToPosition(shipment.Id);
+
     /// <summary>
     /// Marks every open shipment finished, so a test's claims see only the shipments it creates. A claim takes the oldest open
     /// shipment, and the tests of one class share a database.

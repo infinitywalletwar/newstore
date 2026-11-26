@@ -16,7 +16,8 @@ public sealed class PositionsTopic(string bootstrapServers)
     /// <summary>Every message for <paramref name="shipmentId"/> on the topic now, in the order its partition holds them.</summary>
     /// <remarks>
     /// Under load (every test project at once) the broker once answered the offset query with "Not leader for partition", so a
-    /// read that throws a <see cref="KafkaException"/> is tried again for up to 30 s.
+    /// read that fails with that error, or with "Leader not available", is tried again until 30 s have passed since the first
+    /// attempt. Any other error fails the test at once.
     /// </remarks>
     public async Task<IReadOnlyList<CourierPosition>> ReadAsync(Guid shipmentId)
     {
@@ -28,7 +29,8 @@ public sealed class PositionsTopic(string bootstrapServers)
             {
                 return await Task.Run(() => Read(shipmentId), ct);
             }
-            catch (KafkaException) when (DateTime.UtcNow < deadline)
+            catch (KafkaException ex) when (
+                ex.Error.Code is ErrorCode.NotLeaderForPartition or ErrorCode.LeaderNotAvailable && DateTime.UtcNow < deadline)
             {
                 await Task.Delay(200, ct);
             }
@@ -74,8 +76,15 @@ public sealed class PositionsTopic(string bootstrapServers)
 
         var positions = new List<CourierPosition>();
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (ends.Any(e => next[e.Key] < e.Value) && DateTime.UtcNow < deadline)
+        while (ends.Any(e => next[e.Key] < e.Value))
         {
+            if (DateTime.UtcNow >= deadline)
+            {
+                // A partial list would read as "the message isn't there", so a read that can't reach the end fails instead.
+                var behind = ends.Where(e => next[e.Key] < e.Value).Select(e => $"partition {e.Key} at {next[e.Key]} of {e.Value}");
+                throw new TimeoutException($"Reading {CourierPosition.Topic} didn't reach the end in 10 s: {string.Join(", ", behind)}.");
+            }
+
             if (consumer.Consume(TimeSpan.FromMilliseconds(200)) is not { Message: not null } result)
             {
                 continue;
