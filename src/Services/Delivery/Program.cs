@@ -61,7 +61,7 @@ if (api)
     app.UseAuthentication();
     app.UseAuthorization();
     app.MapShipmentEndpoints();
-    // Task 5: app.MapTrackingHub();
+    app.MapTrackingHub();                    // /hubs/tracking, WebSockets only, closed when the token expires
 }
 
 app.Run();

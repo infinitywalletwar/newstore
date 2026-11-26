@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <ProjectReference Include="..\..\src\Services\Delivery\NewStore.Delivery.csproj" />
     <ProjectReference Include="..\Shared\NewStore.TestSupport\NewStore.TestSupport.csproj" />
   </ItemGroup>

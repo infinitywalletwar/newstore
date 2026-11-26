@@ -753,7 +753,7 @@ Branch `phase-3/live-tracking`. Issue #159. Owns the Compose stack in wave C. Ad
   - The four routes of the Contracts table. A `delivery` cluster from `Services:Delivery` read as a list (`GetSection("Delivery").Get<string[]>()`, at least one URL, else the startup error names `Services:Delivery:0`), destinations `d0`, `d1`, …, `LoadBalancingPolicy = LoadBalancingPolicies.RoundRobin` ([YARP load balancing](https://learn.microsoft.com/aspnet/core/fundamentals/servers/yarp/load-balancing?view=aspnetcore-10.0)), and, when enabled, `HealthCheck.Active = { Enabled = true, Interval, Timeout = 2 s, Policy = HealthCheckConstants.ActivePolicy.ConsecutiveFailures, Path = "/health/ready" }`. The other clusters keep one URL.
   - **CSRF by Origin,** in `UseCsrfHeader`. A guarded cookie request that is a WebSocket upgrade to a path under `/api/hubs/` passes when its `Origin` equals one of `PublicOrigins` (ordinal, ignoring case, without a trailing `/`), whether or not it carries `X-CSRF`. Another Origin, or none, is 403 `csrf`. An upgrade means: method `GET`, an `Upgrade` header equal to `websocket` (ignoring case), and a `Connection` header that contains `Upgrade` (ignoring case). Every other request keeps today's rule.
 
-- [ ] **Step 1: The handler, failing tests, then code**
+- [x] **Step 1: The handler, failing tests, then code**
 
 `CourierPositionHandlerTests` resolve the handler from the fixture's scope and call it with batches; a `RecordingHubContext` replaces `IHubContext<TrackingHub>` and records every send.
 - `Batch_stores_positions_and_moves_the_shipment_to_the_newest`
@@ -769,7 +769,7 @@ Branch `phase-3/live-tracking`. Issue #159. Owns the Compose stack in wave C. Ad
 
 Commit: `feat(delivery): store courier positions in batches, idempotent by seq`.
 
-- [ ] **Step 2: The hub, failing tests, then code**
+- [x] **Step 2: The hub, failing tests, then code**
 
 `HubClient.ConnectAsync(DeliveryFixture app, string? token)` builds a `HubConnection` to `app.Server.BaseAddress + "hubs/tracking"` with `Transports = WebSockets`, `SkipNegotiation = true`, and a `WebSocketFactory` that connects through `app.Server.CreateWebSocketClient()` with the bearer header in `ConfigureRequest`. The task checks this setup against the SignalR client's `HttpConnectionOptions` API before relying on it.
 
