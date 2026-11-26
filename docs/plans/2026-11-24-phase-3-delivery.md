@@ -871,7 +871,7 @@ Branch `phase-3/web-tracking`. Issue #160. Advances D-1, D-3 and L-1 in the brow
   - At `Delivered`, or when the component is destroyed, it stops the subscription.
   - `courier-position` carries the latest seq and coordinates as `data-*` attributes for the e2e test.
 
-- [ ] **Step 1: The tracking client and page, failing tests, then code**
+- [x] **Step 1: The tracking client and page, failing tests, then code**
 
 In `tracking.spec.ts`, with `vi.mock('@microsoft/signalr')` and `vi.mock('leaflet')` (as `pages.spec.ts` mocks `hls.js`), `HttpTestingController` and fake timers:
 - `Tracking_client_connects_with_websockets_only_and_skips_negotiation`
@@ -886,7 +886,7 @@ In `tracking.spec.ts`, with `vi.mock('@microsoft/signalr')` and `vi.mock('leafle
 
 Add the packages, implement. Expected: `npm test -- --watch=false` passes. Commit: `feat(web): the tracking page with live positions`.
 
-- [ ] **Step 2: Checkout, order page and my copies, failing tests, then code**
+- [x] **Step 2: Checkout, order page and my copies, failing tests, then code**
 
 In `pages.spec.ts`:
 - `Dvd_buy_asks_for_an_address_and_a_pin_before_posting`: no request to `/api/orders` until confirm.
@@ -902,7 +902,7 @@ In `pages.spec.ts`:
 
 Expected: they pass, and `npm run build` succeeds within the budgets in `angular.json` (initial bundle error at 1 MB). If the initial bundle passes the 500 kB warning, the tracking page is loaded lazily (`loadComponent`); the walkthrough reports the size. Commit: `feat(web): a pin at checkout, and delivery status in my copies`.
 
-- [ ] **Step 3: The image, pull request**
+- [x] **Step 3: The image, pull request**
 
 1. `docker compose build gateway`: the image's `npm ci` installs the new packages, and the build copies Leaflet's images.
 2. **Walkthrough diagram:** a sequence diagram from the browser's side: load the shipment, connect, `Track`, positions, a reconnect with `Track` again and the merge by seq, `Delivered`, stop. Interview questions:

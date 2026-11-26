@@ -1,8 +1,9 @@
 import * as L from 'leaflet';
 import { GeoPoint } from '../api/models';
 
-// angular.json copies node_modules/leaflet/dist/images to /leaflet/. Without this Leaflet works out the marker
-// images' path from its stylesheet's URL, which a bundled stylesheet breaks.
+// angular.json copies node_modules/leaflet/dist/images to /leaflet/. Without this Leaflet looks for the images by the
+// URL of a `<link href$="leaflet.css">`, which the bundled styles-<hash>.css is not. The path is relative to
+// `<base href="/">` in index.html, so it is /leaflet/ on every route.
 L.Icon.Default.imagePath = 'leaflet/';
 
 export const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
