@@ -38,7 +38,8 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 builder.AddMessaging<PaymentsDbContext>(m => m
     .AddTopic(PaymentEvents.Topic, PaymentEvents.Partitions)
     .AddTopic(OrderEvents.Topic, OrderEvents.Partitions)
-    .AddHandler<RefundRequested, RefundRequestedHandler>(OrderEvents.Topic));
+    .AddHandler<RefundRequested, RefundRequestedHandler>(OrderEvents.Topic)
+    .AddIgnoredType<ShipmentRequested>(OrderEvents.Topic));   // Orders' request to Delivery, on the same topic
 
 builder.Services.AddScoped<PaymentService>();
 

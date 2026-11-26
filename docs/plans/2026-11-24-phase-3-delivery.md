@@ -561,7 +561,7 @@ Branch `phase-3/delivery-service`. Issue #157. Owns the Compose stack in wave B.
   - `delivery-b`: the same, with no `ports`.
 - **CI `compose-smoke`:** Delivery is ready (`curl --fail … --retry 30 … http://localhost:8107/health/ready`), and `delivery-b` is healthy, in the loop that checks `media` and `media-worker`.
 
-- [ ] **Step 1: The service starts**
+- [x] **Step 1: The service starts**
 
 `DeliveryStartupTests`:
 - `Delivery_is_ready_with_its_tables`: `/health/ready` is 200, and `shipments`, `shipment_positions`, `outbox_messages` and `inbox_messages` exist.
@@ -572,7 +572,7 @@ Branch `phase-3/delivery-service`. Issue #157. Owns the Compose stack in wave B.
 
 Write the project so these pass. Commit: `feat(delivery): the Delivery service with its database and warehouse`.
 
-- [ ] **Step 2: Failing tests for shipments and the API**
+- [x] **Step 2: Failing tests for shipments and the API**
 
 `ShipmentRequestedTests`, with `KafkaServer.PublishAsync`:
 - `ShipmentRequested_creates_a_preparing_shipment_with_the_warehouse`: every field from the event, status `Preparing`, `last_seq` −1, the warehouse's three values copied.
@@ -589,11 +589,11 @@ Write the project so these pass. Commit: `feat(delivery): the Delivery service w
 
 Expected: they fail.
 
-- [ ] **Step 3: Implement, run**
+- [x] **Step 3: Implement, run**
 
 Expected: Delivery.Tests pass. Commit: `feat(delivery): shipments from Orders' event, and the shipments API`.
 
-- [ ] **Step 4: Payments, Compose, realm, CI, pull request**
+- [x] **Step 4: Payments, Compose, realm, CI, pull request**
 
 1. Payments' ignore line. `dotnet test --project tests/Payments.Tests` passes.
 2. Compose, `init.sql`, the realm mapper. A Mac stack from before this change needs `docker compose down -v` once (a new database role and a realm change, AGENTS.md); the walkthrough says so. Run `docker compose build delivery`, then `docker compose up -d --wait`. Check:
