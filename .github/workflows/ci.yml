@@ -124,9 +124,9 @@ jobs:
           url="$(curl --fail --silent --show-error http://localhost:8101/videos/00000000-0000-7000-8001-000000000011 | jq -er '.playbackUrl')"
           echo "playbackUrl: $url"
           test "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 200
-      - name: Media, the worker and the second Delivery instance are healthy
+      - name: Media, the worker, the second Delivery instance and the courier are healthy
         run: |
-          for service in media media-worker delivery-b; do
+          for service in media media-worker delivery-b delivery-courier; do
             id="$(docker compose -f compose.yaml -f compose.load.yaml ps --quiet "$service")"
             health="$(docker inspect --format '{{.State.Health.Status}}' "$id")"
             echo "$service: $health"
