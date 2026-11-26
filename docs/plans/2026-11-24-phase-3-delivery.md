@@ -793,7 +793,7 @@ Commit: `feat(delivery): the tracking hub, WebSockets only`.
 
 Commit: `test(delivery): a position consumed by one host reaches a browser on the other`.
 
-- [ ] **Step 4: The gateway, failing tests, then code**
+- [x] **Step 4: The gateway, failing tests, then code**
 
 `GatewayApp` sets `Services:Delivery:0` = `http://delivery-a.test`, `Services:Delivery:1` = `http://delivery-b.test`, `Gateway:PublicOrigins:0` = `http://localhost` (`GatewayKeycloak.GatewayOrigin`) and `Gateway:DestinationHealthChecks:Enabled` = `false`. In TestServer YARP sees no upgrade feature and forwards the upgrade as a plain GET, so these tests prove the gateway's decisions; Step 5 and Task 7's e2e prove the tunnel. `TrackingRouteTests`:
 - `[Theory] Delivery_routes_reach_delivery_with_the_users_token`: `GET /api/me/shipments` and `GET /api/shipments/{id}` reach `delivery-a.test` or `delivery-b.test` on the path without `/api`, with a bearer token and no cookie.

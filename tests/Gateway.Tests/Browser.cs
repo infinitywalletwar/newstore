@@ -25,8 +25,12 @@ internal sealed partial class Browser
 
     public CookieCollection GatewayCookies => _cookies.GetCookies(new Uri(GatewayKeycloak.GatewayOrigin));
 
-    /// <summary>Sends the cookies the browser holds for the URL. <paramref name="csrf"/> adds the header the app's own calls carry.</summary>
-    public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, bool csrf = false, HttpContent? content = null)
+    /// <summary>
+    /// Sends the cookies the browser holds for the URL. <paramref name="csrf"/> adds the header the app's own calls carry, and
+    /// <paramref name="headers"/> any other, such as the ones a browser puts on a WebSocket upgrade.
+    /// </summary>
+    public async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string url, bool csrf = false, HttpContent? content = null, IReadOnlyDictionary<string, string>? headers = null)
     {
         var uri = new Uri(new Uri(GatewayKeycloak.GatewayOrigin), url);
         using var request = new HttpRequestMessage(method, uri) { Content = content };
@@ -39,6 +43,12 @@ internal sealed partial class Browser
         {
             request.Headers.Add("X-CSRF", "1");
         }
+
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+        {
+            request.Headers.Add(name, value);
+        }
+
         var toGateway = uri.Host == "localhost";
         var response = await (toGateway ? Gateway : Network).SendAsync(request, TestContext.Current.CancellationToken);
         if (response.Headers.TryGetValues("Set-Cookie", out var setCookies))
