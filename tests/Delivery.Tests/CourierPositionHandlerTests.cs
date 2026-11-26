@@ -137,6 +137,28 @@ public sealed class CourierPositionHandlerTests(HandlerFixture delivery) : IClas
     }
 
     [Fact]
+    public async Task Catch_up_batch_takes_pickup_and_delivery_times_from_the_positions_that_reached_them()
+    {
+        // A consumer that fell behind gets pickup and the positions after it in one batch. The newest position is not the one
+        // that reached PickedUp, so the times come from the stored path, not from the batch's last point.
+        var shipment = await delivery.CreateShipmentAsync();
+        var start = Start;
+        var pickedUp = Positions.At(shipment.Id, 1, start, ShipmentStatus.PickedUp);
+        var delivered = Positions.At(shipment.Id, 3, start, ShipmentStatus.Delivered);
+
+        await Positions.HandleAsync(delivery,
+            Positions.At(shipment.Id, 0, start, ShipmentStatus.Preparing), pickedUp, Positions.At(shipment.Id, 2, start, ShipmentStatus.InTransit));
+        var afterFirst = await Positions.ShipmentAsync(delivery, shipment.Id);
+        await Positions.HandleAsync(delivery, delivered, Positions.At(shipment.Id, 4, start, ShipmentStatus.Delivered));
+
+        var moved = await Positions.ShipmentAsync(delivery, shipment.Id);
+        Assert.Equal(pickedUp.RecordedAt, afterFirst.PickedUpAt);
+        Assert.Equal(ShipmentStatus.InTransit, afterFirst.Status);
+        Assert.Equal(pickedUp.RecordedAt, moved.PickedUpAt);
+        Assert.Equal(delivered.RecordedAt, moved.DeliveredAt);
+    }
+
+    [Fact]
     public async Task Positions_for_an_unknown_shipment_are_dropped()
     {
         // A topic replayed after a database reset holds positions of shipments this database never had. Throwing would retry the

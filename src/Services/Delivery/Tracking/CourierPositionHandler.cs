@@ -90,7 +90,9 @@ public sealed partial class CourierPositionHandler(DeliveryDbContext db, IHubCon
             .ToListAsync(ct);
 
         // Each shipment moves to its highest seq in the batch, and only forward: WHERE last_seq < seq ignores a stale or repeated
-        // one. Pickup and delivery times are set by the first position that reaches them and never move after.
+        // one. Pickup and delivery times are set once, from the stored path (which the INSERT above has just extended): the first
+        // position past Preparing and the first Delivered one. Not from the batch's newest point, which in a catch-up batch can be
+        // several ticks later than the one that reached the status.
         foreach (var newest in positions.GroupBy(p => p.ShipmentId).Select(g => g.MaxBy(p => p.Seq)!))
         {
             var at = newest.RecordedAt.ToUniversalTime();
@@ -98,8 +100,10 @@ public sealed partial class CourierPositionHandler(DeliveryDbContext db, IHubCon
                 UPDATE shipments SET
                     status = {newest.Status}, last_seq = {newest.Seq},
                     last_latitude = {newest.Latitude}, last_longitude = {newest.Longitude}, last_position_at = {at},
-                    picked_up_at = COALESCE(picked_up_at, CASE WHEN {newest.Status} <> 'Preparing' THEN {at} END),
-                    delivered_at = COALESCE(delivered_at, CASE WHEN {newest.Status} = 'Delivered' THEN {at} END)
+                    picked_up_at = COALESCE(picked_up_at, (SELECT min(recorded_at) FROM shipment_positions
+                        WHERE shipment_id = {newest.ShipmentId} AND status <> 'Preparing')),
+                    delivered_at = COALESCE(delivered_at, (SELECT min(recorded_at) FROM shipment_positions
+                        WHERE shipment_id = {newest.ShipmentId} AND status = 'Delivered'))
                 WHERE id = {newest.ShipmentId} AND last_seq < {newest.Seq}
                 """, ct);
         }
