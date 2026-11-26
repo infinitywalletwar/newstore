@@ -1,0 +1,76 @@
+using System.Text.Json;
+
+using Confluent.Kafka;
+
+using NewStore.Delivery.Tracking;
+
+namespace NewStore.Delivery.Tests;
+
+/// <summary>
+/// Reads <c>delivery.positions</c> from the start with a plain consumer. It takes every partition itself with <c>Assign</c>, where
+/// <c>Subscribe</c> would leave the choice to the consumer group, and it commits nothing, so each read sees every copy of every
+/// message, as Kafka stores them.
+/// </summary>
+public sealed class PositionsTopic(string bootstrapServers)
+{
+    /// <summary>Every message for <paramref name="shipmentId"/> on the topic now, in the order its partition holds them.</summary>
+    public Task<IReadOnlyList<CourierPosition>> ReadAsync(Guid shipmentId) =>
+        Task.Run<IReadOnlyList<CourierPosition>>(() => Read(shipmentId), TestContext.Current.CancellationToken);
+
+    /// <summary>Reads until <paramref name="done"/> holds for the shipment's messages; fails after <paramref name="timeout"/> (30 s).</summary>
+    public async Task<IReadOnlyList<CourierPosition>> WaitForAsync(
+        Guid shipmentId, Func<IReadOnlyList<CourierPosition>, bool> done, string what, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(30));
+        IReadOnlyList<CourierPosition> positions = [];
+        while (DateTime.UtcNow < deadline)
+        {
+            positions = await ReadAsync(shipmentId);
+            if (done(positions))
+            {
+                return positions;
+            }
+
+            await Task.Delay(100, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Fail($"Timed out waiting for: {what}. Seqs on the topic: [{string.Join(", ", positions.Select(p => p.Seq))}].");
+        return positions;
+    }
+
+    private List<CourierPosition> Read(Guid shipmentId)
+    {
+        using var consumer = new ConsumerBuilder<string, string>(new ConsumerConfig
+        {
+            BootstrapServers = bootstrapServers,
+            GroupId = $"test-positions-{Guid.NewGuid():N}",   // its own, so no other reader's offsets apply
+            EnableAutoCommit = false,
+        }).Build();
+
+        // Each partition's end now; the read stops when it has reached every one of them.
+        var ends = Enumerable.Range(0, CourierPosition.Partitions)
+            .Select(p => new TopicPartition(CourierPosition.Topic, p))
+            .ToDictionary(tp => tp.Partition.Value, tp => consumer.QueryWatermarkOffsets(tp, TimeSpan.FromSeconds(10)).High.Value);
+        var next = ends.Keys.ToDictionary(p => p, _ => 0L);
+        consumer.Assign(ends.Keys.Select(p => new TopicPartitionOffset(CourierPosition.Topic, p, Offset.Beginning)));
+
+        var positions = new List<CourierPosition>();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (ends.Any(e => next[e.Key] < e.Value) && DateTime.UtcNow < deadline)
+        {
+            if (consumer.Consume(TimeSpan.FromMilliseconds(200)) is not { Message: not null } result)
+            {
+                continue;
+            }
+
+            next[result.Partition.Value] = result.Offset.Value + 1;
+            if (result.Message.Key == shipmentId.ToString())
+            {
+                positions.Add(JsonSerializer.Deserialize<CourierPosition>(result.Message.Value)!);
+            }
+        }
+
+        consumer.Close();
+        return positions;
+    }
+}
