@@ -24,6 +24,11 @@ internal sealed class GatewayApp : NewStoreAppFactory<Program>
         Settings["Services:Inventory"] = "http://inventory.test";
         Settings["Services:Orders"] = "http://orders.test";
         Settings["Services:Media"] = "http://media.test";
+        Settings["Services:Delivery:0"] = "http://delivery-a.test";
+        Settings["Services:Delivery:1"] = "http://delivery-b.test";
+        Settings["Gateway:PublicOrigins:0"] = GatewayKeycloak.GatewayOrigin;
+        // The destinations are a stub, so probing them proves nothing; the health-check test turns it on with its own replies.
+        Settings["Gateway:DestinationHealthChecks:Enabled"] = "false";
     }
 
     public StubHttpHandler Stub { get; } = new();

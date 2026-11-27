@@ -98,6 +98,15 @@ jobs:
       - name: Gateway answers 401 to an anonymous upload
         # The gateway checks the session before it proxies, so this needs no Media service behind it.
         run: test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8100/api/uploads)" = 401
+      - name: Gateway forwards the warehouse to Delivery
+        run: curl --fail --silent --show-error http://localhost:8100/api/delivery/warehouse | jq -e '.name | length > 0'
+      - name: Gateway answers 401 to an anonymous upgrade to the tracking hub
+        # A real WebSocket upgrade through Kestrel and YARP: the gateway asks for a session before it forwards anything.
+        run: |
+          status="$(curl -s -o /dev/null -w '%{http_code}' --http1.1 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://localhost:8100/api/hubs/tracking)"
+          echo "status: $status"
+          test "$status" = 401
       - name: Catalog lists the seeded edition of a sample video
         # The snapshot travels Inventory, Kafka, Catalog: retry for up to 30 s. The k6 step above also creates Digital editions of
         # this video (10 copies each), so the check looks for what only the seeded edition has: 1000 copies.

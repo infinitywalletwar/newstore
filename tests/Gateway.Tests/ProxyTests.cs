@@ -207,6 +207,7 @@ public sealed class ProxyTests(GatewayKeycloak keycloak)
     [InlineData("GET", "/api/videos/00000000-0000-7000-8000-0000000000e1/owner")]
     [InlineData("PUT", "/api/uploads/00000000-0000-7000-8000-0000000000a1")]
     [InlineData("GET", "/api/downloads")]
+    [InlineData("POST", "/api/hubs/tracking/negotiate")]
     public async Task Internal_paths_are_not_routed(string method, string path)
     {
         await using var gateway = await GatewayHarness.StartAsync(keycloak);

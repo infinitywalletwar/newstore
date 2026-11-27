@@ -753,7 +753,7 @@ Branch `phase-3/live-tracking`. Issue #159. Owns the Compose stack in wave C. Ad
   - The four routes of the Contracts table. A `delivery` cluster from `Services:Delivery` read as a list (`GetSection("Delivery").Get<string[]>()`, at least one URL, else the startup error names `Services:Delivery:0`), destinations `d0`, `d1`, …, `LoadBalancingPolicy = LoadBalancingPolicies.RoundRobin` ([YARP load balancing](https://learn.microsoft.com/aspnet/core/fundamentals/servers/yarp/load-balancing?view=aspnetcore-10.0)), and, when enabled, `HealthCheck.Active = { Enabled = true, Interval, Timeout = 2 s, Policy = HealthCheckConstants.ActivePolicy.ConsecutiveFailures, Path = "/health/ready" }`. The other clusters keep one URL.
   - **CSRF by Origin,** in `UseCsrfHeader`. A guarded cookie request that is a WebSocket upgrade to a path under `/api/hubs/` passes when its `Origin` equals one of `PublicOrigins` (ordinal, ignoring case, without a trailing `/`), whether or not it carries `X-CSRF`. Another Origin, or none, is 403 `csrf`. An upgrade means: method `GET`, an `Upgrade` header equal to `websocket` (ignoring case), and a `Connection` header that contains `Upgrade` (ignoring case). Every other request keeps today's rule.
 
-- [ ] **Step 1: The handler, failing tests, then code**
+- [x] **Step 1: The handler, failing tests, then code**
 
 `CourierPositionHandlerTests` resolve the handler from the fixture's scope and call it with batches; a `RecordingHubContext` replaces `IHubContext<TrackingHub>` and records every send.
 - `Batch_stores_positions_and_moves_the_shipment_to_the_newest`
@@ -769,7 +769,7 @@ Branch `phase-3/live-tracking`. Issue #159. Owns the Compose stack in wave C. Ad
 
 Commit: `feat(delivery): store courier positions in batches, idempotent by seq`.
 
-- [ ] **Step 2: The hub, failing tests, then code**
+- [x] **Step 2: The hub, failing tests, then code**
 
 `HubClient.ConnectAsync(DeliveryFixture app, string? token)` builds a `HubConnection` to `app.Server.BaseAddress + "hubs/tracking"` with `Transports = WebSockets`, `SkipNegotiation = true`, and a `WebSocketFactory` that connects through `app.Server.CreateWebSocketClient()` with the bearer header in `ConfigureRequest`. The task checks this setup against the SignalR client's `HttpConnectionOptions` API before relying on it.
 
@@ -785,7 +785,7 @@ Commit: `feat(delivery): store courier positions in batches, idempotent by seq`.
 
 Commit: `feat(delivery): the tracking hub, WebSockets only`.
 
-- [ ] **Step 3: Two hosts, failing test, then code**
+- [x] **Step 3: Two hosts, failing test, then code**
 
 `RedisFixture` (a class fixture) starts `new RedisBuilder("redis:8.10.3")`. `TwoHostTests` start host A and host B from `DeliveryFixture` subclasses on one database, one Kafka and one `ClientId`; A has `ConsumePositions=false`. A starts first and migrates; B starts after A is ready and does not call `MigrateBeforeStart`, so the two never run migrations at once.
 - `Position_consumed_by_host_b_reaches_a_client_on_host_a` (the design's test): with Redis on both, a client tracks on A; a position produced to the topic is stored by B (the row appears) and arrives at A's client within 10 s.
@@ -793,7 +793,7 @@ Commit: `feat(delivery): the tracking hub, WebSockets only`.
 
 Commit: `test(delivery): a position consumed by one host reaches a browser on the other`.
 
-- [ ] **Step 4: The gateway, failing tests, then code**
+- [x] **Step 4: The gateway, failing tests, then code**
 
 `GatewayApp` sets `Services:Delivery:0` = `http://delivery-a.test`, `Services:Delivery:1` = `http://delivery-b.test`, `Gateway:PublicOrigins:0` = `http://localhost` (`GatewayKeycloak.GatewayOrigin`) and `Gateway:DestinationHealthChecks:Enabled` = `false`. In TestServer YARP sees no upgrade feature and forwards the upgrade as a plain GET, so these tests prove the gateway's decisions; Step 5 and Task 7's e2e prove the tunnel. `TrackingRouteTests`:
 - `[Theory] Delivery_routes_reach_delivery_with_the_users_token`: `GET /api/me/shipments` and `GET /api/shipments/{id}` reach `delivery-a.test` or `delivery-b.test` on the path without `/api`, with a bearer token and no cookie.
@@ -810,7 +810,7 @@ Commit: `test(delivery): a position consumed by one host reaches a browser on th
 
 Expected: Gateway.Tests and Delivery.Tests pass. Commit: `feat(gateway): route Delivery round robin, and accept the hub's WebSocket by its Origin`.
 
-- [ ] **Step 5: The stack, CI, ADR 0023, pull request**
+- [x] **Step 5: The stack, CI, ADR 0023, pull request**
 
 1. Compose from Files. Run `docker compose build delivery gateway`, then `docker compose up -d --wait`. Check:
    - `curl -s http://localhost:8100/api/delivery/warehouse` answers the warehouse;

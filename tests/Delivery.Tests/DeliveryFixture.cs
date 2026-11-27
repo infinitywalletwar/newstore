@@ -45,6 +45,12 @@ public class DeliveryFixture(PostgresServer postgres, KafkaServer kafka) : NewSt
     /// <summary>Which parts of Delivery run. Api by default: the consumer and the REST API, no courier.</summary>
     protected virtual DeliveryRole Role => DeliveryRole.Api;
 
+    /// <summary>
+    /// Null by default: the fixture gets a database of its own and migrates it before the app starts. A second host returns the
+    /// first one's connection string; that database is migrated already, so the second host never migrates at the same time.
+    /// </summary>
+    protected virtual string? SharedDatabase => null;
+
     /// <summary>Runs after the fixture's own settings, so a subclass can change any of them (courier times, Redis, tracking).</summary>
     protected virtual void ConfigureSettings(Dictionary<string, string?> settings)
     {
@@ -58,14 +64,18 @@ public class DeliveryFixture(PostgresServer postgres, KafkaServer kafka) : NewSt
 
     public async ValueTask InitializeAsync()
     {
-        ConnectionString = await postgres.CreateDatabaseAsync("delivery", TestContext.Current.CancellationToken);
+        ConnectionString = SharedDatabase ?? await postgres.CreateDatabaseAsync("delivery", TestContext.Current.CancellationToken);
         Settings["ConnectionStrings:Delivery"] = ConnectionString;
         Settings["Messaging:BootstrapServers"] = kafka.BootstrapServers;
         Settings["Messaging:ClientId"] = ClientId;
         Settings["Delivery:Role"] = Role.ToString();
         ConfigureSettings(Settings);
 
-        MigrateBeforeStart<DeliveryDbContext>();
+        if (SharedDatabase is null)
+        {
+            MigrateBeforeStart<DeliveryDbContext>();
+        }
+
         _ = Services; // starts the app now, so its topics exist and its consumer has joined before a test publishes
     }
 
