@@ -86,10 +86,10 @@ public sealed class TwoHostTests(PostgresServer postgres, KafkaServer kafka, Red
         await using var connection = await HubClient.ConnectAsync(host, TestTokens.User(buyer, "delivery"));
 
         // Measured: the handshake completes, then the server closes the connection with an error about 5 s later, and the pending
-        // Track fails with "Websocket closed with error: InternalServerError.".
+        // Track fails with "Websocket closed with error: InternalServerError.". The wait allows four times that, for a loaded runner.
         await Assert.ThrowsAnyAsync<Exception>(() => connection.InvokeAsync<ShipmentDetails>("Track", shipment.Id, Ct));
         await DeliveryFixture.WaitAsync(
-            () => Task.FromResult(connection.State == HubConnectionState.Disconnected), "the connection is closed", TimeSpan.FromSeconds(10));
+            () => Task.FromResult(connection.State == HubConnectionState.Disconnected), "the connection is closed", TimeSpan.FromSeconds(20));
         Assert.Contains(host.Logs.Snapshot(), l =>
             l.Category == "Microsoft.AspNetCore.SignalR.StackExchangeRedis.RedisHubLifetimeManager" && l.Level == LogLevel.Error);
     }
